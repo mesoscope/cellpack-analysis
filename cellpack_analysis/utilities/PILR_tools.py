@@ -74,28 +74,70 @@ def get_processed_PILR_from_dict(pilr_dict, ch_ind, average_over_phi=True, mask_
     return pilr, std_pilr
 
 
-def get_embeddings(combined_PILR, metric, num_samples=305, project_channel=True):
+def get_embeddings(individual_PILR_dict, metric, channels_for_embedding=None, **kwargs):
     # calculates PCA or pacmap embeddings from input dict
     # returns a list of embeddings for each channel
+    # input_PILR_dict: dictionary of PILR values for each channel
 
-    if project_channel:
-        X = combined_PILR[num_samples:]
-        X_exp = combined_PILR[:num_samples]
-    else:
-        X = combined_PILR
-        X_exp = []
+    if channels_for_embedding is None:
+        channels_for_embedding = list(individual_PILR_dict.keys())
+
+    X_fit = np.array([])
+    X_proj = np.array([])
+    index_dict = {}
+    for ch, values in individual_PILR_dict.items():
+        index_dict[ch] = {}
+        if ch in channels_for_embedding:
+            index_dict[ch]["embdedding"] = "fit"
+            index_dict[ch]["start_ind"] = len(X_fit)
+            if len(X_fit) == 0:
+                X_fit = values
+            else:
+                X_fit = np.vstack((X_fit, values))
+            index_dict[ch]["end_ind"] = len(X_fit)
+        else:
+            index_dict[ch]["embdedding"] = "proj"
+            index_dict[ch]["start_ind"] = len(X_proj)
+            if len(X_proj) == 0:
+                X_proj = values
+            else:
+                X_proj = np.vstack((X_proj, values))
+            index_dict[ch]["end_ind"] = len(X_proj)
 
     if metric.lower() == "pacmap":
-        embedding = pacmap.PaCMAP(n_components=2, save_tree=True)
+        embedding = pacmap.PaCMAP(n_components=kwargs.get("n_components", 2), save_tree=True)
     elif metric.lower() == "pca":
-        embedding = PCA(n_components=2)
+        embedding = PCA(n_components=kwargs.get("n_components", 2))
+    elif metric.lower() == "pacmap_pca":
+        embedding = pacmap.PaCMAP(n_components=kwargs.get("n_components", 2), apply_pca=False, save_tree=True)
+        embedding_pca = PCA(n_components=kwargs.get("n_components_pca"))
     else:
         raise ValueError("Invalid metric")
 
-    X_transformed = embedding.fit_transform(X)
+    X_fit_transformed = []
+    if len(X_fit):
+        if metric.lower() == "pacmap_pca":
+            X_fit = embedding_pca.fit_transform(X_fit)
+        X_fit_transformed = embedding.fit_transform(X_fit)
 
-    if project_channel:
-        X_exp_transformed = embedding.transform(X_exp)
-        return (X_transformed, X_exp_transformed)
+    X_proj_transformed = []
+    if len(X_proj):
+        if metric.lower() == "pacmap_pca":
+            X_proj = embedding_pca.transform(X_proj)
+        X_proj_transformed = embedding.transform(X_proj)
 
-    return X_transformed, None
+    embedding_dict = {}
+    for ch in individual_PILR_dict.keys():
+        embedding_dict[ch] = {}
+        if ch in channels_for_embedding and len(X_fit):
+            embedding_dict[ch]["embedding"] = index_dict[ch]["embdedding"]
+            embedding_dict[ch]["values"] = X_fit_transformed[
+                index_dict[ch]["start_ind"]:index_dict[ch]["end_ind"]
+            ]
+        elif len(X_proj):
+            embedding_dict[ch]["embedding"] = index_dict[ch]["embdedding"]
+            embedding_dict[ch]["values"] = X_proj_transformed[
+                index_dict[ch]["start_ind"]:index_dict[ch]["end_ind"]
+            ]
+
+    return embedding_dict
