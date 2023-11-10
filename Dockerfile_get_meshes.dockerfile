@@ -13,13 +13,13 @@ RUN make install
 
 # copy the folder
 WORKDIR /app
-ADD aicscytoparam ./aicscytoparam
+# ADD aicscytoparam ./aicscytoparam
 WORKDIR /app
 
 # Install Python dependencies
 COPY setup.py .
 COPY README.md .
-COPY setup.cfg .
+# COPY setup.cfg .
 RUN pip install --upgrade pip
 RUN pip install "setuptools<60.0"
 RUN pip install numpy
@@ -32,6 +32,6 @@ COPY scripts/get_meshes.py .
 RUN ls -l
 
 # Set the entrypoint script
-COPY scripts/get_meshes.sh ./get_meshes.sh
+COPY cellpack_analysis/scripts/get_meshes.sh ./get_meshes.sh
 RUN chmod +x ./get_meshes.sh
 ENTRYPOINT ["./get_meshes.sh"]

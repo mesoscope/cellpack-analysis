@@ -41,6 +41,7 @@ requirements = [
     "aicscytoparam",
     "aicsimageio",
     # "cellpack",
+    "cvapipe_analysis",
     "matplotlib",
     "numba>=0.57",
     "numpy",
@@ -53,7 +54,8 @@ requirements = [
     "scikit-learn",
     "seaborn",
     "tqdm",
-    "vtk",
+    "umap-learn",
+    "vtk==9.0.1",
 ]
 
 extra_requirements = {
