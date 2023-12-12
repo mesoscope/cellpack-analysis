@@ -4,6 +4,8 @@ from aicsimageio.aics_image import AICSImage
 import numpy as np
 import pandas as pd
 from aicsshparam import shtools
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 import vtk
 import pacmap
@@ -224,3 +226,58 @@ def get_cell_id_list(df_cellID, structure_id):
         cellid_list.append(int(cellid.replace("[", "").replace("]", "")))
 
     return cellid_list
+
+
+def get_cellid_ch_seed_from_fname(fname, config_name="analyze", suffix="_pilr"):
+    fname = fname.split(suffix)[0]
+    seed_name = fname.split("_")[-1].split(".")[0]
+    cellid = fname.split("_")[-3]
+    ch = fname.split(f"{config_name}_")[-1].split(f"_{cellid}")[0]
+    return cellid, ch, seed_name
+
+
+def get_correlations_between_average_PILRs(average_pilr_dict, channel_name_dict, save_dir):
+    # Get correlations between average PILRs
+    df = pd.DataFrame(
+        index=channel_name_dict.values(),
+        columns=channel_name_dict.values(),
+        dtype=float,
+    )
+
+    for ch_ind, ch_name in channel_name_dict.items():
+        if ch_ind not in average_pilr_dict:
+            continue
+        pilr1 = average_pilr_dict[ch_ind].ravel()
+        pilr1 = pilr1 / np.max(pilr1)
+        for ch_ind2, ch_name2 in channel_name_dict.items():
+            if ch_ind2 not in average_pilr_dict:
+                continue
+            pilr2 = average_pilr_dict[ch_ind2].ravel()
+            pilr2 = pilr2 / np.max(pilr2)
+            df.loc[ch_name, ch_name2] = np.corrcoef(pilr1, pilr2)[0, 1]
+
+    df.to_csv(save_dir / "average_PILR_correlations.csv")
+
+    mask = np.zeros_like(df, dtype=bool)
+    mask[np.triu_indices_from(mask)] = True
+
+    if save_dir is not None:
+
+        plt.close("all")
+
+        sns.heatmap(
+            df,
+            annot=True,
+            cmap="cool",
+            mask=mask,
+        )
+        plt.savefig(
+            save_dir / "PILR_correlation_bias.png",
+            dpi=300,
+            bbox_inches="tight",
+        )
+
+
+def get_individual_PILRs_from_images(pilr_img_folder, channel_name_dict):
+    # Get the PILRs for each channel from the images
+    pass

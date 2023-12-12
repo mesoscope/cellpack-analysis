@@ -1,6 +1,9 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
+import seaborn as sns
+from aicsimageio.aics_image import AICSImage
+
 
 def save_PILR_image(
     avg_gfp,
@@ -142,27 +145,60 @@ def make_individual_PILR_heatmap(
     vmax=0.01,
     drawlines=True,
     cmap="PuOr",
+    ch_labels=None,
+    **kwargs,
 ):
     s = 0
     mx = -df_corr.values
-    n = int(len(df_corr) / 115) if len(df_corr) > 115 else 5
-    fig, ax = plt.subplots(1, 1, figsize=(n, n))
-    ax.imshow(mx, vmin=vmin, vmax=vmax, cmap=cmap)
-    if drawlines:
-        for ch in ch_list:
-            try:
-                df_ch = df_corr.loc[ch]
-                if df_ch.ndim == 1:
-                    s += 1
-                else:
-                    s += df_ch.shape[0]
+    ax = sns.heatmap(mx, vmin=vmin, vmax=vmax, cmap=cmap, **kwargs)
+    fig = ax.get_figure()
+    xmin, xmax = ax.get_xlim()
+    ymin, ymax = ax.get_ylim()
+    # get equally spaced x and y ticks
+    xticks = np.linspace(xmin, xmax, len(ch_list) + 1)
+    xticks = (xticks[1:] + xticks[:-1]) / 2
+
+    yticks = np.linspace(ymin, ymax, len(ch_list) + 1)
+    yticks = (yticks[1:] + yticks[:-1]) / 2
+    yticks = yticks[::-1]
+
+    # set the ticks
+    ax.set_xticks(xticks)
+    ax.set_yticks(yticks)
+    # set the tick labels
+    ch_labels = ch_labels if ch_labels is not None else ch_list
+    ax.set_xticklabels(ch_list, rotation=45)
+    ax.set_yticklabels(ch_list, rotation=0)
+
+    for ch in ch_list:
+        try:
+            df_ch = df_corr.loc[ch]
+            if df_ch.ndim == 1:
+                s += 1
+            else:
+                s += df_ch.shape[0]
+            if drawlines:
                 ax.axvline(x=s, color="black", lw=1)
                 ax.axhline(y=s, color="black", lw=1)
-            except:
-                pass
-    ax.axis("off")
+        except:
+            pass
+    # ax.axis("off")
     plt.tight_layout()
     if save_dir is not None:
         fig.savefig(save_dir / f"individual_correlations{suffix}.png", dpi=300)
     plt.show()
     return fig, ax
+
+
+def save_PILR_as_tiff(pilr, save_dir, fname, writer):
+    writer.save(
+        pilr.astype(np.float32),
+        str(save_dir / f"{fname}.ome.tiff"),
+    )
+
+
+def read_PILR_from_tiff(fname):
+
+    pilr = AICSImage(fname)
+
+    return pilr.data.squeeze()
