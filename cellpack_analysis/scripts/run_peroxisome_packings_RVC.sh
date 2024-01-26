@@ -7,11 +7,11 @@ python /allen/aics/animated-cell/Saurabh/cellpack-analysis/cellpack_analysis/scr
 --generated_recipe_path "/allen/aics/animated-cell/Saurabh/cellpack-analysis/data/generated_recipes/peroxisome_RVC" \
 --datadir "/allen/aics/animated-cell/Saurabh/cellpack-analysis/data/" \
 --recipe_template_path "/allen/aics/animated-cell/Saurabh/cellpack-analysis/data/templates/peroxisome_variable_template.json" \
---num_processes 16 \
+--num_processes 1 \
 --run_packings \
---skip_completed \
 --generate_recipes \
 --use_mean_cell \
+--skip_completed \
+--use_cellid_as_seed \
 # --dry_run \
-# --use_cellid_as_seed \
 # --num_packings 4 \

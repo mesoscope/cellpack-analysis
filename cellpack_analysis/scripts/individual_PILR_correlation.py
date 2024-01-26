@@ -48,7 +48,7 @@ def save_individual_PILR_images(individual_PILR_dict, cellid_list, base_folder):
             # save pilr as ome.tiff
             writer.save(
                 pilr.astype(np.float32),
-                str(save_dir / f"{ch}_{cellid}.ome.tif"),
+                str(save_dir / f"{ch}_{cellid}.ome.tiff"),
             )
             save_PILR_image(
                 pilr,
@@ -59,26 +59,38 @@ def save_individual_PILR_images(individual_PILR_dict, cellid_list, base_folder):
             )
 
 
+# %% create new dataframe
+def create_df_for_correlations(individual_PILR_dict, cellid_list):
+    df = pd.DataFrame(
+        index=pd.MultiIndex.from_product(
+            [individual_PILR_dict.keys(), cellid_list], names=["channel", "cellid"]
+        ),
+        columns=pd.MultiIndex.from_product(
+            [individual_PILR_dict.keys(), cellid_list], names=["channel", "cellid"]
+        ),
+    )
+    print("Created new dataframe for correlations")
+    return df
+
+
 # %% [markdown]
 # #### try to load previously calculated correlations
-def initialize_corr_df(individual_PILR_dict, cellid_list, base_folder):
-    try:
-        df = pd.read_csv(
-            base_folder / "individual_PILR_corr.csv", index_col=[0, 1], header=[0, 1]
-        )
+def initialize_corr_df(individual_PILR_dict, cellid_list, base_folder, create_new=True):
+    if create_new:
+        df = create_df_for_correlations(individual_PILR_dict, cellid_list)  
+    else:
+        df_path = base_folder / "individual_PILR_corr.csv"
+        if df_path.exists() and not create_new:
+            df = pd.read_csv(
+                base_folder / "individual_PILR_corr.csv", index_col=[0, 1], header=[0, 1]
+            )
         # set 0 values to nan
-        df[df == 0] = np.nan
-        print("Loaded previously calculated correlations")
-    except FileNotFoundError:
-        df = pd.DataFrame(
-            index=pd.MultiIndex.from_product(
-                [individual_PILR_dict.keys(), cellid_list], names=["channel", "cellid"]
-            ),
-            columns=pd.MultiIndex.from_product(
-                [individual_PILR_dict.keys(), cellid_list], names=["channel", "cellid"]
-            ),
-        )
-        print("Created new dataframe for correlations")
+            df[df == 0] = np.nan
+            print("Loaded previously calculated correlations")
+        else:
+            print("No previously calculated correlations found, creating new dataframe")
+            df = create_df_for_correlations(individual_PILR_dict, cellid_list)
+
     df.index = df.index.set_levels(df.index.levels[1].astype(str), level=1)
     df.columns = df.columns.set_levels(df.columns.levels[1].astype(str), level=1)
 
@@ -88,7 +100,7 @@ def initialize_corr_df(individual_PILR_dict, cellid_list, base_folder):
 # %% [markdown]
 # #### calculate cross correlations between pilrs
 def calculate_cross_correlations(individual_PILR_dict, cellid_list, base_folder):
-    df = initialize_corr_df(individual_PILR_dict, cellid_list, base_folder)
+    df = initialize_corr_df(individual_PILR_dict, cellid_list, base_folder, create_new=True)
     cellid_list_str = [str(cellid) for cellid in cellid_list]
     for ch1, pilr_list1 in individual_PILR_dict.items():
         for ch2, pilr_list2 in individual_PILR_dict.items():
@@ -96,18 +108,19 @@ def calculate_cross_correlations(individual_PILR_dict, cellid_list, base_folder)
             for cellid1, pilr1 in tqdm(
                 zip(cellid_list_str, pilr_list1), total=len(cellid_list_str)
             ):
-                pilr1 = pilr1[pilr1.shape[0] // 2 :, :].ravel()
+                masked_pilr1 = pilr1[(pilr1.shape[0] // 2) :, :].flatten()
                 for cellid2, pilr2 in zip(cellid_list_str, pilr_list2):
                     if df.loc[(ch1, cellid1), (ch2, cellid2)] is np.nan:
-                        if ch1 == ch2 and cellid1 == cellid2:
+                        if (ch1 == ch2) and (cellid1 == cellid2):
                             df.loc[(ch1, cellid1), (ch2, cellid2)] = 1
                             df.loc[(ch2, cellid2), (ch1, cellid1)] = 1
-                            continue
-                        pilr2 = pilr2[pilr2.shape[0] // 2 :, :].ravel()
-                        corr_val = pearsonr(pilr1, pilr2)[0]
-                        df.loc[(ch1, cellid1), (ch2, cellid2)] = corr_val
-                        df.loc[(ch2, cellid2), (ch1, cellid1)] = corr_val
+                        else:
+                            masked_pilr2 = pilr2[(pilr2.shape[0] // 2) :, :].flatten()
+                            corr_val = pearsonr(masked_pilr1, masked_pilr2)[0]
+                            df.loc[(ch1, cellid1), (ch2, cellid2)] = corr_val
+                            df.loc[(ch2, cellid2), (ch1, cellid1)] = corr_val
         df.to_csv(base_folder / "individual_PILR_corr.csv")
+    df.to_csv(base_folder / "individual_PILR_corr.csv")
 
 
 # %%
@@ -136,6 +149,12 @@ if __name__ == "__main__":
         default=False,
         help="Save individual images",
     )
+    parser.add_argument(
+        "--get_correlations",
+        action="store_true",
+        default=False,
+        help="Get correlations",
+    )
 
     args = parser.parse_args()
     base_folder = Path(args.base_folder)
@@ -147,4 +166,5 @@ if __name__ == "__main__":
     if args.save_individual_images:
         save_individual_PILR_images(individual_pilr_dict, cellid_list, base_folder)
 
-    calculate_cross_correlations(individual_pilr_dict, cellid_list, base_folder)
+    if args.get_correlations:
+        calculate_cross_correlations(individual_pilr_dict, cellid_list, base_folder)

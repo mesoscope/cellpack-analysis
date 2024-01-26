@@ -28,10 +28,10 @@ NUM_CELLS = 0  # if 0, will use all cells
 RULE_LIST = [
     "random",
     # "surface_gradient_nucleus_weak",
-    "surface_gradient_nucleus_moderate",
+    # "surface_gradient_nucleus_moderate",
     # "surface_gradient_nucleus_strong",
     # "surface_gradient_membrane_weak",
-    "surface_gradient_membrane_moderate",
+    # "surface_gradient_membrane_moderate",
     # "surface_gradient_membrane_strong",
     # "surface_gradient_nucleus_weak_invert",
     # "surface_gradient_nucleus_moderate_invert",
@@ -42,7 +42,7 @@ RULE_LIST = [
     # "planar_gradient_Z_weak",
     # "planar_gradient_Z_moderate",
     # "planar_gradient_Z_strong",
-    "planar_gradient_Y_moderate",
+    # "planar_gradient_Y_moderate",
 ]
 
 
@@ -424,7 +424,6 @@ def check_run_this_recipe(recipe_path, config_data, structure_name, check_type="
                 f"{prefix}_{recipe_data['name']}_{config_data['name']}_{recipe_data['version']}_seed_*.ome.tiff"
             )
         )
-    print(len(result_file_list))
     num_existing_files = sum([result_file.exists() for result_file in result_file_list])
 
     return num_existing_files == number_of_packings
@@ -465,7 +464,7 @@ def run_packing_workflow(
     count = 0
     failed_count = 0
     futures = []
-    with concurrent.futures.ProcessPoolExecutor(max_workers=num_processes) as executor:
+    if num_processes == 1:
         for recipe_path in input_recipes_to_use:
             if check_run_this_recipe(
                 recipe_path, config_data, structure_name, check_type="image"
@@ -480,14 +479,8 @@ def run_packing_workflow(
             if dry_run:
                 continue
 
-            futures.append(
-                executor.submit(run_single_packing, recipe_path, config_path)
-            )
-            print(f"Submitted {recipe_path}")
-
-        print(f"Submitted {len(futures)} jobs, {skipped_count} skipped")
-        for future in concurrent.futures.as_completed(futures):
-            if future.result():
+            result = run_single_packing(recipe_path, config_path)
+            if result:
                 count += 1
             else:
                 failed_count += 1
@@ -508,6 +501,50 @@ def run_packing_workflow(
                 f"Estimated time left: {time_left:.2f}s",
             )
             gc.collect()
+    else:
+        with concurrent.futures.ProcessPoolExecutor(max_workers=num_processes) as executor:
+            for recipe_path in input_recipes_to_use:
+                if check_run_this_recipe(
+                    recipe_path, config_data, structure_name, check_type="image"
+                ):
+                    if skip_completed:
+                        skipped_count += 1
+                        print(
+                            f"Skipping {recipe_path} because result file exists, {skipped_count} skipped"
+                        )
+                        continue
+
+                if dry_run:
+                    continue
+
+                futures.append(
+                    executor.submit(run_single_packing, recipe_path, config_path)
+                )
+                print(f"Submitted {recipe_path}")
+
+            print(f"Submitted {len(futures)} jobs, {skipped_count} skipped")
+            for future in concurrent.futures.as_completed(futures):
+                if future.result():
+                    count += 1
+                else:
+                    failed_count += 1
+                done = count + skipped_count
+                remaining = num_files - done - failed_count
+                print(
+                    f"Completed: {count}, Failed: {failed_count}, Skipped: {skipped_count},",
+                    f"Total: {num_files}, Done: {done}, Remaining: {remaining}",
+                )
+                t = time() - start
+                per_count = np.inf
+                time_left = np.inf
+                if count > 0:
+                    per_count = t / count
+                    time_left = per_count * remaining
+                print(
+                    f"Total time: {t:.2f}s, Time per run: {per_count:.2f}s,",
+                    f"Estimated time left: {time_left:.2f}s",
+                )
+                gc.collect()
 
     return count
 

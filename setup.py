@@ -54,6 +54,7 @@ requirements = [
     "scikit-learn",
     "seaborn",
     "tqdm",
+    "trimesh",
     "umap-learn",
     "vtk==9.0.1",
 ]

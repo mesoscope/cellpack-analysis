@@ -6,3 +6,5 @@ python $home/cellpack-analysis/cellpack_analysis/scripts/individual_PILR_correla
 --structure_id $STRUCTURE_ID \
 --structure_name $STRUCTURE_NAME \
 --base_folder $home/cellpack-analysis/results/$STRUCTURE_ID/$FOLDER_ID/ \
+--save_individual_images \
+# --get_correlations \
