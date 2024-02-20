@@ -12,10 +12,10 @@ classifiers=[
     "Programming Language :: Python :: 3.8",
 ]
 description="Analysis of cellpack simulations"
-license = {file = "LICENSE",text = "Allen Institute Software License"}
+license = {file = "LICENSE"}
 name="cellpack_analysis"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.9,<3.12"
 urls = {Repository = "https://github.com/mesoscope/cellpack-analysis"}
 version = "0.0.1"
 dependencies = [
@@ -36,9 +36,11 @@ dependencies = [
     "tqdm",
     "trimesh",
     "umap-learn",
-    "vtk==9.0.1",
+    "vtk",
 ]
-keywords = ["cellpack_analysis"]
+keywords = [
+    "cellpack_analysis",
+]
 
 [project.optional-dependencies]
 setup = [
@@ -120,3 +122,18 @@ my_example = "scripts.cellpack_PILR"
 requires = ["pdm-backend"]
 build-backend = "pdm.backend"
 
+[tool.flake8]
+ignore = [
+    "E501",
+    "E277",
+    "W503",
+    "E203",
+]
+max-line-length = 88
+exclude = [
+    "**/data/**",
+    "**/results/**",
+]
+
+[tool.pdm]
+distribution = true
