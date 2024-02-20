@@ -163,9 +163,9 @@ def get_embeddings(individual_PILR_dict, metric, channels_for_embedding=None, **
 def get_average_shape_mesh_objects(mesh_folder=Path("../../data/average_shape_meshes")):
     # Get the mesh objects for the average shape
     mesh_dict = {}
-    for shape in ["NUC", "MEM"]:
+    for shape in ["nuc", "mem"]:
         reader = vtk.vtkOBJReader()
-        reader.SetFileName(str(mesh_folder / f"mean_{shape}.obj"))
+        reader.SetFileName(str(mesh_folder / f"{shape}_mesh_mean.obj"))
         reader.Update()
         mesh_dict[shape] = reader.GetOutput()
     return mesh_dict
@@ -173,7 +173,7 @@ def get_average_shape_mesh_objects(mesh_folder=Path("../../data/average_shape_me
 
 def get_domain(mesh_dict):
     # Get the domain for the average shape
-    domain, _ = cytoparam.voxelize_meshes([mesh_dict["MEM"], mesh_dict["NUC"]])
+    domain, _ = cytoparam.voxelize_meshes([mesh_dict["mem"], mesh_dict["nuc"]])
     return domain
 
 
