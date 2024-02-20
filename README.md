@@ -12,6 +12,7 @@ This code is intended to run using a python installation with some other librari
 2. Create a conda environment: `conda create -n cellpack-analysis python=3.9`
 3. Activate the conda environment: `conda activate cellpack-analysis`
 4. Install packages: `pip install -e .`
+Note: The libraries BLAS and LAPACK are required for some functionality
 
 ## Usage
 
