@@ -28,6 +28,7 @@ dev_requirements = [
     "bump2version>=1.0.1",
     "coverage>=5.1",
     "ipython>=7.15.0",
+    "ipykernel",
     "m2r2>=0.2.7",
     "pytest-runner>=5.2",
     "Sphinx>=3.4.3",
@@ -41,6 +42,7 @@ requirements = [
     "aicscytoparam",
     "aicsimageio",
     # "cellpack",
+    "cvapipe_analysis",
     "matplotlib",
     "numba>=0.57",
     "numpy",
@@ -53,7 +55,9 @@ requirements = [
     "scikit-learn",
     "seaborn",
     "tqdm",
-    "vtk",
+    "trimesh",
+    "umap-learn",
+    "vtk==9.0.1",
 ]
 
 extra_requirements = {

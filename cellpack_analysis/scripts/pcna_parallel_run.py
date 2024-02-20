@@ -5,6 +5,7 @@ import numpy as np
 import concurrent.futures
 import multiprocessing
 from time import sleep, time
+import subprocess
 from pathlib import Path
 import gc
 
@@ -85,8 +86,8 @@ rules_to_use = [
     # "planar_gradient_0deg",
     # "planar_gradient_45deg",
     # "planar_gradient_90deg",
-    # "surface_gradient",
-    "random",
+    "surface_gradient",
+    # "random",
     # "radial_gradient",
 ]
 
@@ -123,8 +124,18 @@ with open("input_files_to_use.txt", "w") as f:
 
 def run_packing(recipe_path, config_path=config_path):
     try:
-        os.system(f"pack -r {recipe_path} -c {config_path}")
-        return True
+        print(f"Running {recipe_path}")
+        result = subprocess.run(
+            [
+                "pack",
+                "-r",
+                recipe_path,
+                "-c",
+                config_path,
+            ],
+            check=True,
+        )
+        return result.returncode == 0
     except Exception as e:
         print(e)
         return False
@@ -134,7 +145,8 @@ out_path = Path("/allen/aics/animated-cell/Saurabh/cellpack/out/pcna/spheresSST"
 
 # run in parallel
 skip_completed = True
-print(f"Found {len(input_files_to_use)} files")
+num_files = len(input_files_to_use)
+print(f"Found {num_files} files")
 start = time()
 futures = []
 if RUN_PACKINGS:
@@ -142,27 +154,30 @@ if RUN_PACKINGS:
     num_processes = np.min(
         [
             int(np.floor(0.8 * multiprocessing.cpu_count())),
-            len(input_files_to_use),
+            num_files,
         ]
     )
-    num_processes = 8
+    num_processes = 16
     skipped_count = 0
     count = 0
     failed_count = 0
-    num_files = len(input_files_to_use)
     with concurrent.futures.ProcessPoolExecutor(max_workers=num_processes) as executor:
         for file in input_files_to_use:
             fname = Path(file).stem
             fname = "".join(fname.split("_rotation"))
-            simularium_file = out_path / f"results_seed_0_pcna_analyze_{fname}_results.simularium"
+            simularium_file = (
+                out_path / f"results_pcna_analyze_{fname}_seed_0.simularium"
+            )
             if simularium_file.exists():
                 if skip_completed:
                     skipped_count += 1
-                    print(f"Skipping {file} because simularium file exists, {skipped_count} skipped")
+                    print(
+                        f"Skipping {file} because simularium file exists, {skipped_count} skipped"
+                    )
                     continue
-                else:
-                    # remove simularium file
-                    os.remove(simularium_file)
+                # else:
+                # remove simularium file
+                # os.remove(simularium_file)
             # sleep_time = np.random.random_sample() * 0.01
             # sleep(sleep_time)
             print(f"Running {file}")
@@ -177,11 +192,20 @@ if RUN_PACKINGS:
                 failed_count += 1
             done = count + skipped_count
             remaining = num_files - done - failed_count
-            print(f"Completed: {count}, Total: {num_files}, Failed: {failed_count}, Done: {done}, Remaining: {remaining}")
+            print(
+                f"Completed: {count}, Failed: {failed_count}, Skipped: {skipped_count},",
+                f"Total: {num_files}, Done: {done}, Remaining: {remaining}",
+            )
             t = time() - start
-            per_count = t / count
-            time_left = per_count * remaining
-            print(f"Total time: {t:.2f} seconds, Time per run: {per_count:.2f} seconds, Estimated time left: {time_left:.2f} seconds")
+            per_count = np.inf
+            time_left = np.inf
+            if count > 0:
+                per_count = t / count
+                time_left = per_count * remaining
+            print(
+                f"Total time: {t:.2f} seconds, Time per run: {per_count:.2f} seconds,",
+                f"Estimated time left: {time_left:.2f} seconds",
+            )
             gc.collect()
 
 print(f"Finished running {len(futures)} files in {time() - start:.2f} seconds")
