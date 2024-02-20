@@ -7,14 +7,14 @@ from scipy.stats import wasserstein_distance
 
 
 def combine_multiple_seeds_to_dictionary(
-    file_path,
+    data_folder,
     ingredient_key="membrane_interior_peroxisome",
-    prefix="positions_",
+    search_prefix="positions_",
     save_name="positions_peroxisome_analyze_random_mean",
 ):
-    file_path = Path(file_path)
+    data_folder = Path(data_folder)
     output_dict = {}
-    for file in file_path.glob(f"{prefix}*.json"):
+    for file in data_folder.glob(f"{search_prefix}*.json"):
         if save_name in file.name:
             continue
         seed = int(file.stem.split("_")[-1])
@@ -26,7 +26,7 @@ def combine_multiple_seeds_to_dictionary(
                 if ingr_key == ingredient_key:
                     output_dict[f"{seed}_{seed_key}"][ingr_key] = positions
 
-    with open(file_path / f"{save_name}.json", "w") as f:
+    with open(data_folder / f"{save_name}.json", "w") as f:
         json.dump(output_dict, f, indent=4)
 
     return output_dict
