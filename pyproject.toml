@@ -116,8 +116,6 @@ all = [
     "wheel>=0.34.2",
 ]
 
-[project.scripts]
-my_example = "scripts.cellpack_PILR"
 [build-system]
 requires = ["pdm-backend"]
 build-backend = "pdm.backend"
