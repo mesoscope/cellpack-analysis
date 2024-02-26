@@ -6,6 +6,7 @@ import vtk
 import concurrent.futures
 
 # NOTE: Raw images should be downloaded prior to running this script
+# Run this script using: `python get_meshes_from_raw_images.py`
 
 structure_name = "RAB5A"
 datadir = Path(
