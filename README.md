@@ -9,9 +9,13 @@ This repository contains tools that analyze cellPACK generated synthetic data an
 This code is intended to run using a python installation with some other libraries. Using a conda environment is recommended. The following instructions assume that you have conda installed. If you do not, you can install it by following the instructions at https://docs.conda.io/projects/conda/en/latest/user-guide/install/
 
 1. Install cellPACK by following instructions at https://github.com/mesoscope/cellpack
-2. Create a conda environment: `conda create -n cellpack-analysis python=3.8`
+2. Create a conda environment: `conda create -n cellpack-analysis python=3.9`
 3. Activate the conda environment: `conda activate cellpack-analysis`
 4. Install packages: `pip install -e .`
+5. Install `pyshtools`: `pip install pyshtools==4.10`
+6. Clone the `decoupling` branch of `cvapipe_analysis` repository here: https://github.com/AllenCell/cvapipe_analysis/tree/decoupling
+7. Navigate to the cloned directory and install `cvapipe_analysis`: `pip install -e .`
+
 Note: The libraries BLAS and LAPACK are required for some functionality
 
 ## Usage
