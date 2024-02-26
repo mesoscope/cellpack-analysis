@@ -39,10 +39,7 @@ dev_requirements = [
 ]
 
 requirements = [
-    "aicscytoparam",
     "aicsimageio",
-    # "cellpack",
-    "cvapipe_analysis",
     "matplotlib",
     "numba>=0.57",
     "numpy",
@@ -57,7 +54,6 @@ requirements = [
     "tqdm",
     "trimesh",
     "umap-learn",
-    "vtk==9.0.1",
 ]
 
 extra_requirements = {
@@ -78,7 +74,7 @@ setup(
         "Intended Audience :: Developers",
         "License :: Free for non-commercial use",
         "Natural Language :: English",
-        "Programming Language :: Python :: 3.8",
+        "Programming Language :: Python :: 3.9",
     ],
     description="Analysis of cellpack simulations",
     entry_points={
@@ -94,7 +90,7 @@ setup(
     keywords="cellpack_analysis",
     name="cellpack_analysis",
     packages=find_packages(exclude=["tests", "*.tests", "*.tests.*"]),
-    python_requires=">=3.8,<3.12",
+    python_requires=">=3.9",
     setup_requires=setup_requirements,
     test_suite="aicscytoparam/tests",
     tests_require=test_requirements,
