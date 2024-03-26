@@ -9,10 +9,10 @@ import subprocess
 from pathlib import Path
 import gc
 
-# rules = [
+rules = [
 #     "random",
 #     "radial_gradient",
-#     "surface_gradient",
+    "surface_gradient",
 #     "planar_gradient_0deg",
 #     "planar_gradient_15deg",
 #     "planar_gradient_30deg",
@@ -20,9 +20,9 @@ import gc
 #     "planar_gradient_60deg",
 #     "planar_gradient_75deg",
 #     "planar_gradient_90deg",
-# ]
+]
 
-CREATE_FILES = False
+CREATE_FILES = True
 RUN_PACKINGS = True
 
 recipe_template_path = (
@@ -93,8 +93,8 @@ rules_to_use = [
 
 shape_rotations = [
     "rotation_0",
-    "rotation_1",
-    "rotation_2",
+    # "rotation_1",
+    # "rotation_2",
 ]
 
 files = os.listdir(generated_recipe_path)
@@ -144,7 +144,7 @@ def run_packing(recipe_path, config_path=config_path):
 out_path = Path("/allen/aics/animated-cell/Saurabh/cellpack/out/pcna/spheresSST")
 
 # run in parallel
-skip_completed = True
+skip_completed = False
 num_files = len(input_files_to_use)
 print(f"Found {num_files} files")
 start = time()

@@ -46,7 +46,9 @@ requirements = [
     "pacmap",
     "pandas",
     "pathlib",
+    "pyshtools=4.10.0"
     "quilt3",
+    "rtree",
     "scipy",
     "scikit-image>=0.15.0",
     "scikit-learn",

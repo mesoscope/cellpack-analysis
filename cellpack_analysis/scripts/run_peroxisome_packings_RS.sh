@@ -2,11 +2,11 @@
 python /allen/aics/animated-cell/Saurabh/cellpack-analysis/cellpack_analysis/scripts/run_packings_for_structure.py \
 --structure_name "peroxisome" \
 --structure_id "SLC25A17" \
---out_folder "/allen/aics/animated-cell/Saurabh/cellpack-analysis/data/packing_outputs/stochastic_variation_analysis/shape" \
---config_path "/allen/aics/animated-cell/Saurabh/cellpack-analysis/data/configs/peroxisome_packing_config_shape_noimage.json" \
---generated_recipe_path "/allen/aics/animated-cell/Saurabh/cellpack-analysis/data/generated_recipes/stochastic_variation_analysis/peroxisome_shape" \
+--out_folder "/allen/aics/animated-cell/Saurabh/cellpack-analysis/data/packing_outputs/full_variance_data/RS" \
+--config_path "/allen/aics/animated-cell/Saurabh/cellpack-analysis/data/configs/peroxisome_packing_config_actual_shape.json" \
+--generated_recipe_path "/allen/aics/animated-cell/Saurabh/cellpack-analysis/data/generated_recipes/full_variance_data/" \
 --datadir "/allen/aics/animated-cell/Saurabh/cellpack-analysis/data/" \
---recipe_template_path "/allen/aics/animated-cell/Saurabh/cellpack-analysis/data/templates/peroxisome_mean_template.json" \
+--recipe_template_path "/allen/aics/animated-cell/Saurabh/cellpack-analysis/data/templates/peroxisome_mean_count_and_size_template.json" \
 --num_processes 32 \
 --run_packings \
 --skip_completed \

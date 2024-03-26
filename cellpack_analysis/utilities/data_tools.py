@@ -10,14 +10,20 @@ def combine_multiple_seeds_to_dictionary(
     data_folder,
     ingredient_key="membrane_interior_peroxisome",
     search_prefix="positions_",
+    rule_name="random",
     save_name="positions_peroxisome_analyze_random_mean",
 ):
     data_folder = Path(data_folder)
     output_dict = {}
     for file in data_folder.glob(f"{search_prefix}*.json"):
+        if rule_name not in file.name:
+            continue
         if save_name in file.name:
             continue
-        seed = int(file.stem.split("_")[-1])
+        if ("invert" not in rule_name) and ("invert" in file.name):
+            continue
+
+        seed = int(file.stem.split("_")[-1].split("_")[0])
         with open(file) as j:
             raw_data = json.load(j)
         for seed_key, ingr_dict in raw_data.items():
@@ -33,7 +39,7 @@ def combine_multiple_seeds_to_dictionary(
 
 
 def get_positions_dictionary_from_file(
-    filename, ingredient_key="membrane_interior_peroxisome"
+    filename, ingredient_key="membrane_interior_peroxisome", drop_random_seed=False
 ):
     """
     Retrieve positions dictionary from a file.
@@ -47,7 +53,10 @@ def get_positions_dictionary_from_file(
     """
     with open(filename) as j:
         raw_data = json.load(j)
-    positions = {k: np.array(v[ingredient_key]) for k, v in raw_data.items()}
+    if drop_random_seed:
+        positions = {k.split("_")[0]: np.array(v[ingredient_key]) for k, v in raw_data.items()}
+    else:
+        positions = {k: np.array(v[ingredient_key]) for k, v in raw_data.items()}
 
     return positions
 

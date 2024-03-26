@@ -8,11 +8,11 @@ import concurrent.futures
 # NOTE: Raw images should be downloaded prior to running this script
 # Run this script using: `python get_meshes_from_raw_images.py`
 
-structure_name = "RAB5A"
+structure_name = "SLC25A17"
 datadir = Path(
     f"/allen/aics/animated-cell/Saurabh/cellpack-analysis/data/structure_data/{structure_name}"
 )
-image_path = datadir / "sample_8d/raw_imgs_for_PILR/"
+image_path = datadir / "full/raw_imgs_for_PILR/"
 file_glob = image_path.glob("*.tiff")
 
 save_folder = datadir / "meshes"

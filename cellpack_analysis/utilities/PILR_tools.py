@@ -1,4 +1,3 @@
-from pathlib import Path
 from aicscytoparam import cytoparam
 from aicsimageio.aics_image import AICSImage
 import numpy as np
@@ -7,10 +6,14 @@ from aicsshparam import shtools
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-import vtk
 import pacmap
 import umap
 from sklearn.decomposition import PCA
+
+from cellpack_analysis.utilities.mesh_tools import (
+    calculate_scaled_distances_from_mesh,
+    get_average_shape_mesh_objects,
+)
 
 
 def get_pilr_for_single_image(file, ch_name, raw_image_channel="SLC25A17"):
@@ -160,17 +163,6 @@ def get_embeddings(individual_PILR_dict, metric, channels_for_embedding=None, **
     return embedding_dict, embedding
 
 
-def get_average_shape_mesh_objects(mesh_folder=Path("../../data/average_shape_meshes")):
-    # Get the mesh objects for the average shape
-    mesh_dict = {}
-    for shape in ["nuc", "mem"]:
-        reader = vtk.vtkOBJReader()
-        reader.SetFileName(str(mesh_folder / f"{shape}_mesh_mean.obj"))
-        reader.Update()
-        mesh_dict[shape] = reader.GetOutput()
-    return mesh_dict
-
-
 def get_domain(mesh_dict):
     # Get the domain for the average shape
     domain, _ = cytoparam.voxelize_meshes([mesh_dict["mem"], mesh_dict["nuc"]])
@@ -192,13 +184,11 @@ def get_parametrized_coords_for_avg_shape(
 
 def morph_PILRs_into_average_shape(
     pilr_list,
+    mesh_dict,
     domain=None,
     coords_param=None,
-    mesh_dict=None,
 ):
     # Morph the PILRs into the average shape
-    if mesh_dict is None:
-        mesh_dict = get_average_shape_mesh_objects()
     if domain is None:
         domain = get_domain(mesh_dict)
     if coords_param is None:
@@ -236,7 +226,9 @@ def get_cellid_ch_seed_from_fname(fname, config_name="analyze", suffix="_pilr"):
     return cellid, ch, seed_name
 
 
-def get_correlations_between_average_PILRs(average_pilr_dict, channel_name_dict, save_dir):
+def get_correlations_between_average_PILRs(
+    average_pilr_dict, channel_name_dict, save_dir
+):
     # Get correlations between average PILRs
     df = pd.DataFrame(
         index=channel_name_dict.values(),
@@ -281,3 +273,52 @@ def get_correlations_between_average_PILRs(average_pilr_dict, channel_name_dict,
 def get_individual_PILRs_from_images(pilr_img_folder, channel_name_dict):
     # Get the PILRs for each channel from the images
     pass
+
+
+def cartesian_to_sph(xyz, center=None):
+    """
+    Converts cartesian to spherical coordinates
+    """
+    if center is None:
+        center = np.zeros(3)
+    xyz = xyz - center
+    sph_pts = np.zeros(xyz.shape)
+    xy = xyz[:, 0] ** 2 + xyz[:, 1] ** 2
+    sph_pts[:, 0] = np.sqrt(xy + xyz[:, 2] ** 2)
+    sph_pts[:, 1] = np.arctan2(np.sqrt(xy), xyz[:, 2])
+    sph_pts[:, 2] = np.arctan2(xyz[:, 1], xyz[:, 0])
+
+    return sph_pts
+
+
+def calculate_simplified_PILR(positions, nuc_mesh, mem_mesh, scale=True):
+    """
+    Calculate the simplified PILR (Parameterized Intracellular Location Representation)
+    value based on the given positions, inner mesh, and outer mesh.
+
+    Parameters
+    ----------
+    positions : list
+        List of positions.
+    nuc_mesh : Mesh
+        Inner mesh object.
+    mem_mesh : Mesh
+        Outer mesh object.
+    scale : bool, optional
+        Flag indicating whether to scale the PILR value, by default True.
+
+    Returns
+    -------
+    spilr : float
+        Simplified PILR value.
+    """
+    # Convert positions to spherical coordinates
+    sph_positions = cartesian_to_sph(positions)
+
+    (
+        scaled_radial_position,
+        distance_between_surfaces,
+        inner_surface_distance,
+    ) = calculate_scaled_distances_from_mesh(sph_positions, nuc_mesh, mem_mesh)
+
+    return spilr

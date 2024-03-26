@@ -8,6 +8,7 @@ from time import time
 from pathlib import Path
 import pandas as pd
 import argparse
+from datetime import datetime
 
 np.random.seed(42)
 
@@ -26,19 +27,19 @@ NUM_PROCESSES = 32
 NUM_CELLS = 0  # if 0, will use all cells
 
 RULE_LIST = [
-    "random",
+    # "random",
     # "surface_gradient_nucleus_weak",
     # "surface_gradient_nucleus_moderate",
     # "surface_gradient_nucleus_strong",
     # "surface_gradient_membrane_weak",
     # "surface_gradient_membrane_moderate",
-    # "surface_gradient_membrane_strong",
+    "surface_gradient_membrane_strong",
     # "surface_gradient_nucleus_weak_invert",
     # "surface_gradient_nucleus_moderate_invert",
     # "surface_gradient_nucleus_strong_invert",
     # "surface_gradient_membrane_weak_invert",
     # "surface_gradient_membrane_moderate_invert",
-    # "surface_gradient_membrane_strong_invert",
+    "surface_gradient_membrane_strong_invert",
     # "planar_gradient_Z_weak",
     # "planar_gradient_Z_moderate",
     # "planar_gradient_Z_strong",
@@ -82,7 +83,7 @@ def set_paths(
         mesh_path = datadir / f"structure_data/{structure_id}/meshes/"
         grid_path = datadir / f"structure_data/{structure_id}/grids/"
 
-    cellid_df_path = datadir / "8dsphere_ids.csv"
+    cellid_df_path = datadir / "all_cellids.csv"
 
     return (
         recipe_template_path,
@@ -314,19 +315,25 @@ def generate_recipes(
             )
 
 
-def get_cell_ids_to_use(cellid_df_path, structure_id, num_cells=0, use_mean_cell=False):
+def get_cell_ids_to_use(
+    cellid_df_path,
+    structure_id,
+    num_cells=0,
+    use_mean_cell=False,
+    use_cells_in_8d_sphere=True,
+):
     # get cell id list for given structure
     # uses all cells by default
     if use_mean_cell:
         return None
 
     df_cellID = pd.read_csv(cellid_df_path)
-    df_cellID.set_index("structure", inplace=True)
-    all_cellid_as_strings = df_cellID.loc[structure_id, "CellIds"].split(",")
+    if use_cells_in_8d_sphere:
+        df_cellID = df_cellID[df_cellID["8dsphere"]]
 
-    cellid_list = []
-    for cellid in all_cellid_as_strings:
-        cellid_list.append(int(cellid.replace("[", "").replace("]", "")))
+    cellid_list = df_cellID.loc[
+        df_cellID["structure_name"] == structure_id, "CellId"
+    ].values.tolist()
 
     cellid_to_use = cellid_list
     if num_cells > 0:
@@ -371,6 +378,7 @@ def get_recipes_to_use(
     rule_list=RULE_LIST,
     cell_ids_to_use=None,
     use_mean_cell=False,
+    use_cells_in_8d_sphere=True,
 ):
     if use_mean_cell:
         cell_ids_to_use = ["mean"]
@@ -380,6 +388,7 @@ def get_recipes_to_use(
             structure_id=structure_id,
             num_cells=num_cells,
             use_mean_cell=use_mean_cell,
+            use_cells_in_8d_sphere=use_cells_in_8d_sphere,
         )
     input_file_list = list(generated_recipe_path.glob("*.json"))
     input_files_to_use = []
@@ -442,6 +451,7 @@ def run_packing_workflow(
     dry_run=DRY_RUN,
     cell_ids_to_use=None,
     use_mean_cell=False,
+    use_cells_in_8d_sphere=True,
 ):
     input_recipes_to_use, _ = get_recipes_to_use(
         generated_recipe_path=generated_recipe_path,
@@ -450,6 +460,7 @@ def run_packing_workflow(
         num_cells=num_packings,
         cell_ids_to_use=cell_ids_to_use,
         use_mean_cell=use_mean_cell,
+        use_cells_in_8d_sphere=use_cells_in_8d_sphere,
     )
     num_files = len(input_recipes_to_use)
 
@@ -459,6 +470,8 @@ def run_packing_workflow(
 
     # update config file
     config_data = update_config_file(config_path=config_path, output_path=out_path)
+    current_datetime = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_file_path = out_path.parent / f"{structure_name}_log_{current_datetime}.txt"
 
     skipped_count = 0
     count = 0
@@ -484,6 +497,8 @@ def run_packing_workflow(
                 count += 1
             else:
                 failed_count += 1
+                with open(log_file_path, "a") as f:
+                    f.write(f"Failed: {recipe_path}\n")
             done = count + skipped_count
             remaining = num_files - done - failed_count
             print(
@@ -502,7 +517,9 @@ def run_packing_workflow(
             )
             gc.collect()
     else:
-        with concurrent.futures.ProcessPoolExecutor(max_workers=num_processes) as executor:
+        with concurrent.futures.ProcessPoolExecutor(
+            max_workers=num_processes
+        ) as executor:
             for recipe_path in input_recipes_to_use:
                 if check_run_this_recipe(
                     recipe_path, config_data, structure_name, check_type="image"
@@ -528,6 +545,8 @@ def run_packing_workflow(
                     count += 1
                 else:
                     failed_count += 1
+                    with open(log_file_path, "a") as f:
+                        f.write(f"Failed: {recipe_path}\n")
                 done = count + skipped_count
                 remaining = num_files - done - failed_count
                 print(
@@ -643,6 +662,12 @@ if __name__ == "__main__":
         default=False,
         help="If true, will use mean cell",
     )
+    parser.add_argument(
+        "--use_cells_in_8d_sphere",
+        action="store_true",
+        default=False,
+        help="If true, will use cells in 8d sphere",
+    )
 
     args = parser.parse_args()
 
@@ -672,6 +697,7 @@ if __name__ == "__main__":
             structure_id=args.structure_id,
             num_cells=args.num_packings,
             use_mean_cell=args.use_mean_cell,
+            use_cells_in_8d_sphere=args.use_cells_in_8d_sphere,
         )
         generate_recipes(
             cellID_list=cellID_list,
@@ -701,6 +727,7 @@ if __name__ == "__main__":
             dry_run=args.dry_run,
             cell_ids_to_use=cellID_list,
             use_mean_cell=args.use_mean_cell,
+            use_cells_in_8d_sphere=args.use_cells_in_8d_sphere,
         )
 
         print(f"Finished running {count} files in {time() - start:.2f} seconds")
