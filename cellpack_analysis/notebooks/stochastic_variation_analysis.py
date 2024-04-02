@@ -22,8 +22,8 @@ from cellpack_analysis.utilities.analysis_tools import normalize_distances, ripl
 from matplotlib.patches import Circle
 
 # %% set file paths and setup parameters
-base_datadir = Path("/allen/aics/animated-cell/Saurabh/cellpack-analysis/data/")
-base_results_dir = Path("/allen/aics/animated-cell/Saurabh/cellpack-analysis/results/")
+base_datadir = Path(__file__).parents[2] / "data"
+base_results_dir = Path(__file__).parents[2] / "results"
 
 results_dir = base_results_dir / "stochastic_variation_analysis/rules/"
 results_dir.mkdir(exist_ok=True, parents=True)
