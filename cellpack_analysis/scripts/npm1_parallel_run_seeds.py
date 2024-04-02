@@ -1,5 +1,6 @@
 import os
 import json
+import sys
 import pandas as pd
 import numpy as np
 import concurrent.futures
@@ -9,7 +10,7 @@ import subprocess
 from pathlib import Path
 import gc
 
-MAX_NUM_CLUSTERS = 3
+MAX_NUM_CLUSTERS = 5
 
 CREATE_FILES = True
 RUN_PACKINGS = True
@@ -103,7 +104,7 @@ def create_recipe_files(
 
         if clust == 1:
             contents_clust["composition"]["nucleus"]["regions"]["interior"] = [
-                {"object": "seed", "count": 1},
+                {"object": "seed", "count": int(clust)},
             ]
 
             # put cluster randomly
@@ -124,7 +125,7 @@ def create_recipe_files(
 
         if clust == 2:
             contents_clust["composition"]["nucleus"]["regions"]["interior"] = [
-                {"object": "seed", "count": 2}
+                {"object": "seed", "count": int(clust)}
             ]
 
             # put clusters at end points
@@ -136,6 +137,7 @@ def create_recipe_files(
             update_shape_path_and_save_recipe(
                 shape_ids, shape_df, clust, contents_clust, version, output_path
             )
+
         if clust == 3:
             # put 1 cluster at center
             contents_clust["gradients"] = {
@@ -165,6 +167,17 @@ def create_recipe_files(
             ]
 
             version = "center_surface"
+            update_shape_path_and_save_recipe(
+                shape_ids, shape_df, clust, contents_clust, version, output_path
+            )
+
+        if clust > 3:
+            contents_clust["composition"]["nucleus"]["regions"]["interior"] = [
+                {"object": "seed", "count": int(clust)},
+            ]
+
+            # put cluster randomly
+            version = "random"
             update_shape_path_and_save_recipe(
                 shape_ids, shape_df, clust, contents_clust, version, output_path
             )
@@ -217,6 +230,9 @@ def run_packing(recipe_path, config_path=config_path):
 
         return result.returncode == 0
     except Exception as e:
+        with open("failed_recipes.log", "a") as f:
+            f.write(f"{recipe_path}\n")
+            f.write(f"{e}\n")
         print(e)
         return False
 
