@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 
 from pathlib import Path
 
+from scipy.stats import gaussian_kde
 from scipy.spatial.distance import cdist, squareform
 
 from tqdm.notebook import tqdm
@@ -42,16 +43,16 @@ packing_modes = [
     "nucleus_moderate_invert",
 ]
 # %% set recalculate flag
-recalculate = True
+recalculate = False
 # %% set suffix
 # normalization = "cell_diameter"  # options: None, "intracellular_radius", "cell_diameter", "max_distance"
-normalization = None  # options: None, "intracellular_radius", "cell_diameter", "max_distance"
+normalization = "cell_diameter"  # options: None, "intracellular_radius", "cell_diameter", "max_distance"
 if normalization is not None:
     suffix = f"_normalized_{normalization}"
 
-# %% read data from cellpack outputs
+# %% read position data from outputs
 if recalculate:
-    print("Reading data from cellpack outputs")
+    print("Reading position data from outputs")
     all_positions = {}
     for mode in packing_modes:
         print(mode)
@@ -119,6 +120,16 @@ if recalculate_mesh:
             mem_mesh_path = (
                 base_datadir / f"structure_data/SLC25A17/meshes/mem_mesh_{seed}.obj"
             )
+        nuc_grid_distance_path = (
+            base_datadir
+            / f"structure_data/SLC25A17/grid_distances/nuc_distances_{seed}.npy"
+        )
+        mem_grid_distance_path = (
+            base_datadir
+            / f"structure_data/SLC25A17/grid_distances/mem_distances_{seed}.npy"
+        )
+        nuc_grid_distances = np.load(nuc_grid_distance_path)
+        mem_grid_distances = np.load(mem_grid_distance_path)
 
         nuc_mesh = trimesh.load_mesh(str(nuc_mesh_path))
         mem_mesh = trimesh.load_mesh(str(mem_mesh_path))
@@ -137,6 +148,8 @@ if recalculate_mesh:
             "nuc_diameter": nuc_diameter,
             "cell_diameter": cell_diameter,
             "intracellular_radius": intracellular_radius,
+            "nuc_grid_distances": nuc_grid_distances,
+            "mem_grid_distances": mem_grid_distances,
         }
 
     # save mesh information dictionary
@@ -203,22 +216,13 @@ if normalization is not None:
     all_distance_dict = normalize_distances(
         all_distance_dict, normalization, mesh_information_dict
     )
-# %% plot distance distributions
+# %% plot distance PDFs
 print("Plotting distance distributions")
 plt.rcdefaults()
 num_rows = 3
 num_cols = len(packing_modes)
 
 fig, axs = plt.subplots(
-    num_rows,
-    num_cols,
-    figsize=(num_cols * 3, num_rows * 3),
-    dpi=300,
-    sharex="row",
-    sharey="row",
-)
-
-fig_hist, axs_hist = plt.subplots(
     num_rows,
     num_cols,
     figsize=(num_cols * 3, num_rows * 3),
@@ -236,49 +240,155 @@ for i, (distance_measure, distance_dict) in enumerate(all_distance_dict.items())
         #         continue
         print(mode)
         cmap = plt.get_cmap("jet", len(mode_dict))
-        combined_mode_distances = np.concatenate(list(mode_dict.values()))
+
+        # plot individual kde plots
+        combined_available_space_kde = []
         for k, (seed, distances) in tqdm(
             enumerate(mode_dict.items()), total=len(mode_dict)
         ):
-            sns.kdeplot(distances, ax=axs[i, j], color=cmap(k), alpha=0.2)
+            kde_distance = gaussian_kde(distances)
+            xvals = np.linspace(distances.min(), distances.max(), 1000)
+            yvals = kde_distance(xvals)
+            axs[i, j].plot(xvals, yvals, color=cmap(k + 1), linewidth=1, alpha=0.2)
+            # break
 
+        # plot combined kde plot
+        combined_mode_distances = np.concatenate(list(mode_dict.values()))
+        kde_distance_mean = gaussian_kde(combined_mode_distances)
+        xvals = np.linspace(
+            combined_mode_distances.min(), combined_mode_distances.max(), 1000
+        )
+        yvals = kde_distance_mean(xvals)
+        axs[i, j].plot(xvals, yvals, color=cmap(0), linewidth=2)
+
+        # plot mean distance and add title
         mean_distance = combined_mode_distances.mean()
-
+        title_str = f"Mean: {mean_distance:.2f}"
         if i == 0:
-            axs[i, j].set_title(f"{mode}\nMean: {mean_distance:.2f}")
-            axs_hist[i, j].set_title(f"{mode}\nMean: {mean_distance:.2f}")
+            axs[i, j].set_title(f"{mode}\n{title_str}")
+
         else:
-            axs[i, j].set_title(f"Mean: {mean_distance:.2f}")
-            axs_hist[i, j].set_title(f"Mean: {mean_distance:.2f}")
-
-        axs[i, j].set_xlabel("distance")
-        axs_hist[i, j].set_xlabel("distance")
-
-        if j == 0:
-            axs[i, j].set_ylabel(f"{distance_measure} PDF")
-            axs_hist[i, j].set_ylabel(f"{distance_measure} counts")
+            axs[i, j].set_title(title_str)
 
         axs[i, j].axvline(mean_distance, color="k", linestyle="--")
-        axs_hist[i, j].hist(combined_mode_distances, bins=50, alpha=0.5, color=cmap(0))
-        axs_hist[i, j].axvline(mean_distance, color="k", linestyle="--")
 
-        # low, high = np.mean(combined_mode_distances) - 3 * np.std(
-        #     combined_mode_distances
-        # ), np.mean(combined_mode_distances) + 3 * np.std(combined_mode_distances)
-        # axs[i, j].set_xlim(low, high)
-        # axs_hist[i, j].set_xlim(low, high)
-
-        # if "normalized" in suffix:
-        # axs[i, j].set_xlim(-0.15, 1)
-        # axs_hist[i, j].set_xlim(-0.15, 1)
+        # add x and y labels
+        axs[i, j].set_xlabel("distance")
+        if j == 0:
+            axs[i, j].set_ylabel(f"{distance_measure} PDF")
 
 fig.tight_layout()
 fig.savefig(figures_dir / f"distance_distributions{suffix}.png", dpi=300)
+
+plt.show()
+# %% plot distance distribution histograms
+print("Plotting distance histograms")
+plt.rcdefaults()
+num_rows = 3
+num_cols = len(packing_modes)
+
+fig_hist, axs_hist = plt.subplots(
+    num_rows,
+    num_cols,
+    figsize=(num_cols * 3, num_rows * 3),
+    dpi=300,
+    sharex="row",
+    sharey="row",
+)
+
+for i, (distance_measure, distance_dict) in enumerate(all_distance_dict.items()):
+    print(distance_measure)
+    for j, mode in enumerate(packing_modes):
+        mode_dict = distance_dict[mode]
+
+        combined_mode_distances = np.concatenate(list(mode_dict.values()))
+
+        # plot histogram
+        axs_hist[i, j].hist(combined_mode_distances, bins=50, alpha=0.5, color=cmap(0))
+
+        # plot mean distance and add title
+        mean_distance = combined_mode_distances.mean()
+        title_str = f"Mean: {mean_distance:.2f}"
+        if i == 0:
+            axs_hist[i, j].set_title(f"{mode}\n{title_str}")
+        else:
+            axs_hist[i, j].set_title(title_str)
+
+        axs_hist[i, j].axvline(mean_distance, color="k", linestyle="--")
+
+        # add x and y labels
+        axs_hist[i, j].set_xlabel("distance")
+        axs_hist[i, j].set_ylabel(f"{distance_measure} counts")
 
 fig_hist.tight_layout()
 fig_hist.savefig(figures_dir / f"distance_distributions_hist{suffix}.png", dpi=300)
 
 plt.show()
+# %% plot space corrected kde
+%%time
+fig, ax = plt.subplots(dpi=300)
+distance_dict = all_distance_dict["nucleus"]
+kde_vals_dict = {}
+for mode in packing_modes:
+    print(mode)
+    mode_dict = distance_dict[mode]
+    kde_vals_dict[mode] = {}
+
+    # get kde for available space
+    all_available_space_distances = [
+        mesh_information_dict[seed]["nuc_grid_distances"].flatten()
+        / mesh_information_dict[seed]["cell_diameter"]
+        for seed in mode_dict.keys()
+    ]
+    combined_available_space_distances = np.concatenate(all_available_space_distances)
+    kde_available_space = gaussian_kde(combined_available_space_distances)
+    xvals = np.linspace(
+        combined_available_space_distances.min(),
+        combined_available_space_distances.max(),
+        1000,
+    )
+    kde_vals_dict[mode]["xvals"] = xvals
+    kde_available_space_values = kde_available_space(xvals)
+    kde_vals_dict[mode]["available_space"] = kde_available_space_values
+
+    # get kde for distance
+    combined_mode_distances = np.concatenate(list(mode_dict.values()))
+    kde_distance = gaussian_kde(combined_mode_distances)
+    kde_distance_values = kde_distance(xvals)
+    kde_vals_dict[mode]["distance"] = kde_distance_values
+
+    # calculate ratio and plot
+    yvals = kde_distance_values / kde_available_space_values
+    kde_vals_dict[mode]["ratio"] = yvals
+    ax.plot(xvals, yvals, label=mode)
+    ax.set_ylim([0, 8])
+
+ax.set_xlabel("distance")
+ax.set_ylabel("space corrected PDF")
+ax.legend()
+fig.savefig(figures_dir / f"space_corrected_kde_{suffix}.png", dpi=300)
+# %% save kde values
+file_path = results_dir / f"space_corrected_kde_vals{suffix}.dat"
+with open(file_path, "wb") as f:
+    pickle.dump(kde_vals_dict, f)
+# %% load kde values
+file_path = results_dir / f"space_corrected_kde_vals{suffix}.dat"
+with open(file_path, "rb") as f:
+    kde_vals_dict = pickle.load(f)
+# %%
+fig, ax = plt.subplots(dpi=300)
+for mode, kde_vals in kde_vals_dict.items():
+    if mode == "nucleus_moderate_invert":
+        continue
+    xvals = kde_vals["xvals"]
+    yvals = kde_vals["ratio"]
+    ax.plot(xvals, yvals, label=mode)
+    # ax.set_ylim([0, 4])
+ax.axhline(1, color="k", linestyle="--", label="available space")
+ax.set_xlabel("distance")
+ax.set_ylabel("PDF(distance) / PDF(available space)")
+ax.legend()
+fig.savefig(figures_dir / f"space_corrected_kde_{suffix}.png", dpi=300)
 
 # %% Get pairwise earth movers distances
 if recalculate:
@@ -478,7 +588,7 @@ for mode, position_dict in all_positions.items():
         radius = mesh_information_dict[seed]["cell_diameter"] / 2
         volume = 4 / 3 * np.pi * radius**3
         # mean_k_values, _ = ripley_k(
-            # positions, volume, r_max, num_bins=num_bins, norm_factor=(radius * 2)
+        # positions, volume, r_max, num_bins=num_bins, norm_factor=(radius * 2)
         # )
         mean_k_values, _ = ripley_k(
             positions, volume, r_max, num_bins=num_bins, norm_factor=1
@@ -518,7 +628,7 @@ plt.show()
 # %%
 r_max = 1
 positions = np.random.rand(1000, 2) * r_max
-volume = r_max ** 2
+volume = r_max**2
 n_boot = 100
 all_ripley_k = []
 for bc in tqdm(range(n_boot)):
@@ -541,4 +651,23 @@ ax[1].fill_between(r_values, ci_ripley_k[0], ci_ripley_k[1], alpha=0.2)
 plt.tight_layout()
 plt.show()
 
+# %%
+available_space_dist = (
+    mesh_information_dict[seed]["nuc_grid_distances"].flatten()
+    / mesh_information_dict[seed]["cell_diameter"]
+)
+kde_available_space = gaussian_kde(available_space_dist)
+kde_distance_values = kde_distance(xvals)
+kde_available_space_values = kde_available_space(xvals)
+kde_available_space_values[kde_available_space_values <= 1e-6] = 0
+yvals = kde_distance_values / kde_available_space_values
+# %%
+fig, ax = plt.subplots()
+ax.plot(xvals, kde_distance_values, label="distance")
+ax.plot(xvals, kde_available_space_values, label="available space")
+ax.plot(xvals, yvals, label="distance/available space")
+ax.set_ylim([0, 8])
+xlim = ax.get_xlim()
+ax.set_xlim([0, xlim[1]])
+ax.legend()
 # %%
