@@ -1,3 +1,4 @@
+# %%
 from aicsimageio.aics_image import AICSImage
 from aicsshparam import shtools
 
@@ -7,21 +8,21 @@ import concurrent.futures
 
 # NOTE: Raw images should be downloaded prior to running this script
 # Run this script using: `python get_meshes_from_raw_images.py`
+# %%
+structure_name = "RAB5A"
 
-structure_name = "SLC25A17"
-datadir = Path(
-    f"/allen/aics/animated-cell/Saurabh/cellpack-analysis/data/structure_data/{structure_name}"
-)
-image_path = datadir / "full/raw_imgs_for_PILR/"
+datadir = Path(__file__).parent.parent / f"data/structure_data/{structure_name}"
+image_path = datadir / "sample_8d/raw_imgs_for_PILR/"
 file_glob = image_path.glob("*.tiff")
 
-save_folder = datadir / "meshes"
+save_folder = datadir / "meshes_hires"
 save_folder.mkdir(exist_ok=True, parents=True)
 
 nuc_channel = 0
 mem_channel = 1
 
 
+# %%
 def decimation_pro(data, ratio):
     sim = vtk.vtkDecimatePro()
     sim.SetTargetReduction(ratio)
@@ -33,20 +34,25 @@ def decimation_pro(data, ratio):
     return sim.GetOutput()
 
 
-def get_mesh_for_file(file, nuc_channel, mem_channel, save_folder=save_folder):
+def get_mesh_for_file(
+    file, nuc_channel, mem_channel, save_folder=save_folder, subsample=0.95
+):
     cellID = file.stem.split("_")[1]
     reader = AICSImage(file)
     data = reader.get_image_data("CZYX", S=0, T=0)
     writer = vtk.vtkOBJWriter()
     for name, channel in zip(["nuc", "mem"], [nuc_channel, mem_channel]):
         mesh = shtools.get_mesh_from_image(data[channel])
-        subsampled_mesh = decimation_pro(mesh[0], 0.95)
+        if subsample:
+            subsampled_mesh = decimation_pro(mesh[0], 0.95)
+        else:
+            subsampled_mesh = mesh[0]
         writer.SetFileName(save_folder / f"{name}_mesh_{cellID}.obj")
         writer.SetInputData(subsampled_mesh)
         writer.Write()
 
 
-# run function in parallel using concurrent futures
+# %% run function in parallel using concurrent futures
 files_to_use = list(file_glob)
 input_files = []
 for file in files_to_use:

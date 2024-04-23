@@ -107,3 +107,22 @@ def normalize_distances(
                 distance_dict[seed] = distance / normalization_factor
 
     return all_distance_dict
+
+
+def divide_pdfs(pdf_num, pdf_denom, xvals, epsilon=1e-4):
+    # Take logarithms
+    valid_num_indices = pdf_num > epsilon
+    valid_denom_indices = pdf_denom > epsilon
+
+    valid_inds = valid_num_indices & valid_denom_indices
+
+    pdf_num = pdf_num[valid_inds]
+    pdf_denom = pdf_denom[valid_inds]
+
+    pdf_result = np.zeros_like(pdf_num)
+    pdf_result = pdf_num / pdf_denom
+
+    xvals = xvals[valid_inds]
+
+    return xvals, pdf_result
+
