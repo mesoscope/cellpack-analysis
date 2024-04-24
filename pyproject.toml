@@ -24,6 +24,7 @@ dependencies = [
     "ipykernel>=6.29.3",
     "aicsshparam>=0.1.9",
     "cellpack>=1.0.8",
+    "ipdb>=0.13.13",
 ]
 requires-python = ">=3.9"
 readme = "README.md"
