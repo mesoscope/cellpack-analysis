@@ -176,4 +176,4 @@ def get_cellid_list(structure_id, filter_8d=False):
     df = df[df["structure_name"] == structure_id]
     if filter_8d:
         df = df[df["8dsphere"]]
-    return df["CellId"].tolist()
+    return df["CellId"].astype(str).tolist()

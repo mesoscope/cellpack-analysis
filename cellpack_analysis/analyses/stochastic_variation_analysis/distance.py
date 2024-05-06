@@ -1,4 +1,6 @@
 import pickle
+from turtle import distance
+from matplotlib import lines
 from matplotlib.patches import Circle
 import numpy as np
 import pandas as pd
@@ -13,6 +15,7 @@ from matplotlib.collections import PatchCollection
 
 from cellpack_analysis.analyses.stochastic_variation_analysis.label_tables import (
     MODE_LABELS,
+    VARIABLE_SHAPE_MODES,
 )
 from cellpack_analysis.analyses.stochastic_variation_analysis.stats_functions import (
     ripley_k,
@@ -49,7 +52,8 @@ def get_distance_dictionary(
                     all_distance_dict[distance_measure] = pickle.load(f)
             else:
                 print(f"File not found: {file_path}")
-        return all_distance_dict
+        if len(all_distance_dict) == len(distance_measures):
+            return all_distance_dict
 
     print("Calculating distance measures")
     all_pairwise_distances = {}  # pairwise distance between particles
@@ -64,15 +68,17 @@ def get_distance_dictionary(
         all_nearest_distances[mode] = {}
         all_z_distances[mode] = {}
         for seed, positions in tqdm(position_dict.items()):
-            if "mean" in mode:
-                seed_to_use = "mean"
-            else:
+            if mode in VARIABLE_SHAPE_MODES:
                 seed_to_use = seed.split("_")[0]
+            else:
+                seed_to_use = seed
 
             all_distances = cdist(positions, positions, metric="euclidean")
 
             # Distance from the nucleus surface
-            nuc_mesh = mesh_information_dict[seed_to_use]["nuc_mesh"]
+            nuc_mesh = mesh_information_dict.get(
+                seed_to_use, mesh_information_dict["mean"]
+            )["nuc_mesh"]
             nuc_distances = -proximity.signed_distance(nuc_mesh, positions)
             all_nuc_distances[mode][seed_to_use] = nuc_distances
 
@@ -87,7 +93,9 @@ def get_distance_dictionary(
             all_pairwise_distances[mode][seed_to_use] = pairwise_distances
 
             # Z distance
-            z_min = mesh_information_dict[seed_to_use]["cell_bounds"][:, 2].min()
+            z_min = mesh_information_dict.get(
+                seed_to_use, mesh_information_dict["mean"]
+            )["cell_bounds"][:, 2].min()
             z_distances = positions[:, 2] - z_min
             all_z_distances[mode][seed_to_use] = z_distances
 
@@ -102,11 +110,16 @@ def get_distance_dictionary(
             ],
             ["pairwise", "nucleus", "nearest", "z"],
         ):
-            file_path = (
-                results_dir / f"packing_modes_{distance_measure}_distances.dat"
-            )
+            file_path = results_dir / f"packing_modes_{distance_measure}_distances.dat"
             with open(file_path, "wb") as f:
                 pickle.dump(distance_dict, f)
+
+    all_distance_dict = {
+        "pairwise": all_pairwise_distances,
+        "nucleus": all_nuc_distances,
+        "nearest": all_nearest_distances,
+        "z": all_z_distances,
+    }
 
     return all_distance_dict
 
@@ -120,6 +133,7 @@ def plot_distance_distributions_kde(
     normalization=None,
 ):
     print("Plotting distance distributions")
+
     num_rows = len(distance_measures)
     num_cols = len(packing_modes)
 
@@ -140,40 +154,155 @@ def plot_distance_distributions_kde(
             cmap = plt.get_cmap("jet", len(mode_dict))
 
             # plot individual kde plots of distance distributions
-            for k, distances in tqdm(
-                enumerate(mode_dict.values()), total=len(mode_dict)
+            for k, (seed, distances) in tqdm(
+                enumerate(mode_dict.items()), total=len(mode_dict)
             ):
-                sns.kdeplot(
-                    distances, ax=axs[i, j], color=cmap(k + 1), linewidth=1, alpha=0.2
-                )
+                ax = axs[i, j]
+                color = cmap(k)
+
+                sns.kdeplot(distances, ax=ax, color=color, linewidth=1, alpha=0.2)
+                break
 
             # plot combined kde plot of distance distributions
             combined_mode_distances = np.concatenate(list(mode_dict.values()))
-            sns.kdeplot(
-                combined_mode_distances, ax=axs[i, j], color=cmap(0), linewidth=2
-            )
 
             # plot mean distance and add title
             mean_distance = combined_mode_distances.mean()
             title_str = f"Mean: {mean_distance:.2f}"
-            if i == 0:
-                axs[i, j].set_title(f"{MODE_LABELS[mode]}\n{title_str}")
-            else:
-                axs[i, j].set_title(title_str)
 
-            axs[i, j].axvline(mean_distance, color="k", linestyle="--")
+            if i == 0:
+                ax.set_title(f"{MODE_LABELS[mode]}\n{title_str}")
+            else:
+                ax.set_title(title_str)
+
+            ax.axvline(mean_distance, color="k", linestyle="--")
 
             # add y label
             if j == 0:
-                axs[i, j].set_ylabel(f"{distance_measure} PDF")
+                ax.set_ylabel(f"{distance_measure} PDF")
     distance_label = "distance"
     if normalization is not None:
         distance_label = f"{distance_label} / {normalization}"
+
     fig.supxlabel(distance_label)
     fig.tight_layout()
 
     if figures_dir is not None:
         fig.savefig(figures_dir / f"distance_distributions{suffix}.png", dpi=300)
+
+    plt.show()
+
+
+def plot_ks_test_distance_distributions_kde(
+    distance_measures,
+    packing_modes,
+    all_distance_dict,
+    ks_observed_dict,
+    figures_dir=None,
+    suffix="",
+    normalization=None,
+    baseline_mode=None,
+    significance_level=0.05,
+):
+    print("Plotting distance distributions")
+
+    if baseline_mode is not None:
+        packing_modes = [mode for mode in packing_modes if mode != baseline_mode]
+
+    num_cols = len(packing_modes)
+
+    for i, distance_measure in enumerate(distance_measures):
+        distance_dict = all_distance_dict[distance_measure]
+        ks_measure_dict = ks_observed_dict[distance_measure]
+        fig, axs = plt.subplots(
+            2,
+            num_cols,
+            figsize=(num_cols * 4, 8),
+            dpi=300,
+            sharex="row",
+            sharey="row",
+        )
+        for j, mode in enumerate(packing_modes):
+            mode_dict = distance_dict[mode]
+            ks_mode_dict = ks_measure_dict[mode]
+            print(f"Distance measure: {distance_measure}, Mode: {mode}")
+
+            sig_ax = axs[0, j]
+            ns_ax = axs[1, j]
+
+            # get significant and non-significant seeds
+            all_seeds = list(mode_dict.keys())
+            significant_seeds = [
+                seed
+                for seed, p_value in ks_mode_dict.items()
+                if p_value < significance_level
+            ]
+            ns_seeds = [seed for seed in all_seeds if seed not in significant_seeds]
+
+            # kde plots for significant seeds
+            for seed in tqdm(significant_seeds):
+                distances = mode_dict[seed]
+                sns.kdeplot(distances, ax=sig_ax, color="r", linewidth=1, alpha=0.2)
+            # plot combined kde plot of distance distributions
+            if len(significant_seeds) > 0:
+                combined_sig_distances = np.concatenate(
+                    [
+                        distance
+                        for seed, distance in mode_dict.items()
+                        if seed in significant_seeds
+                    ]
+                )
+                sns.kdeplot(combined_sig_distances, ax=sig_ax, color="k", linewidth=2)
+                # plot mean distance and add title
+                mean_distance = combined_sig_distances.mean()
+                title_str = (
+                    f"Mean: {mean_distance:.2f}\nKS p-value < {significance_level}"
+                )
+                sig_ax.axvline(mean_distance, color="k", linestyle="--")
+            else:
+                title_str = "No significant obs."
+            if i == 0:
+                sig_ax.set_title(f"{MODE_LABELS[mode]}\n{title_str}")
+            else:
+                sig_ax.set_title(title_str)
+
+            # kde plots for non-significant seeds
+            for seed in tqdm(ns_seeds):
+                distances = mode_dict[seed]
+                sns.kdeplot(distances, ax=ns_ax, color="g", linewidth=1, alpha=0.2)
+            # plot combined kde plot of distance distributions
+            if len(ns_seeds) > 0:
+                combined_ns_distances = np.concatenate(
+                    [
+                        distance
+                        for seed, distance in mode_dict.items()
+                        if seed in ns_seeds
+                    ]
+                )
+                sns.kdeplot(combined_ns_distances, ax=ns_ax, color="k", linewidth=2)
+                # plot mean distance and add title
+                mean_distance = combined_ns_distances.mean()
+                title_str = (
+                    f"Mean: {mean_distance:.2f}\nKS p-value >= {significance_level}"
+                )
+                ns_ax.axvline(mean_distance, color="k", linestyle="--")
+            else:
+                title_str = "No non-significant obs."
+            ns_ax.set_title(title_str)
+
+        distance_label = "distance"
+        if normalization is not None:
+            distance_label = f"{distance_label} / {normalization}"
+        fig.supylabel(f"{distance_measure} PDF")
+        fig.supxlabel(distance_label)
+        fig.tight_layout()
+
+        if figures_dir is not None:
+            fig.savefig(
+                figures_dir
+                / f"distance_distributions_ks_test_{distance_measure}{suffix}.png",
+                dpi=300,
+            )
 
     plt.show()
 
@@ -190,7 +319,7 @@ def plot_distance_distributions_overlay(
 
     for distance_measure in distance_measures:
         distance_dict = all_distance_dict[distance_measure]
-        fig, ax = plt.subplots(dpi=300, figsize=(6, 6))
+        fig, ax = plt.subplots(dpi=300, figsize=(7, 7))
         cmap = plt.get_cmap("tab10")
         for j, mode in enumerate(packing_modes):
             mode_dict = distance_dict[mode]
@@ -324,16 +453,17 @@ def plot_ks_observed_barplots(
     significance_level=0.05,
 ):
     for distance_measure, ks_observed_mode_dict in ks_observed_dict.items():
-        fig, ax = plt.subplots(dpi=300, figsize=(6, 6))
+        fig, ax = plt.subplots(dpi=300, figsize=(7, 7))
         ks_df = pd.DataFrame(ks_observed_mode_dict)
-        ks_df_test = ks_df < significance_level
+        ks_df_test = ks_df >= significance_level
         ax = sns.barplot(data=ks_df_test, ax=ax)
         xticklabels = [MODE_LABELS[mode._text] for mode in ax.get_xticklabels()]
         ax.set_xticklabels(xticklabels, rotation=45)
         ax.set_ylabel(
-            "Fraction of observations with\n distribution different from baseline"
+            f"Fraction of observations with\n p-value >= {significance_level}"
         )
         ax.set_title(f"KS test for {distance_measure} distance")
+        ax.set_ylim(0, 0.65)
         plt.tight_layout()
         if figures_dir is not None:
             fig.savefig(
@@ -382,6 +512,7 @@ def get_pairwise_emd_dictionary(
     packing_modes,
     results_dir=None,
     recalculate=False,
+    baseline_mode=None,
     suffix="",
 ):
     if not recalculate and results_dir is not None:
@@ -398,6 +529,8 @@ def get_pairwise_emd_dictionary(
         print(distance_measure)
         measure_pairwise_emd = {}
         for mode_1 in packing_modes:
+            if baseline_mode is not None and mode_1 != baseline_mode:
+                continue
             if mode_1 not in measure_pairwise_emd:
                 measure_pairwise_emd[mode_1] = {}
             distribution_dict_1 = distribution_dict[mode_1]
@@ -427,11 +560,11 @@ def get_pairwise_emd_dictionary(
                 ]
         all_pairwise_emd[distance_measure] = measure_pairwise_emd
 
-        # Save EMD dict
-        if results_dir is not None:
-            file_path = results_dir / f"packing_modes_pairwise_emd{suffix}.dat"
-            with open(file_path, "wb") as f:
-                pickle.dump(all_pairwise_emd, f)
+    # Save EMD dict
+    if results_dir is not None:
+        file_path = results_dir / f"packing_modes_pairwise_emd{suffix}.dat"
+        with open(file_path, "wb") as f:
+            pickle.dump(all_pairwise_emd, f)
 
     return all_pairwise_emd
 
@@ -457,7 +590,7 @@ def plot_pairwise_emd_heatmaps(
                     values = list(emd.values())
                     values = np.array(values)
                     dim_len = int(np.sqrt(len(values)))
-                    values = values.reshape((dim_len, dim_len))
+                    values = values.reshape((dim_len, -1))
                 ax = axs[rt, ct]
                 if ct == len(emd_dict) - 1:
                     cbar = True
@@ -496,10 +629,10 @@ def plot_average_emd_correlation_heatmap(
     distance_measures,
     all_pairwise_emd,
     pairwise_emd_dir=None,
+    baseline_mode="observed_data",
     suffix="",
 ):
     print("calculating correlations for EMDs")
-    baseline_mode = "observed_data"
     mode_names = list(all_pairwise_emd["pairwise"].keys())
     corr_df_dict = {}
     for distance_measure in distance_measures:
@@ -507,7 +640,7 @@ def plot_average_emd_correlation_heatmap(
         corr_df_dict[distance_measure] = {}
         df_corr = pd.DataFrame(columns=mode_names, index=mode_names)
         df_std = pd.DataFrame(columns=mode_names, index=mode_names)
-        fig, ax = plt.subplots(dpi=300)
+        fig, ax = plt.subplots(dpi=300, figsize=(10, 10))
         for mode_1, mode_1_dict in emd_dict.items():
             for mode_2, emd in mode_1_dict.items():
                 if not np.isnan(df_corr.loc[mode_1, mode_2]):
@@ -518,7 +651,7 @@ def plot_average_emd_correlation_heatmap(
                     values = list(emd.values())
                     values = np.array(values)
                     dim_len = int(np.sqrt(len(values)))
-                    values = values.reshape((dim_len, dim_len))
+                    values = values.reshape((dim_len, -1))
                 df_corr.loc[mode_1, mode_2] = np.mean(values)
                 df_corr.loc[mode_2, mode_1] = df_corr.loc[mode_1, mode_2]
                 df_std.loc[mode_1, mode_2] = np.std(values)
@@ -555,7 +688,7 @@ def plot_emd_correlation_circles(
         df_std = corr_dict["std"]
 
         N = M = len(df_corr)
-        xlabels = ylabels = df_corr.columns
+        xlabels = ylabels = [MODE_LABELS.get(col, col) for col in df_corr.columns]
 
         xvals = np.arange(M)
         yvals = np.arange(N)
@@ -618,9 +751,10 @@ def plot_emd_boxplots(
     for distance_measure in distance_measures:
         emd_dict = all_pairwise_emd[distance_measure][baseline_mode]
         emd_df = pd.DataFrame.from_dict(emd_dict)
-        fig, ax = plt.subplots(dpi=300)
+        fig, ax = plt.subplots(dpi=300, figsize=(7, 7))
         sns.boxplot(data=emd_df, ax=ax, whis=(0, 100))
-        ax.set_title(f"{distance_measure} EMD")
+        ax.set_ylabel(f"EMD")
+        ax.set_title(f"{distance_measure} distance")
         ax.set_xticklabels([MODE_LABELS[m] for m in emd_df.columns], rotation=45)
         if pairwise_emd_dir is not None:
             fig.savefig(
@@ -673,7 +807,7 @@ def plot_emd_kdeplots(
     for distance_measure in distance_measures:
         emd_dict = all_pairwise_emd[distance_measure][baseline_mode]
         emd_df = pd.DataFrame.from_dict(emd_dict)
-        fig, ax = plt.subplots(dpi=300)
+        fig, ax = plt.subplots(dpi=300, figsize=(7, 7))
         for col in emd_df.columns:
             sns.kdeplot(emd_df[col], ax=ax, label=MODE_LABELS[col])
         ax.set_xlabel(f"{distance_measure} EMD")
@@ -705,7 +839,7 @@ def calculate_ripley_k(
             radius = mesh_information_dict[seed]["cell_diameter"] / 2
             volume = 4 / 3 * np.pi * radius**3
             mean_k_values, _ = ripley_k(
-                positions, volume, r_max, num_bins=num_bins, norm_factor=(radius * 2)
+                positions, volume, r_values, norm_factor=(radius * 2)
             )
             all_ripleyK[mode][seed] = mean_k_values
         mean_ripleyK[mode] = np.mean(
@@ -728,7 +862,7 @@ def plot_ripley_k(
     suffix="",
 ):
     print("Plotting Ripley K")
-    fig, ax = plt.subplots(dpi=300)
+    fig, ax = plt.subplots(dpi=300, figsize=(7, 7))
     for mode, mode_values in mean_ripleyK.items():
         mode_values = mode_values - np.pi * r_values**2
         err_values = ci_ripleyK[mode] - np.pi * r_values**2
@@ -803,19 +937,90 @@ def get_space_corrected_kde(
     return kde_dict
 
 
+def plot_space_corrected_kde_illustration(
+    distance_dict,
+    kde_dict,
+    baseline_mode="random",
+    figures_dir=None,
+    suffix="",
+):
+    print("Plotting space corrected kde illustration")
+    fig, axs = plt.subplots(nrows=3, ncols=1, dpi=300, figsize=(7, 7))
+    mode_dict = distance_dict[baseline_mode]
+    seed = list(mode_dict.keys())[0]
+    distances = mode_dict[seed]
+
+    kde_distance = kde_dict[seed][baseline_mode]["kde"]
+    kde_available_space = kde_dict[seed]["available_distance"]["kde"]
+    xvals = np.linspace(distances.min(), distances.max(), 100)
+    kde_distance_values = kde_distance(xvals)
+    kde_distance_values_normalized = kde_distance_values / np.trapz(
+        kde_distance_values, xvals
+    )
+    kde_available_space_values = kde_available_space(xvals)
+    kde_available_space_values_normalized = kde_available_space_values / np.trapz(
+        kde_available_space_values, xvals
+    )
+    yvals = kde_distance_values_normalized / kde_available_space_values_normalized
+
+    # plot occupied distance values
+    ax = axs[0]
+    ax.plot(xvals, kde_distance_values_normalized, c="r")
+    ax.set_xlim([0, 0.2])
+    ax.axhline(1, color="k", linestyle="--")
+    ax.set_xlabel("distance")
+    ax.set_ylabel("density")
+    ax.set_title("occupied space")
+
+    # plot available space values
+    ax = axs[1]
+    ax.plot(
+        xvals, kde_available_space_values_normalized, label="available space", c="b"
+    )
+    ax.set_xlim([0, 0.2])
+    ax.set_ylim(axs[0].get_ylim())
+    ax.axhline(1, color="k", linestyle="--")
+    ax.set_xlabel("distance")
+    ax.set_ylabel("density")
+    ax.set_title("available space")
+
+    # plot ratio
+    ax = axs[2]
+    ax.plot(xvals, yvals, label="space corrected", c="g")
+    ax.set_xlim([0, 0.2])
+    ax.set_ylim([0, 2])
+    ax.axhline(1, color="k", linestyle="--")
+    ax.set_xlabel("distance")
+    ax.set_ylabel("conditional density")
+    ax.set_title("ratio")
+    plt.tight_layout()
+    plt.show()
+
+    if figures_dir is not None:
+        fig.savefig(
+            figures_dir / f"space_corrected_kde_illustration{suffix}.png",
+            dpi=300,
+        )
+    plt.show()
+
+
 def plot_individual_space_corrected_kde(
     distance_dict,
     kde_dict,
     packing_modes,
     figures_dir=None,
     suffix="",
+    mesh_information_dict=None,
+    struct_diameter=4.74,
 ):
     print("Plotting individual space corrected kde values")
     cmap = plt.get_cmap("tab10")
+    nrows = len(packing_modes)
+    fig, axs = plt.subplots(dpi=300, figsize=(9, 3 * nrows), nrows=nrows)
     for ct, mode in enumerate(packing_modes):
         print(mode)
-        fig, ax = plt.subplots(dpi=300)
         mode_dict = distance_dict[mode]
+        ax = axs[ct]
         for k, (seed, distances) in tqdm(
             enumerate(mode_dict.items()), total=len(mode_dict)
         ):
@@ -837,19 +1042,34 @@ def plot_individual_space_corrected_kde(
                 ax.plot(xvals, yvals, label=MODE_LABELS[mode], c=cmap(ct), alpha=0.2)
             else:
                 ax.plot(xvals, yvals, c=cmap(ct), alpha=0.25, label="_nolegend_")
+            # break
+
+        if mesh_information_dict is not None and struct_diameter:
+            avg_diameter, std_diameter = get_average_scaled_diameter(
+                struct_diameter=struct_diameter,
+                mesh_information_dict=mesh_information_dict,
+            )
+            ax.axvspan(
+                avg_diameter - std_diameter,
+                avg_diameter + std_diameter,
+                color="r",
+                alpha=0.2,
+            )
+            ax.axvline(avg_diameter, color="r", linestyle="--")
+
         ax.axhline(1, color="k", linestyle="--")
         ax.set_xlim([0, 0.2])
         ax.set_ylim([0, 4])
         ax.set_xlabel("distance")
-        ax.set_ylabel("distance from nucleus PDF \n conditioned on available space")
+        ax.set_ylabel("conditional PDF")
         ax.set_title(f"{MODE_LABELS[mode]}")
-        plt.tight_layout()
-        if figures_dir is not None:
-            fig.savefig(
-                figures_dir / f"individual_space_corrected_kde_{mode}_{suffix}.png",
-                dpi=300,
-            )
-        plt.show()
+    plt.tight_layout()
+    if figures_dir is not None:
+        fig.savefig(
+            figures_dir / f"individual_space_corrected_kde_{suffix}.png",
+            dpi=300,
+        )
+    plt.show()
 
 
 def get_combined_space_corrected_kde(
@@ -901,15 +1121,17 @@ def get_combined_space_corrected_kde(
 
 def plot_combined_space_corrected_kde(
     combined_kde_dict,
+    packing_modes,
     figures_dir,
     suffix="",
+    mesh_information_dict=None,
+    struct_diameter=4.74,
 ):
     print("Plotting combined space corrected kde values")
-    fig, ax = plt.subplots(dpi=300)
-    for mode, kde_mode_dict in combined_kde_dict.items():
-        if mode == "nucleus_moderate_invert":
-            continue
+    fig, ax = plt.subplots(dpi=300, figsize=(7, 7))
+    for ct, mode in enumerate(packing_modes):
         print(mode)
+        kde_mode_dict = combined_kde_dict[mode]
         mode_distances = kde_mode_dict["mode_distances"]
         kde_distance = kde_mode_dict["kde_distance"]
         kde_available_space = kde_mode_dict["kde_available_space"]
@@ -919,15 +1141,29 @@ def plot_combined_space_corrected_kde(
         kde_available_space_values = kde_available_space(xvals)
         kde_available_space_values /= np.trapz(kde_available_space_values, xvals)
         yvals = kde_distance_values / kde_available_space_values
+
         ax.plot(xvals, yvals, label=MODE_LABELS[mode])
-    ax.axhline(1, color="k", linestyle="--")
-    ax.set_ylim([0, 4])
-    ax.set_xlim([0, 0.2])
-    ax.set_xlabel("distance")
-    ax.set_ylabel("PDF(distance) / PDF(available space)")
-    ax.legend()
-    plt.show()
-    fig.savefig(figures_dir / f"combined_space_corrected_kde{suffix}.png", dpi=300)
+        if mesh_information_dict is not None and struct_diameter and ct == 0:
+            avg_diameter, std_diameter = get_average_scaled_diameter(
+                struct_diameter=struct_diameter, mesh_information_dict=mesh_information_dict
+            )
+            ax.axvspan(
+                avg_diameter - std_diameter,
+                avg_diameter + std_diameter,
+                color="r",
+                alpha=0.2,
+            )
+            ax.axvline(avg_diameter, color="r", linestyle="--")
+        if ct == 0:
+            ax.axhline(1, color="k", linestyle="--")
+        ax.set_ylim([0, 3.5])
+        ax.set_xlim([0, 0.2])
+        ax.set_xticks([0, 0.05, 0.1, 0.15, 0.2])
+        ax.set_xlabel("distance")
+        ax.set_ylabel("conditional PDF")
+        ax.legend()
+        plt.show()
+        fig.savefig(figures_dir / f"combined_space_corrected_kde_{ct}{suffix}.png", dpi=300)
 
 
 def get_occupancy_emd(
@@ -973,7 +1209,7 @@ def plot_occupancy_emd_kdeplot(
     figures_dir=None,
     suffix="",
 ):
-    fig, ax = plt.subplots(dpi=300)
+    fig, ax = plt.subplots(dpi=300, figsize=(7, 7))
     cmap = plt.get_cmap("tab10")
     for ct, mode in enumerate(packing_modes):
         emd_values = list(emd_occupancy_dict[mode].values())
@@ -993,7 +1229,7 @@ def plot_occupancy_emd_boxplot(
     figures_dir=None,
     suffix="",
 ):
-    fig, ax = plt.subplots(dpi=300)
+    fig, ax = plt.subplots(dpi=300, figsize=(7, 7))
     emd_df = pd.DataFrame(emd_occupancy_dict)
     sns.boxplot(data=emd_df, ax=ax)
     xticklabels = [MODE_LABELS[mode._text] for mode in ax.get_xticklabels()]
@@ -1059,3 +1295,14 @@ def plot_occupancy_ks_test(
     if figures_dir is not None:
         fig.savefig(figures_dir / f"occupancy_ks_test{suffix}.png", dpi=300)
     plt.show()
+
+
+def get_average_scaled_diameter(struct_diameter, mesh_information_dict):
+    print("Calculating average scaled diameter")
+    scaled_diameter = []
+    for _, mesh_info in mesh_information_dict.items():
+        scaled_diameter.append(struct_diameter / mesh_info["cell_diameter"])
+    scaled_diameter = np.array(scaled_diameter)
+    average_scaled_diameter = np.mean(scaled_diameter)
+    std_scaled_diameter = np.std(scaled_diameter)
+    return average_scaled_diameter, std_scaled_diameter

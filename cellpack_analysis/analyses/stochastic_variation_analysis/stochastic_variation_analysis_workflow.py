@@ -2,7 +2,9 @@
 import matplotlib.pyplot as plt
 from pathlib import Path
 
+
 from cellpack_analysis.analyses.stochastic_variation_analysis.distance import (
+    get_average_scaled_diameter,
     get_combined_space_corrected_kde,
     get_distance_dictionary,
     get_ks_observed_dict,
@@ -20,6 +22,7 @@ from cellpack_analysis.analyses.stochastic_variation_analysis.distance import (
     plot_individual_space_corrected_kde,
     plot_combined_space_corrected_kde,
     plot_ks_observed_barplots,
+    plot_ks_test_distance_distributions_kde,
     plot_occupancy_emd_boxplot,
     plot_occupancy_emd_kdeplot,
     plot_occupancy_ks_test,
@@ -27,6 +30,7 @@ from cellpack_analysis.analyses.stochastic_variation_analysis.distance import (
     plot_emd_kdeplots,
     calculate_ripley_k,
     plot_ripley_k,
+    plot_space_corrected_kde_illustration,
 )
 from cellpack_analysis.analyses.stochastic_variation_analysis.load_data import (
     get_position_data_from_outputs,
@@ -37,19 +41,8 @@ from cellpack_analysis.analyses.stochastic_variation_analysis.stats_functions im
 from cellpack_analysis.lib.mesh_tools import get_mesh_information_dict
 
 plt.rcParams.update({"font.size": 14})
-
-# %% set file paths and setup parameters
-base_datadir = Path(__file__).parents[3] / "data"
-base_results_dir = Path(__file__).parents[3] / "results"
-
-results_dir = base_results_dir / "stochastic_variation_analysis/baseline"
-results_dir.mkdir(exist_ok=True, parents=True)
-
-figures_dir = results_dir / "figures"
-figures_dir.mkdir(exist_ok=True, parents=True)
-
 # %% set packing modes
-baseline_analysis = True
+baseline_analysis = False
 packing_modes_baseline = [
     "mean_count_and_size",
     "variable_size",
@@ -64,6 +57,19 @@ packing_modes_rules = [
     "nucleus_moderate_invert",
 ]
 packing_modes = packing_modes_baseline if baseline_analysis else packing_modes_rules
+baseline_mode = "mean_count_and_size" if baseline_analysis else "observed_data"
+# %% set file paths and setup parameters
+base_datadir = Path(__file__).parents[3] / "data"
+base_results_dir = Path(__file__).parents[3] / "results"
+
+folder_name = "baseline" if baseline_analysis else "rules"
+results_dir = base_results_dir / f"stochastic_variation_analysis/{folder_name}"
+results_dir.mkdir(exist_ok=True, parents=True)
+
+figures_dir = results_dir / "figures"
+figures_dir.mkdir(exist_ok=True, parents=True)
+
+
 # %% set structure ID
 STRUCTURE_ID = "SLC25A17"
 # %% distance measures to use
@@ -91,13 +97,17 @@ mesh_information_dict = get_mesh_information_dict(
     base_datadir=base_datadir,
     recalculate=False,
 )
+# %%
+avg_struct_diameter, std_struct_diameter = get_average_scaled_diameter(
+    struct_diameter=4.74, mesh_information_dict=mesh_information_dict
+)
 # %% Calculate distance measures
 all_distance_dict = get_distance_dictionary(
     all_positions=all_positions,
     distance_measures=distance_measures,
     mesh_information_dict=mesh_information_dict,
     results_dir=results_dir,
-    recalculate=True,
+    recalculate=False,
 )
 # %% Normalize distances
 all_distance_dict = normalize_distances(
@@ -131,19 +141,30 @@ plot_distance_distributions_histogram(
     normalization=normalization,
 )
 # %% [markdown]
-# # KS Test Analysis
+# ## KS Test Analysis
 # %% ks test between observed and other modes
 ks_observed_dict = get_ks_observed_dict(
     distance_measures,
     packing_modes,
     all_distance_dict,
-    baseline_mode="observed_data",
+    baseline_mode=baseline_mode,
 )
 # %% plot ks test results
 plot_ks_observed_barplots(
     ks_observed_dict=ks_observed_dict,
     figures_dir=figures_dir,
     suffix=suffix,
+)
+# %% plot colorized ks distance distributions
+plot_ks_test_distance_distributions_kde(
+    distance_measures=distance_measures,
+    packing_modes=packing_modes,
+    all_distance_dict=all_distance_dict,
+    ks_observed_dict=ks_observed_dict,
+    figures_dir=figures_dir,
+    suffix=suffix,
+    normalization=normalization,
+    baseline_mode=baseline_mode,
 )
 # %% [markdown]
 # # Pairwise EMD Analysis
@@ -170,6 +191,7 @@ corr_df_dict = plot_average_emd_correlation_heatmap(
     distance_measures=distance_measures,
     all_pairwise_emd=all_pairwise_emd,
     pairwise_emd_dir=pairwise_emd_dir,
+    baseline_mode=baseline_mode,
     suffix=suffix,
 )
 # %% plot EMD heatmaps with variation
@@ -183,7 +205,7 @@ plot_emd_correlation_circles(
 plot_emd_boxplots(
     distance_measures=distance_measures,
     all_pairwise_emd=all_pairwise_emd,
-    baseline_mode="observed_data",
+    baseline_mode=baseline_mode,
     pairwise_emd_dir=pairwise_emd_dir,
     suffix=suffix,
 )
@@ -191,7 +213,7 @@ plot_emd_boxplots(
 plot_emd_histograms(
     distance_measures=distance_measures,
     all_pairwise_emd=all_pairwise_emd,
-    baseline_mode="observed_data",
+    baseline_mode=baseline_mode,
     pairwise_emd_dir=pairwise_emd_dir,
     suffix=suffix,
 )
@@ -199,7 +221,7 @@ plot_emd_histograms(
 plot_emd_kdeplots(
     distance_measures=distance_measures,
     all_pairwise_emd=all_pairwise_emd,
-    baseline_mode="observed_data",
+    baseline_mode=baseline_mode,
     pairwise_emd_dir=pairwise_emd_dir,
     suffix=suffix,
 )
@@ -234,6 +256,14 @@ kde_dict = get_space_corrected_kde(
     suffix=suffix,
     normalization=normalization,
 )
+# %% plot illustration for space corrected kde
+plot_space_corrected_kde_illustration(
+    distance_dict=all_distance_dict["nucleus"],
+    kde_dict=kde_dict,
+    baseline_mode="random",
+    figures_dir=occupancy_figdir,
+    suffix=suffix,
+)
 # %% plot individual space corrected individual kde values
 plot_individual_space_corrected_kde(
     distance_dict=all_distance_dict["nucleus"],
@@ -241,6 +271,8 @@ plot_individual_space_corrected_kde(
     packing_modes=["observed_data", "random", "nucleus_moderate"],
     figures_dir=occupancy_figdir,
     suffix=suffix,
+    mesh_information_dict=mesh_information_dict,
+    struct_diameter=4.74,
 )
 # %% get combined space corrected kde
 combined_kde_dict = get_combined_space_corrected_kde(
@@ -254,8 +286,15 @@ combined_kde_dict = get_combined_space_corrected_kde(
 # %% plot combined space corrected kde
 plot_combined_space_corrected_kde(
     combined_kde_dict=combined_kde_dict,
+    packing_modes=[
+        "random",
+        "nucleus_moderate",
+        "observed_data",
+    ],
     figures_dir=occupancy_figdir,
     suffix=suffix,
+    mesh_information_dict=mesh_information_dict,
+    struct_diameter=4.74,
 )
 # %% get EMD between occupied and available distances
 emd_occupancy_dict = get_occupancy_emd(
