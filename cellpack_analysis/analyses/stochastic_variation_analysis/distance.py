@@ -161,7 +161,6 @@ def plot_distance_distributions_kde(
                 color = cmap(k)
 
                 sns.kdeplot(distances, ax=ax, color=color, linewidth=1, alpha=0.2)
-                break
 
             # plot combined kde plot of distance distributions
             combined_mode_distances = np.concatenate(list(mode_dict.values()))
@@ -1125,7 +1124,8 @@ def plot_combined_space_corrected_kde(
     figures_dir,
     suffix="",
     mesh_information_dict=None,
-    struct_diameter=4.74,
+    struct_diameter=2.37,
+    normalization=None,
 ):
     print("Plotting combined space corrected kde values")
     fig, ax = plt.subplots(dpi=300, figsize=(7, 7))
@@ -1159,11 +1159,19 @@ def plot_combined_space_corrected_kde(
         ax.set_ylim([0, 3.5])
         ax.set_xlim([0, 0.2])
         ax.set_xticks([0, 0.05, 0.1, 0.15, 0.2])
-        ax.set_xlabel("distance")
+        xlabel = "distance"
+        if normalization:
+            xlabel = f"{xlabel} / {normalization}"
+        ax.set_xlabel(xlabel)
         ax.set_ylabel("conditional PDF")
         ax.legend()
         plt.show()
         fig.savefig(figures_dir / f"combined_space_corrected_kde_{ct}{suffix}.png", dpi=300)
+    plt.show()
+    ax.set_aspect(0.02)
+    ax.legend(loc="lower center", bbox_to_anchor=(0.5, 1.15), ncol=len(packing_modes))
+    fig.savefig(figures_dir / f"combined_space_corrected_kde_aspect{suffix}.png", dpi=300)
+    return fig, ax
 
 
 def get_occupancy_emd(

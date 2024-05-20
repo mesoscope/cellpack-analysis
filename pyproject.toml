@@ -21,9 +21,9 @@ dependencies = [
     "tqdm",
     "trimesh",
     "umap-learn",
-    "ipykernel>=6.29.3",
+    "ipykernel>=6.29.4",
     "aicsshparam>=0.1.9",
-    "cellpack>=1.0.8",
+    "cellpack @ git+https://github.com/mesoscope/cellpack.git@remove-pyembree",
     "ipdb>=0.13.13",
 ]
 requires-python = ">=3.9"

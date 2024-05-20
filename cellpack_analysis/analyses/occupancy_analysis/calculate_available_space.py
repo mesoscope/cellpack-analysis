@@ -17,14 +17,16 @@ plt.rcParams.update({"font.size": 14})
 # %% set structure id
 STRUCTURE_ID = "SLC25A17"  # peroxisomes
 # %% set file paths and setup parameters
-base_datadir = Path(__file__).parents[2] / "data"
-base_results_dir = Path(__file__).parents[2] / "results"
+base_datadir = Path(__file__).parents[3] / "data"
+base_results_dir = Path(__file__).parents[3] / "results"
 
 results_dir = base_results_dir / "stochastic_variation_analysis/rules/"
 results_dir.mkdir(exist_ok=True, parents=True)
 
 figures_dir = results_dir / "figures"
 figures_dir.mkdir(exist_ok=True, parents=True)
+print(f"Results directory: {results_dir}")
+print(f"Figures directory: {figures_dir}")
 
 # %% set up grid
 SPACING = 2
@@ -107,7 +109,7 @@ grid_dir = base_datadir / f"structure_data/{STRUCTURE_ID}/grid_distances"
 grid_dir.mkdir(exist_ok=True, parents=True)
 # %% run in parallel
 PARALLEL = False
-skip_completed = True
+skip_completed = False
 if PARALLEL:
     num_cores = 4
     results = []
@@ -183,7 +185,7 @@ ax.set_aspect("equal")
 plt.show()
 
 # %% load mesh information
-file_path = results_dir / "mesh_information.dat"
+file_path = grid_dir.parent / "mesh_information.dat"
 with open(file_path, "rb") as f:
     mesh_information_dict = pickle.load(f)
 # %% load saved distances
@@ -200,12 +202,13 @@ for cellid in cellids_to_use:
         np.load(grid_dir / f"mem_distances_{cellid}.npy") / normalization_factor
     )
 
-# %% plot distance distribution
+# %% plot distance distribution kdeplot
 fig, ax = plt.subplots(dpi=300)
 cmap = plt.get_cmap("jet", len(nuc_distances))
+pix_size = 0.108
 all_nuc_distances = []
 for i in tqdm(range(len(nuc_distances))):
-    distances_to_plot = nuc_distances[i]
+    distances_to_plot = nuc_distances[i] * pix_size
     distances_to_plot = distances_to_plot[distances_to_plot > 0]
     sns.kdeplot(distances_to_plot, ax=ax, color=cmap(i + 1), alpha=0.3)
     all_nuc_distances.append(distances_to_plot)
@@ -213,8 +216,20 @@ all_nuc_distances = np.concatenate(all_nuc_distances)
 sns.kdeplot(all_nuc_distances, ax=ax, color=cmap(0), linewidth=2)
 mean_distance = np.mean(all_nuc_distances)
 ax.axvline(mean_distance, color="black", linestyle="--")
-ax.set_title(f"Distance to nucleus\nMean: {mean_distance:.2f}")
-ax.set_xlabel("Distance")
+ax.set_title(f"Distance to nucleus\nMean: {mean_distance:.2f}\u03BCm")
+ax.set_xlabel("Distance (\u03BCm)")
 ax.set_ylabel("Probability density")
 plt.show()
+# %% plot distance distribution histogram for mean shape
+fig, ax = plt.subplots(dpi=300)
+pix_size = 0.108
+nuc_distances = np.array(nuc_distances)
+ax.hist(nuc_distances[0] * 0.108)
+ax.set_xlabel("Distance (\u03BCm)")
+ax.set_ylabel("Number of points")
+ax.set_title("Distance to nucleus")
+plt.show()
+
+
+
 # %%
