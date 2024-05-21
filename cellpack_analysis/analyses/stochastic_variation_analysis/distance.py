@@ -967,8 +967,8 @@ def plot_space_corrected_kde_illustration(
     ax.plot(xvals, kde_distance_values_normalized, c="r")
     ax.set_xlim([0, 0.2])
     ax.axhline(1, color="k", linestyle="--")
-    ax.set_xlabel("distance")
-    ax.set_ylabel("density")
+    ax.set_xlabel("distance / cell diameter")
+    ax.set_ylabel("probability density")
     ax.set_title("occupied space")
 
     # plot available space values
@@ -979,8 +979,8 @@ def plot_space_corrected_kde_illustration(
     ax.set_xlim([0, 0.2])
     ax.set_ylim(axs[0].get_ylim())
     ax.axhline(1, color="k", linestyle="--")
-    ax.set_xlabel("distance")
-    ax.set_ylabel("density")
+    ax.set_xlabel("distance / cell diameter")
+    ax.set_ylabel("probability density")
     ax.set_title("available space")
 
     # plot ratio
@@ -989,9 +989,12 @@ def plot_space_corrected_kde_illustration(
     ax.set_xlim([0, 0.2])
     ax.set_ylim([0, 2])
     ax.axhline(1, color="k", linestyle="--")
-    ax.set_xlabel("distance")
-    ax.set_ylabel("conditional density")
+    ax.set_xlabel("distance / cell diameter")
+    ax.set_ylabel("conditional PDF")
     ax.set_title("ratio")
+
+    for ax in axs:
+        ax.xaxis.set_major_locator(plt.MaxNLocator(5))
     plt.tight_layout()
     plt.show()
 
@@ -1055,11 +1058,11 @@ def plot_individual_space_corrected_kde(
                 alpha=0.2,
             )
             ax.axvline(avg_diameter, color="r", linestyle="--")
-
+        ax.xaxis.set_major_locator(plt.MaxNLocator(5))
         ax.axhline(1, color="k", linestyle="--")
         ax.set_xlim([0, 0.2])
         ax.set_ylim([0, 4])
-        ax.set_xlabel("distance")
+        ax.set_xlabel("distance / cell diameter")
         ax.set_ylabel("conditional PDF")
         ax.set_title(f"{MODE_LABELS[mode]}")
     plt.tight_layout()
@@ -1126,6 +1129,7 @@ def plot_combined_space_corrected_kde(
     mesh_information_dict=None,
     struct_diameter=2.37,
     normalization=None,
+    aspect=None,
 ):
     print("Plotting combined space corrected kde values")
     fig, ax = plt.subplots(dpi=300, figsize=(7, 7))
@@ -1145,7 +1149,8 @@ def plot_combined_space_corrected_kde(
         ax.plot(xvals, yvals, label=MODE_LABELS[mode])
         if mesh_information_dict is not None and struct_diameter and ct == 0:
             avg_diameter, std_diameter = get_average_scaled_diameter(
-                struct_diameter=struct_diameter, mesh_information_dict=mesh_information_dict
+                struct_diameter=struct_diameter,
+                mesh_information_dict=mesh_information_dict,
             )
             ax.axvspan(
                 avg_diameter - std_diameter,
@@ -1166,11 +1171,17 @@ def plot_combined_space_corrected_kde(
         ax.set_ylabel("conditional PDF")
         ax.legend()
         plt.show()
-        fig.savefig(figures_dir / f"combined_space_corrected_kde_{ct}{suffix}.png", dpi=300)
+        fig.savefig(
+            figures_dir / f"combined_space_corrected_kde_{ct}{suffix}.png", dpi=300
+        )
     plt.show()
-    ax.set_aspect(0.02)
-    ax.legend(loc="lower center", bbox_to_anchor=(0.5, 1.15), ncol=len(packing_modes))
-    fig.savefig(figures_dir / f"combined_space_corrected_kde_aspect{suffix}.png", dpi=300)
+    if aspect is not None:
+        ax.set_aspect(aspect)
+        suffix = f"_aspect{suffix}"
+        ax.legend(
+            loc="lower center", bbox_to_anchor=(0.5, 1.15), ncol=len(packing_modes)
+        )
+    fig.savefig(figures_dir / f"combined_space_corrected_kde{suffix}.png", dpi=300)
     return fig, ax
 
 
@@ -1306,7 +1317,6 @@ def plot_occupancy_ks_test(
 
 
 def get_average_scaled_diameter(struct_diameter, mesh_information_dict):
-    print("Calculating average scaled diameter")
     scaled_diameter = []
     for _, mesh_info in mesh_information_dict.items():
         scaled_diameter.append(struct_diameter / mesh_info["cell_diameter"])
