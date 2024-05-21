@@ -1,7 +1,7 @@
 # %%
 import matplotlib.pyplot as plt
+import numpy as np
 from pathlib import Path
-
 
 from cellpack_analysis.analyses.stochastic_variation_analysis import distance
 from cellpack_analysis.analyses.stochastic_variation_analysis.load_data import (
@@ -71,16 +71,24 @@ mesh_information_dict = get_mesh_information_dict(
     recalculate=False,
 )
 # %% plot distribution of cell diameters
-import numpy as np
-cell_diameters = [cellid_dict["cell_diameter"] for _, cellid_dict in mesh_information_dict.items()]
-nuc_diameters = [cellid_dict["nuc_diameter"] for _, cellid_dict in mesh_information_dict.items()]
+PIX_SIZE = 0.108
+cell_diameters = [
+    cellid_dict["cell_diameter"] * PIX_SIZE
+    for _, cellid_dict in mesh_information_dict.items()
+]
+nuc_diameters = [
+    cellid_dict["nuc_diameter"] * PIX_SIZE
+    for _, cellid_dict in mesh_information_dict.items()
+]
 fig, ax = plt.subplots()
 ax.hist(cell_diameters, bins=20, alpha=0.5, label="cell")
 ax.hist(nuc_diameters, bins=20, alpha=0.5, label="nucleus")
 ax.set_title(
-    f"Mean cell diameter: {np.mean(cell_diameters):.2f}\n"
-    f"Mean nucleus diameter: {np.mean(nuc_diameters):.2f}"
+    f"Mean cell diameter: {np.mean(cell_diameters):.2f}\u03BCm\n"
+    f"Mean nucleus diameter: {np.mean(nuc_diameters):.2f}\u03BCm"
 )
+ax.set_xlabel("Diameter (\u03BCm)")
+ax.set_ylabel("Count")
 plt.tight_layout()
 plt.show()
 # %%
@@ -268,9 +276,10 @@ combined_kde_dict = distance.get_combined_space_corrected_kde(
     results_dir=results_dir,
     recalculate=False,
     suffix=suffix,
-    normalization=normalization,
 )
 # %% plot combined space corrected kde
+# aspect = 0.02
+aspect = None
 fig, ax = distance.plot_combined_space_corrected_kde(
     combined_kde_dict=combined_kde_dict,
     packing_modes=[
@@ -282,6 +291,8 @@ fig, ax = distance.plot_combined_space_corrected_kde(
     suffix=suffix,
     mesh_information_dict=mesh_information_dict,
     struct_diameter=STRUCT_RADIUS,
+    normalization=normalization,
+    aspect=aspect,
 )
 # %% get EMD between occupied and available distances
 emd_occupancy_dict = distance.get_occupancy_emd(
