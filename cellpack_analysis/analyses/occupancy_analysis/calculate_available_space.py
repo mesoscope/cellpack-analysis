@@ -12,7 +12,10 @@ import pandas as pd
 import seaborn as sns
 
 import gc
+
 plt.rcParams.update({"font.size": 14})
+# %% set pixel size
+PIX_SIZE = 0.108  # um per pixel
 
 # %% set structure id
 STRUCTURE_ID = "SLC25A17"  # peroxisomes
@@ -137,23 +140,20 @@ else:
     for i in tqdm(range(len(nuc_meshes_to_use))):
         results.append(
             get_nuc_distances(
-                nuc_meshes_to_use[i],
-                mem_meshes_to_use[i],
-                cellid_list[i],
-                all_points,
-                grid_dir,
+                nuc_mesh_path=nuc_meshes_to_use[i],
+                mem_mesh_path=mem_meshes_to_use[i],
+                cellid=cellid_list[i],
+                points=all_points,
+                save_dir=grid_dir,
+                skip_completed=skip_completed,
             )
         )
 # %% load meshes
 nuc_mesh = trimesh.load_mesh(nuc_meshes_to_use[0])
 mem_mesh = trimesh.load_mesh(mem_meshes_to_use[0])
 # %% use average mesh
-nuc_mesh = trimesh.load_mesh(
-    base_datadir / "average_shape_meshes/nuc_mesh_mean.obj"
-)
-mem_mesh = trimesh.load_mesh(
-    base_datadir / "average_shape_meshes/mem_mesh_mean.obj"
-)
+nuc_mesh = trimesh.load_mesh(base_datadir / "average_shape_meshes/nuc_mesh_mean.obj")
+mem_mesh = trimesh.load_mesh(base_datadir / "average_shape_meshes/mem_mesh_mean.obj")
 # %% try explicit inside-outside check
 print("Calculating nuc inside check")
 inside_nuc = nuc_mesh.contains(all_points)
@@ -164,22 +164,25 @@ inside_mem = mem_mesh.contains(all_points)
 inside_mem_outside_nuc = inside_mem & ~inside_nuc
 # %% plot grid point scatter plot
 fig, ax = plt.subplots(dpi=300)
+all_points_scaled = all_points * PIX_SIZE
 ax.scatter(
-    all_points[inside_mem_outside_nuc, 0],
-    all_points[inside_mem_outside_nuc, 1],
+    all_points_scaled[inside_mem_outside_nuc, 0],
+    all_points_scaled[inside_mem_outside_nuc, 1],
     c="magenta",
     label="inside mem outside nuc",
     s=0.1,
     alpha=0.7,
 )
 ax.scatter(
-    all_points[inside_nuc, 0],
-    all_points[inside_nuc, 1],
+    all_points_scaled[inside_nuc, 0],
+    all_points_scaled[inside_nuc, 1],
     c="cyan",
     label="inside nuc",
     s=0.1,
     alpha=0.7,
 )
+ax.set_xlabel("x (\u03BCm)")
+ax.set_ylabel("y (\u03BCm)")
 ax.legend(loc="lower center", bbox_to_anchor=(0.5, 1))
 ax.set_aspect("equal")
 plt.show()
@@ -193,7 +196,7 @@ with open(file_path, "rb") as f:
 normalization = None
 nuc_distances = []
 mem_distances = []
-for cellid in cellids_to_use:
+for cellid in tqdm(cellids_to_use):
     normalization_factor = mesh_information_dict[str(cellid)].get(normalization, 1)
     nuc_distances.append(
         np.load(grid_dir / f"nuc_distances_{cellid}.npy") / normalization_factor
@@ -205,10 +208,9 @@ for cellid in cellids_to_use:
 # %% plot distance distribution kdeplot
 fig, ax = plt.subplots(dpi=300)
 cmap = plt.get_cmap("jet", len(nuc_distances))
-pix_size = 0.108
 all_nuc_distances = []
 for i in tqdm(range(len(nuc_distances))):
-    distances_to_plot = nuc_distances[i] * pix_size
+    distances_to_plot = nuc_distances[i] * PIX_SIZE
     distances_to_plot = distances_to_plot[distances_to_plot > 0]
     sns.kdeplot(distances_to_plot, ax=ax, color=cmap(i + 1), alpha=0.3)
     all_nuc_distances.append(distances_to_plot)
@@ -222,14 +224,12 @@ ax.set_ylabel("Probability density")
 plt.show()
 # %% plot distance distribution histogram for mean shape
 fig, ax = plt.subplots(dpi=300)
-pix_size = 0.108
 nuc_distances = np.array(nuc_distances)
-ax.hist(nuc_distances[0] * 0.108)
+distances_to_plot = nuc_distances[0][nuc_distances[0] > 0] * PIX_SIZE
+ax.hist(distances_to_plot, bins=100)
 ax.set_xlabel("Distance (\u03BCm)")
 ax.set_ylabel("Number of points")
 ax.set_title("Distance to nucleus")
 plt.show()
-
-
 
 # %%
