@@ -960,6 +960,8 @@ def plot_space_corrected_kde_illustration(
     kde_available_space_values_normalized = kde_available_space_values / np.trapz(
         kde_available_space_values, xvals
     )
+    kde_distance_values_normalized += 1e-16
+    kde_available_space_values_normalized += 1e-16
     yvals = kde_distance_values_normalized / kde_available_space_values_normalized
 
     # plot occupied distance values
@@ -1037,6 +1039,8 @@ def plot_individual_space_corrected_kde(
             kde_available_space_values_normalized = (
                 kde_available_space_values / np.trapz(kde_available_space_values, xvals)
             )
+            kde_distance_values_normalized += 1e-16
+            kde_available_space_values_normalized += 1e-16
             yvals = (
                 kde_distance_values_normalized / kde_available_space_values_normalized
             )
@@ -1144,6 +1148,8 @@ def plot_combined_space_corrected_kde(
         kde_distance_values /= np.trapz(kde_distance_values, xvals)
         kde_available_space_values = kde_available_space(xvals)
         kde_available_space_values /= np.trapz(kde_available_space_values, xvals)
+        kde_distance_values += 1e-16
+        kde_available_space_values += 1e-16
         yvals = kde_distance_values / kde_available_space_values
 
         ax.plot(xvals, yvals, label=MODE_LABELS[mode])
@@ -1169,19 +1175,21 @@ def plot_combined_space_corrected_kde(
             xlabel = f"{xlabel} / {normalization}"
         ax.set_xlabel(xlabel)
         ax.set_ylabel("conditional PDF")
-        ax.legend()
+        # ax.legend()
+        plt.tight_layout()
         plt.show()
         fig.savefig(
-            figures_dir / f"combined_space_corrected_kde_{ct}{suffix}.png", dpi=300
+            figures_dir / f"combined_space_corrected_kde_{ct}{suffix}.svg", dpi=300
         )
-    plt.show()
     if aspect is not None:
         ax.set_aspect(aspect)
         suffix = f"_aspect{suffix}"
-        ax.legend(
-            loc="lower center", bbox_to_anchor=(0.5, 1.15), ncol=len(packing_modes)
-        )
-    fig.savefig(figures_dir / f"combined_space_corrected_kde{suffix}.png", dpi=300)
+        # ax.legend(
+        #     loc="lower center", bbox_to_anchor=(0.5, 1.15), ncol=len(packing_modes)
+        # )
+    plt.tight_layout()
+    plt.show()
+    fig.savefig(figures_dir / f"combined_space_corrected_kde{suffix}.svg", dpi=300)
     return fig, ax
 
 
