@@ -1,116 +1,32 @@
 [project]
-name = "cellpack_analysis"
-version = "0.0.1"
-description = "Analysis of cellpack simulations"
+name = "cellpack-analysis"
+version = "0.1.0"
+description = "Default template for PDM package"
 authors = [
     {name = "Saurabh Mogre", email = "saurabh.mogre@alleninstitute.org"},
 ]
 dependencies = [
-    "aicsimageio",
-    "matplotlib",
-    "numba>=0.57",
-    "numpy",
-    "pacmap",
-    "pandas",
-    "pathlib",
-    "quilt3",
-    "scikit-image>=0.15.0",
-    "scikit-learn",
-    "scipy",
-    "seaborn",
-    "tqdm",
-    "trimesh",
-    "umap-learn",
+    "aicsimageio>=4.14.0",
+    "matplotlib>=3.9.0",
+    "numpy>=1.26.4",
+    "pacmap>=0.7.2",
+    "pandas>=2.2.2",
+    "pathlib>=1.0.1",
+    "scikit-image>=0.22.0",
+    "scikit-learn>=1.5.0",
+    "scipy>=1.13.1",
+    "seaborn>=0.13.2",
+    "tqdm>=4.66.4",
+    "trimesh>=4.4.0",
     "ipykernel>=6.29.4",
-    "aicsshparam>=0.1.9",
-    "cellpack @ git+https://github.com/mesoscope/cellpack.git@remove-pyembree",
-    "ipdb>=0.13.13",
+    "aicsshparam>=0.1.10",
+    "pyarrow>=16.1.0",
+    "quilt3>=5.4.0",
 ]
-requires-python = ">=3.9"
+requires-python = "==3.9.*"
 readme = "README.md"
 license = {text = "Allen Institute Software License"}
-keywords = ["cellpack_analysis"]
-classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
-    "Intended Audience :: Developers",
-    "License :: Free for non-commercial use",
-    "Natural Language :: English",
-    "Programming Language :: Python :: 3.9",
-]
 
 
-[project.optional-dependencies]
-setup = [
-    "pytest-runner>=5.2",
-]
-test = [
-    "black>=19.10b0",
-    "codecov>=2.1.4",
-    "flake8-debugger>=3.2.1",
-    "flake8>=3.8.3",
-    "pytest-cov>=2.9.0",
-    "pytest-raises>=0.11",
-    "pytest>=5.4.3",
-]
-dev = [
-    "Sphinx>=3.4.3",
-    "black>=19.10b0",
-    "bump2version>=1.0.1",
-    "codecov>=2.1.4",
-    "coverage>=5.1",
-    "flake8-debugger>=3.2.1",
-    "flake8>=3.8.3",
-    "ipykernel",
-    "ipython>=7.15.0",
-    "m2r2>=0.2.7",
-    "pytest-cov>=2.9.0",
-    "pytest-raises>=0.11",
-    "pytest-runner>=5.2",
-    "pytest-runner>=5.2",
-    "pytest>=5.4.3",
-    "sphinx_rtd_theme>=0.5.1",
-    "tox>=3.15.2",
-    "twine>=3.1.1",
-    "wheel>=0.34.2",
-]
-all = [
-    "Sphinx>=3.4.3",
-    "aicsimageio",
-    "black>=19.10b0",
-    "bump2version>=1.0.1",
-    "codecov>=2.1.4",
-    "coverage>=5.1",
-    "flake8-debugger>=3.2.1",
-    "flake8>=3.8.3",
-    "ipykernel",
-    "ipython>=7.15.0",
-    "m2r2>=0.2.7",
-    "matplotlib",
-    "numba>=0.57",
-    "numpy",
-    "pacmap",
-    "pandas",
-    "pathlib",
-    "pytest-cov>=2.9.0",
-    "pytest-raises>=0.11",
-    "pytest-runner>=5.2",
-    "pytest-runner>=5.2",
-    "pytest>=5.4.3",
-    "quilt3",
-    "scikit-image>=0.15.0",
-    "scikit-learn",
-    "scipy",
-    "seaborn",
-    "sphinx_rtd_theme>=0.5.1",
-    "tox>=3.15.2",
-    "tqdm",
-    "trimesh",
-    "twine>=3.1.1",
-    "umap-learn",
-    "wheel>=0.34.2",
-]
-
-[project.scripts]
-my_example = "scripts.cellpack_PILR"
 [tool.pdm]
 distribution = false

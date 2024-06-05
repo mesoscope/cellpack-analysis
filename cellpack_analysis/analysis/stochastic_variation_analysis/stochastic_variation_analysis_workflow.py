@@ -278,14 +278,15 @@ combined_kde_dict = distance.get_combined_space_corrected_kde(
     suffix=suffix,
 )
 # %% plot combined space corrected kde
-# aspect = 0.02
-aspect = None
+aspect = 0.02
+# aspect = None
 fig, ax = distance.plot_combined_space_corrected_kde(
     combined_kde_dict=combined_kde_dict,
     packing_modes=[
         "random",
         "nucleus_moderate",
         "observed_data",
+        "nucleus_moderate_invert",
     ],
     figures_dir=occupancy_figdir,
     suffix=suffix,
@@ -294,6 +295,17 @@ fig, ax = distance.plot_combined_space_corrected_kde(
     normalization=normalization,
     aspect=aspect,
 )
+# %% adjust aspect ratio
+aspect = 0.01
+ax.set_aspect(aspect)
+ax.set_ylim([0, 4])
+ax.set_xlim([0, 0.2])
+ax.set_xlabel("")
+ax.set_ylabel("")
+plt.tight_layout()
+fig
+# %%
+fig.savefig(occupancy_figdir / f"combined_space_corrected_kde_aspect{suffix}.svg", dpi=300)
 # %% get EMD between occupied and available distances
 emd_occupancy_dict = distance.get_occupancy_emd(
     distance_dict=all_distance_dict["nucleus"],
