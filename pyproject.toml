@@ -22,6 +22,9 @@ dependencies = [
     "aicsshparam>=0.1.10",
     "pyarrow>=16.1.0",
     "quilt3>=5.4.0",
+    "rtree>=1.2.0",
+    "python-dotenv>=1.0.1",
+    "cellpack @ git+ssh://git@github.com/mesoscope/cellpack.git@main",
 ]
 requires-python = "==3.9.*"
 readme = "README.md"
@@ -30,3 +33,19 @@ license = {text = "Allen Institute Software License"}
 
 [tool.pdm]
 distribution = false
+
+[tool.pdm.dev-dependencies]
+lint = [
+    "black>=24.4.2",
+    "isort>=5.13.2",
+]
+debug = [
+    "ipdb>=0.13.13",
+]
+
+[tool.black]
+line-length = 88
+
+[tool.isort]
+line_length = 88
+profile = "black"

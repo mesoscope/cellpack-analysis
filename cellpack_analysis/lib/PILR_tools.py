@@ -1,13 +1,12 @@
+import matplotlib.pyplot as plt
+import numpy as np
+import pacmap
+import pandas as pd
+import seaborn as sns
+import umap
 from aicscytoparam import cytoparam
 from aicsimageio.aics_image import AICSImage
-import numpy as np
-import pandas as pd
 from aicsshparam import shtools
-import matplotlib.pyplot as plt
-import seaborn as sns
-
-import pacmap
-import umap
 from sklearn.decomposition import PCA
 
 from cellpack_analysis.lib.mesh_tools import (
@@ -324,8 +323,8 @@ def calculate_simplified_PILR(positions, nuc_mesh, mem_mesh, scale=True):
     return spilr
 
 
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 from aicscytoparam import cytoparam
 from skimage import measure as skmeasure
 

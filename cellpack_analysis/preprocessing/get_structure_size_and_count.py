@@ -1,41 +1,41 @@
 # %% [markdown]
 # ## Get distribution of counts and sizes from manifest
 
-# %%
-import pandas as pd
 import numpy as np
+import pandas as pd
+
+from cellpack_analysis.lib.get_structure_stats_dataframe import (
+    get_local_stats_dataframe_path,
+)
+from cellpack_analysis.lib.get_variance_dataset import get_variance_dataframe
 
 # %%
-s3_df_path = "s3://cellpack-analysis-data/variance_dataset.csv"
-meta_df = pd.read_csv(s3_df_path, index_col="CellId")
+meta_df = get_variance_dataframe()
 
 # %%
-meta_df["mean_count"] = np.nan
-meta_df["std_count"] = np.nan
-meta_df["mean_volume"] = np.nan
-meta_df["std_volume"] = np.nan
-meta_df["mean_radius"] = np.nan
-meta_df["std_radius"] = np.nan
+structures_of_interest = ["SLC25A17", "RAB5A", "LAMP1", "RAB7A"]
 
-structures_of_interest = ["SLC25A17", "RAB5A"]
+df_stats = pd.DataFrame(
+    columns=pd.MultiIndex.from_product(
+        [["count", "volume", "radius"], ["mean", "std"]],
+    ),
+    index=meta_df.index,
+)
 
+# %%
 for gene, df_gene in meta_df.groupby("structure_name"):
     counts = df_gene["STR_connectivity_cc"].values.astype(float)
     volume_per_unit = df_gene["STR_shape_volume"].values / counts
     unit_radius = (volume_per_unit / (4 / 3 * np.pi)) ** (1 / 3)
-    df_gene["mean_count"] = np.mean(counts)
-    df_gene["std_count"] = np.std(counts)
-    df_gene["mean_volume"] = np.mean(volume_per_unit)
-    df_gene["std_volume"] = np.std(volume_per_unit)
-    df_gene["mean_radius"] = np.mean(unit_radius)
-    df_gene["std_radius"] = np.std(unit_radius)
 
-    meta_df.loc[df_gene.index, "mean_count"] = df_gene["mean_count"]
-    meta_df.loc[df_gene.index, "std_count"] = df_gene["std_count"]
-    meta_df.loc[df_gene.index, "mean_volume"] = df_gene["mean_volume"]
-    meta_df.loc[df_gene.index, "std_volume"] = df_gene["std_volume"]
-    meta_df.loc[df_gene.index, "mean_radius"] = df_gene["mean_radius"]
-    meta_df.loc[df_gene.index, "std_radius"] = df_gene["std_radius"]
+    df_stats.loc[df_gene.index, "structure_name"] = gene
+
+    df_stats.loc[df_gene.index, ("count", "mean")] = np.mean(counts)
+    df_stats.loc[df_gene.index, ("count", "std")] = np.std(counts)
+    df_stats.loc[df_gene.index, ("volume", "mean")] = np.mean(volume_per_unit)
+    df_stats.loc[df_gene.index, ("volume", "std")] = np.std(volume_per_unit)
+    df_stats.loc[df_gene.index, ("radius", "mean")] = np.mean(unit_radius)
+    df_stats.loc[df_gene.index, ("radius", "std")] = np.std(unit_radius)
 
     if gene in structures_of_interest:
         print(gene)
@@ -45,5 +45,6 @@ for gene, df_gene in meta_df.groupby("structure_name"):
         )
         print(f"Radius: {np.mean(unit_radius):0.2f} +/- {np.std(unit_radius):.2f}")
 
-# %% save updated csv to s3
-meta_df.to_csv(s3_df_path)
+# %% save updated dataframe
+df_stats_path = get_local_stats_dataframe_path()
+df_stats.to_parquet(df_stats_path)

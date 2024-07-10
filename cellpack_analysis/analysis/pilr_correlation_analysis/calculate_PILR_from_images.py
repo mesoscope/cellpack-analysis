@@ -1,24 +1,23 @@
 # Import required packages
-import numpy as np
-import matplotlib as mpl
+import argparse
+import concurrent.futures
+import json
+import multiprocessing
+from pathlib import Path
 
+import matplotlib as mpl
+import numpy as np
+from aicsimageio.writers.ome_tiff_writer import OmeTiffWriter
 from tqdm import tqdm
 
-from pathlib import Path
-import json
-
-from cellpack_analysis.utilities.plotting_tools import save_PILR_as_tiff, save_PILR_image
 from cellpack_analysis.utilities.PILR_tools import (
     average_over_dimension,
     get_pilr_for_single_image,
 )
-
-import argparse
-
-import multiprocessing
-import concurrent.futures
-
-from aicsimageio.writers.ome_tiff_writer import OmeTiffWriter
+from cellpack_analysis.utilities.plotting_tools import (
+    save_PILR_as_tiff,
+    save_PILR_image,
+)
 
 # This was used for the original SAC talk 2023
 # CHANNEL_NAME_DICT = {
@@ -113,7 +112,12 @@ def PILR_calculation_workflow(
                 ):
                     # print("Processing file", file, "with channel", ch_name)
                     gfp_representations.append(gfp_representation)
-                    save_PILR_as_tiff(gfp_representation, individual_pilr_dir, f"{file.stem.split('.')[0]}_pilr", writer)
+                    save_PILR_as_tiff(
+                        gfp_representation,
+                        individual_pilr_dir,
+                        f"{file.stem.split('.')[0]}_pilr",
+                        writer,
+                    )
 
         else:
             for file in tqdm(file_list, total=num_files):

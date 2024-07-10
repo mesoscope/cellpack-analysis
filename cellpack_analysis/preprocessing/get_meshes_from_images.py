@@ -1,21 +1,21 @@
 # %%
+import concurrent.futures
+from pathlib import Path
+
+import vtk
 from aicsimageio.aics_image import AICSImage
 from aicsshparam import shtools
-
-from pathlib import Path
-import vtk
-import concurrent.futures
 
 # NOTE: Raw images should be downloaded prior to running this script
 # Run this script using: `python get_meshes_from_raw_images.py`
 # %%
-structure_name = "RAB5A"
+STRUCTURE_NAME = "RAB5A"
 
-datadir = Path(__file__).parent.parent / f"data/structure_data/{structure_name}"
-image_path = datadir / "sample_8d/raw_imgs_for_PILR/"
+datadir = Path(__file__).parents[2] / f"data/structure_data/{STRUCTURE_NAME}"
+image_path = datadir / "sample_8d/segmented/"
 file_glob = image_path.glob("*.tiff")
 
-save_folder = datadir / "meshes_hires"
+save_folder = datadir / "meshes/"
 save_folder.mkdir(exist_ok=True, parents=True)
 
 nuc_channel = 0
@@ -42,33 +42,50 @@ def get_mesh_for_file(
     data = reader.get_image_data("CZYX", S=0, T=0)
     writer = vtk.vtkOBJWriter()
     for name, channel in zip(["nuc", "mem"], [nuc_channel, mem_channel]):
+        save_path = save_folder / f"{name}_mesh_{cellID}.obj"
+        if save_path.exists():
+            print(f"Mesh for {file.stem} already exists. Skipping.")
+            return
         mesh = shtools.get_mesh_from_image(data[channel])
         if subsample:
             subsampled_mesh = decimation_pro(mesh[0], 0.95)
         else:
             subsampled_mesh = mesh[0]
-        writer.SetFileName(save_folder / f"{name}_mesh_{cellID}.obj")
+        writer.SetFileName(save_path)
         writer.SetInputData(subsampled_mesh)
         writer.Write()
 
 
 # %% run function in parallel using concurrent futures
 files_to_use = list(file_glob)
+subsample = True
 input_files = []
 for file in files_to_use:
-    if (structure_name not in file.stem) or (".tiff" not in file.suffix):
+    if (STRUCTURE_NAME not in file.stem) or (".tiff" not in file.suffix):
+        print(f"Skipping {file.stem}")
         continue
     input_files.append(file)
 
+print(f"Processing {len(input_files)} files")
+
 num_cores = 64
-with concurrent.futures.ProcessPoolExecutor(max_workers=num_cores) as executor:
-    futures = []
-    for file in input_files:
-        futures.append(
-            executor.submit(get_mesh_for_file, file, nuc_channel, mem_channel)
+if len(input_files):
+    with concurrent.futures.ProcessPoolExecutor(max_workers=num_cores) as executor:
+        futures = []
+        futures = executor.map(
+            get_mesh_for_file,
+            input_files,
+            [nuc_channel] * len(input_files),
+            [mem_channel] * len(input_files),
+            [save_folder] * len(input_files),
+            [subsample] * len(input_files),
         )
-    # get number of completed futures
-    done = 0
-    for fs in concurrent.futures.as_completed(futures):
-        done += 1
-        print(f"Completed {done} meshes")
+        # get number of completed futures
+        done = 0
+        for fs in concurrent.futures.as_completed(futures):  # type: ignore
+            done += 1
+            print(f"Completed {done} meshes")
+else:
+    print("No files to process")
+
+# %%

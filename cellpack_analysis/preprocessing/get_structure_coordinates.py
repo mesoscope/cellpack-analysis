@@ -1,39 +1,47 @@
 # %% [markdown]
 # # Get positions of structure centroids from images
 
-# %% imports
-from pathlib import Path
-import numpy as np
-from skimage import io, measure
-from tqdm import tqdm
-import matplotlib.pyplot as plt
 import json
-import trimesh
-
 from concurrent.futures import ProcessPoolExecutor
 
-# %% set structure id
+# %% imports
+from pathlib import Path
+
+import matplotlib.pyplot as plt
+import numpy as np
+import trimesh
+from skimage import io, measure
+from tqdm import tqdm
+
+# %% [markdown]
+# ### Set structure id
 structure_name_dict = {
     "SLC25A17": "peroxisome",
     "RAB5A": "endosome",
 }
 STRUCTURE_ID = "RAB5A"  # peroxisome: "SLC25A17", early endosome: "RAB5A"
 STRUCTURE_NAME = structure_name_dict[STRUCTURE_ID]
-# %% get data directory
+# %% [markdown]
+# ### get data directory
 datadir = Path(__file__).parents[2] / "data"
-# %% get path for images
-img_path = datadir / f"structure_data/{STRUCTURE_ID}/sample_8d/raw_imgs_for_PILR/"
+# %% [markdown]
+# ### Get path for images
+img_path = datadir / f"structure_data/{STRUCTURE_ID}/sample_8d/segmented/"
 
-# %% get list of files
+# %% [markdown]
+# ### Get list of files
 file_path = img_path.glob("*.tiff")
 file_path_list = [x for x in file_path]
+print(f"Number of files: {len(file_path_list)}")
 
-# %% set image parameters
+# %% [markdown]
+# Set image parameters
 struct_channel_index = 4
 nuc_channel_index = 0
 
 
-# %% define function to get positions from a single image
+# %% [markdown]
+# ### Define function to get positions from a single image
 def get_positions_from_single_image(file):
     """
     Get the positions of structures from a single image.
@@ -80,8 +88,9 @@ def get_positions_from_single_image(file):
     return cellid, positions, nuc_centroid
 
 
-# %% Test single image
-index = 0
+# %% [markdown]
+# ## Test single image
+index = 50
 file = file_path_list[index]
 img = io.imread(file)
 img_struct = img[:, struct_channel_index]
@@ -90,7 +99,7 @@ img_struct_max = np.max(img_struct, axis=0)
 img_nuc_max = np.max(img_nuc, axis=0)
 label_img = measure.label(img_struct)
 print(img_struct.shape, img_struct_max.shape)
-# %% get structure positions
+
 cellid, positions_corrected, nuc_centroid = get_positions_from_single_image(file)
 positions_corrected = np.array(positions_corrected)
 # %% load nucleus mesh
@@ -123,19 +132,21 @@ for ct, projection_axis in enumerate(["x", "y", "z"]):
     binary_img_nuc = np.max(img_nuc > 0, axis=projection_axis_index)
     ax.imshow(binary_label_img, cmap="Greens", origin="lower")
     ax.imshow(binary_img_nuc, cmap="Greys", alpha=0.5, origin="lower")
-    # ax.scatter(
-    #     positions_corrected[:, plot_index_1] + nuc_centroid[plot_index_1],
-    #     positions_corrected[:, plot_index_2] + nuc_centroid[plot_index_2],
-    #     c="b",
-    #     s=0.5,
-    # )  # plot all positions
     ax.scatter(
-        positions_corrected[neg_distance_indices, plot_index_1] + nuc_centroid[plot_index_1],
-        positions_corrected[neg_distance_indices, plot_index_2] + nuc_centroid[plot_index_2],
-        marker="*",
-        c="r",
-        s=10,
-    )  # only plot negative distances
+        positions_corrected[:, plot_index_1] + nuc_centroid[plot_index_1],
+        positions_corrected[:, plot_index_2] + nuc_centroid[plot_index_2],
+        c="b",
+        s=1,
+    )  # plot all positions
+    # ax.scatter(
+    #     positions_corrected[neg_distance_indices, plot_index_1]
+    #     + nuc_centroid[plot_index_1],
+    #     positions_corrected[neg_distance_indices, plot_index_2]
+    #     + nuc_centroid[plot_index_2],
+    #     marker="*",
+    #     c="r",
+    #     s=10,
+    # )  # only plot negative distances
     ax.set_xlabel(axis_indices[plot_index_1])
     ax.set_ylabel(axis_indices[plot_index_2])
 axs[-1, -1].axis("off")
@@ -164,10 +175,10 @@ else:
         positions_dict[cellid] = {}
         positions_dict[cellid][structure_name] = positions
 # %% save positions
-with open(
-    datadir / f"structure_data/{STRUCTURE_ID}/sample_8d/positions_{STRUCTURE_ID}.json",
-    "w",
-) as f:
+save_path = (
+    datadir / f"structure_data/{STRUCTURE_ID}/sample_8d/positions_{STRUCTURE_ID}.json"
+)
+with open(save_path, "w") as f:
     json.dump(positions_dict, f, indent=4, sort_keys=True)
-
+print(f"Saved positions to {save_path}")
 # %%

@@ -1,5 +1,5 @@
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 from aicscytoparam import cytoparam
 from skimage import measure as skmeasure
 

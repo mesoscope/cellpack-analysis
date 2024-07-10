@@ -1,13 +1,14 @@
-import os
-import json
-import pandas as pd
-import numpy as np
 import concurrent.futures
+import gc
+import json
 import multiprocessing
-from time import time
+import os
 import subprocess
 from pathlib import Path
-import gc
+from time import time
+
+import numpy as np
+import pandas as pd
 
 MAX_NUM_CLUSTERS = 3
 
@@ -45,9 +46,9 @@ def create_recipe_files(
     for clust in np.arange(1, num_clusters + 1):
         print(f"Creating files for {clust} clusters")
         contents_clust = contents.copy()
-        contents_clust["composition"]["nucleus"]["regions"]["interior"][1][
-            "count"
-        ] = int(clust)
+        contents_clust["composition"]["nucleus"]["regions"]["interior"][1]["count"] = (
+            int(clust)
+        )
         for this_id in shape_ids:
             this_row = shape_df.loc[shape_df["CellId"] == this_id]
             this_row = this_row.loc[this_row["angle"] == 0]

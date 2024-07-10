@@ -1,12 +1,10 @@
 import json
-from pathlib import Path
-import numpy as np
 import pickle
+from pathlib import Path
 
-import pandas as pd
+import numpy as np
 
-
-from cellpack_analysis.analyses.stochastic_variation_analysis.label_tables import (
+from cellpack_analysis.analysis.stochastic_variation_analysis.label_tables import (
     STRUCTURE_NAME_DICT,
     VARIABLE_SHAPE_MODES,
 )
@@ -24,10 +22,14 @@ def combine_multiple_seeds_to_dictionary(
 
     Args:
         data_folder (str): Path to the folder containing the data files.
-        ingredient_key (str, optional): Key of the ingredient to extract from the data. Defaults to "membrane_interior_peroxisome".
-        search_prefix (str, optional): Prefix to search for in the data file names. Defaults to "positions_".
-        rule_name (str, optional): Name of the rule to filter the data files. Defaults to "random".
-        save_name (str, optional): Name of the output file. Defaults to "positions_peroxisome_analyze_random_mean".
+        ingredient_key (str, optional): Key of the ingredient to extract from the data.
+            Defaults to "membrane_interior_peroxisome".
+        search_prefix (str, optional): Prefix to search for in the data file names.
+            Defaults to "positions_".
+        rule_name (str, optional): Name of the rule to filter the data files.
+            Defaults to "random".
+        save_name (str, optional): Name of the output file.
+            Defaults to "positions_peroxisome_analyze_random_mean".
 
     Returns:
         dict: A dictionary containing the combined data from multiple seeds.
@@ -65,11 +67,15 @@ def get_positions_dictionary_from_file(
     Retrieve positions dictionary from a file.
 
     Args:
-        filename (str): The path to the file containing the positions data.
-        ingredient_key (str, optional): The key for the ingredient in the raw data. Defaults to "membrane_interior_peroxisome".
+        filename (str):
+            The path to the file containing the positions data.
+        ingredient_key (str, optional):
+            The key for the ingredient in the raw data.
+            Defaults to "membrane_interior_peroxisome".
 
     Returns:
-        dict: A dictionary containing the positions data, where the keys are integers and the values are NumPy arrays.
+        dict: A dictionary containing the positions data,
+            where the keys are integers and the values are NumPy arrays.
     """
     with open(filename) as j:
         raw_data = json.load(j)
@@ -88,6 +94,7 @@ def get_position_data_from_outputs(
     packing_modes,
     base_datadir,
     results_dir,
+    packing_output_folder,
     recalculate=False,
     baseline_analysis=False,
 ):
@@ -99,7 +106,8 @@ def get_position_data_from_outputs(
         packing_modes (list): List of packing modes.
         base_datadir (str): The base directory for data.
         results_dir (str): The directory to save results.
-        recalculate (bool, optional): Whether to recalculate the position data. Defaults to False.
+        recalculate (bool, optional): Whether to recalculate the position data.
+            Defaults to False.
 
     Returns:
         dict: A dictionary containing the position data for each packing mode.
@@ -115,24 +123,33 @@ def get_position_data_from_outputs(
     all_positions = {}
 
     for mode in packing_modes:
-        if mode == "observed_data":
+        # available modes are:
+        # SLC25A17 (peroxisomes), RAB5A (endosomes),
+        # random, nucleus_moderate, nucleus_moderate_invert, planar_gradient_Z_moderate
+        if mode in STRUCTURE_NAME_DICT:
             file_path = (
                 base_datadir
                 / f"structure_data/{structure_id}/sample_8d/positions_{structure_id}.json"
             )
         else:
             if baseline_analysis:
-                folder_str = f"packing_outputs/stochastic_variation_analysis/{mode}/{STRUCTURE_NAME_DICT[structure_id]}/spheresSST/"
+                subfolder = f"{mode}/{STRUCTURE_NAME_DICT[structure_id]}/spheresSST/"
             else:
-                folder_str = f"packing_outputs/8d_sphere_data/RS/{STRUCTURE_NAME_DICT[structure_id]}/spheresSST/"
-            data_folder = base_datadir / folder_str
+                subfolder = f"{STRUCTURE_NAME_DICT[structure_id]}/spheresSST/"
+
+            data_folder = base_datadir / f"{packing_output_folder}/{subfolder}"
+
             file_path = (
                 data_folder
                 / f"all_positions_{STRUCTURE_NAME_DICT[structure_id]}_analyze_{mode}.json"
             )
 
             if file_path.exists() and not recalculate:
-                positions = get_positions_dictionary_from_file(file_path)
+                positions = get_positions_dictionary_from_file(
+                    file_path,
+                    ingredient_key=f"membrane_interior_{STRUCTURE_NAME_DICT[structure_id]}",
+                    drop_random_seed=mode in VARIABLE_SHAPE_MODES,
+                )
                 all_positions[mode] = positions
                 continue
 
@@ -148,6 +165,7 @@ def get_position_data_from_outputs(
 
         positions = get_positions_dictionary_from_file(
             file_path,
+            ingredient_key=f"membrane_interior_{STRUCTURE_NAME_DICT[structure_id]}",
             drop_random_seed=mode in VARIABLE_SHAPE_MODES,
         )
 
@@ -159,21 +177,3 @@ def get_position_data_from_outputs(
         pickle.dump(all_positions, f)
 
     return all_positions
-
-
-def get_cellid_list(structure_id, filter_8d=False):
-    """
-    Get a list of cell IDs for a given structure ID.
-
-    Parameters:
-        structure_id (int): The ID of the structure.
-        filter_8d (bool, optional): Whether to filter the cell IDs based on 8D criteria. Default is False.
-
-    Returns:
-        list: A list of cell IDs.
-    """
-    df = pd.read_csv("s3://cellpack-analysis-data/all_cellids.csv")
-    df = df[df["structure_name"] == structure_id]
-    if filter_8d:
-        df = df[df["8dsphere"]]
-    return df["CellId"].astype(str).tolist()

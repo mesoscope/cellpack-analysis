@@ -1,18 +1,21 @@
 # %%
-import matplotlib.pyplot as plt
-import numpy as np
 from pathlib import Path
 
-from cellpack_analysis.analyses.stochastic_variation_analysis import distance
-from cellpack_analysis.analyses.stochastic_variation_analysis.load_data import (
+import matplotlib.pyplot as plt
+
+from cellpack_analysis.analysis.stochastic_variation_analysis import distance
+from cellpack_analysis.analysis.stochastic_variation_analysis.load_data import (
     get_position_data_from_outputs,
 )
-from cellpack_analysis.analyses.stochastic_variation_analysis.stats_functions import (
+from cellpack_analysis.analysis.stochastic_variation_analysis.stats_functions import (
     normalize_distances,
 )
 from cellpack_analysis.lib.mesh_tools import get_mesh_information_dict
 
 plt.rcParams.update({"font.size": 14})
+# %% set structure ID
+STRUCTURE_ID = "SLC25A17"
+STRUCT_RADIUS = 2.37  # 2.37 um for peroxisomes, 2.6 um for early endosomes
 # %% set packing modes
 baseline_analysis = False
 packing_modes_baseline = [
@@ -23,30 +26,31 @@ packing_modes_baseline = [
     "shape",
 ]
 packing_modes_rules = [
-    "observed_data",
+    STRUCTURE_ID,
     "random",
     "nucleus_moderate",
     "nucleus_moderate_invert",
+    # TODO: add bias towards membrane
+    # TODO: add bias away from membrane
+    "planar_gradient_Z_moderate",
 ]
 packing_modes = packing_modes_baseline if baseline_analysis else packing_modes_rules
-baseline_mode = "mean_count_and_size" if baseline_analysis else "observed_data"
+baseline_mode = "mean_count_and_size" if baseline_analysis else STRUCTURE_ID
 # %% set file paths and setup parameters
 base_datadir = Path(__file__).parents[3] / "data"
 base_results_dir = Path(__file__).parents[3] / "results"
 
 folder_name = "baseline" if baseline_analysis else "rules"
-results_dir = base_results_dir / f"stochastic_variation_analysis/{folder_name}"
+results_dir = (
+    base_results_dir / f"stochastic_variation_analysis/{STRUCTURE_ID}/{folder_name}"
+)
 results_dir.mkdir(exist_ok=True, parents=True)
 
 figures_dir = results_dir / "figures"
 figures_dir.mkdir(exist_ok=True, parents=True)
 
-
-# %% set structure ID
-STRUCTURE_ID = "SLC25A17"
-STRUCT_RADIUS = 2.37
 # %% distance measures to use
-distance_measures = ["pairwise", "nucleus", "nearest"]
+distance_measures = ["pairwise", "nucleus", "nearest", "z"]
 # %% set suffix
 normalization = "cell_diameter"  # options: None, "intracellular_radius", "cell_diameter", "max_distance"
 if normalization is not None:
@@ -71,26 +75,7 @@ mesh_information_dict = get_mesh_information_dict(
     recalculate=False,
 )
 # %% plot distribution of cell diameters
-PIX_SIZE = 0.108
-cell_diameters = [
-    cellid_dict["cell_diameter"] * PIX_SIZE
-    for _, cellid_dict in mesh_information_dict.items()
-]
-nuc_diameters = [
-    cellid_dict["nuc_diameter"] * PIX_SIZE
-    for _, cellid_dict in mesh_information_dict.items()
-]
-fig, ax = plt.subplots()
-ax.hist(cell_diameters, bins=20, alpha=0.5, label="cell")
-ax.hist(nuc_diameters, bins=20, alpha=0.5, label="nucleus")
-ax.set_title(
-    f"Mean cell diameter: {np.mean(cell_diameters):.2f}\u03BCm\n"
-    f"Mean nucleus diameter: {np.mean(nuc_diameters):.2f}\u03BCm"
-)
-ax.set_xlabel("Diameter (\u03BCm)")
-ax.set_ylabel("Count")
-plt.tight_layout()
-plt.show()
+distance.plot_cell_diameter_distribution(mesh_information_dict)
 # %%
 avg_struct_diameter, std_struct_diameter = distance.get_average_scaled_diameter(
     struct_diameter=STRUCT_RADIUS, mesh_information_dict=mesh_information_dict
@@ -167,7 +152,7 @@ all_pairwise_emd = distance.get_pairwise_emd_dictionary(
     all_distance_dict=all_distance_dict,
     packing_modes=packing_modes,
     results_dir=results_dir,
-    recalculate=False,
+    recalculate=True,
     suffix=suffix,
 )
 # %% create pairwise emd folders
@@ -181,7 +166,7 @@ distance.plot_pairwise_emd_heatmaps(
     suffix=suffix,
 )
 # %% plot emd correlation heatmap
-corr_df_dict = distance.plot_average_emd_correlation_heatmap(
+corr_df_dict = distance.get_average_emd_correlation(
     distance_measures=distance_measures,
     all_pairwise_emd=all_pairwise_emd,
     pairwise_emd_dir=pairwise_emd_dir,
@@ -240,8 +225,10 @@ distance.plot_ripley_k(
 # %% create figure directory
 occupancy_figdir = figures_dir / "occupancy"
 occupancy_figdir.mkdir(exist_ok=True, parents=True)
+# %% choose distance measure
+occupancy_distance_measure = "z"
 # %% create kde dictionary
-kde_dict = distance.get_space_corrected_kde(
+kde_dict = distance.get_individual_distance_distribution_kde(
     all_distance_dict=all_distance_dict,
     mesh_information_dict=mesh_information_dict,
     packing_modes=packing_modes,
@@ -249,44 +236,52 @@ kde_dict = distance.get_space_corrected_kde(
     recalculate=False,
     suffix=suffix,
     normalization=normalization,
+    distance_measure=occupancy_distance_measure,
 )
 # %% plot illustration for space corrected kde
-distance.plot_space_corrected_kde_illustration(
-    distance_dict=all_distance_dict["nucleus"],
-    kde_dict=kde_dict,
-    baseline_mode="random",
-    figures_dir=occupancy_figdir,
-    suffix=suffix,
+kde_distance, kde_available_space, xvals = (
+    distance.plot_occupancy_illustration(
+        distance_dict=all_distance_dict[occupancy_distance_measure],
+        kde_dict=kde_dict,
+        baseline_mode="random",
+        figures_dir=occupancy_figdir,
+        suffix=suffix,
+        distance_measure=occupancy_distance_measure,
+        struct_diameter=avg_struct_diameter,
+    )
 )
+
 # %% plot individual space corrected individual kde values
-distance.plot_individual_space_corrected_kde(
+distance.plot_individual_occupancy_ratio(
     distance_dict=all_distance_dict["nucleus"],
     kde_dict=kde_dict,
-    packing_modes=["observed_data", "random", "nucleus_moderate"],
+    packing_modes=[STRUCTURE_ID, "random", "nucleus_moderate"],
     figures_dir=occupancy_figdir,
     suffix=suffix,
     mesh_information_dict=mesh_information_dict,
     struct_diameter=STRUCT_RADIUS,
 )
 # %% get combined space corrected kde
-combined_kde_dict = distance.get_combined_space_corrected_kde(
+combined_kde_dict = distance.get_combined_distance_distribution_kde(
     all_distance_dict=all_distance_dict,
     mesh_information_dict=mesh_information_dict,
     packing_modes=packing_modes,
     results_dir=results_dir,
     recalculate=False,
     suffix=suffix,
+    distance_measure=occupancy_distance_measure,
 )
 # %% plot combined space corrected kde
-aspect = 0.02
-# aspect = None
-fig, ax = distance.plot_combined_space_corrected_kde(
+# aspect = 0.02
+aspect = None
+fig, ax = distance.plot_combined_occupancy_ratio(
     combined_kde_dict=combined_kde_dict,
     packing_modes=[
         "random",
         "nucleus_moderate",
-        "observed_data",
-        "nucleus_moderate_invert",
+        STRUCTURE_ID,
+        # "nucleus_moderate_invert",
+        # "planar_gradient_Z_moderate",
     ],
     figures_dir=occupancy_figdir,
     suffix=suffix,
@@ -294,18 +289,25 @@ fig, ax = distance.plot_combined_space_corrected_kde(
     struct_diameter=STRUCT_RADIUS,
     normalization=normalization,
     aspect=aspect,
+    save_format="png",
+    distance_measure=occupancy_distance_measure,
 )
 # %% adjust aspect ratio
-aspect = 0.01
-ax.set_aspect(aspect)
-ax.set_ylim([0, 4])
-ax.set_xlim([0, 0.2])
-ax.set_xlabel("")
-ax.set_ylabel("")
+# aspect = 0.01
+# ax.set_aspect(aspect)
+from matplotlib.ticker import MaxNLocator
+plt.rcParams.update({"font.size": 18})
+ax.set_ylim([0, 1.5])
+# ax.set_xlim([0, 0.4])
+# ax.set_xlabel("")
+# ax.set_ylabel("")
+ax.xaxis.set_major_locator(MaxNLocator(5))
 plt.tight_layout()
 fig
 # %%
-fig.savefig(occupancy_figdir / f"combined_space_corrected_kde_aspect{suffix}.svg", dpi=300)
+fig.savefig(
+    occupancy_figdir / f"combined_space_corrected_kde_aspect{suffix}.svg", dpi=300
+)
 # %% get EMD between occupied and available distances
 emd_occupancy_dict = distance.get_occupancy_emd(
     distance_dict=all_distance_dict["nucleus"],
@@ -341,5 +343,3 @@ ks_occupancy_dict = distance.get_occupancy_ks_test_dict(
 distance.plot_occupancy_ks_test(
     ks_occupancy_dict=ks_occupancy_dict, figures_dir=occupancy_figdir
 )
-
-# %%

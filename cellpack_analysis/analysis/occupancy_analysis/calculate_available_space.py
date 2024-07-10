@@ -1,101 +1,42 @@
-# %%
-import pickle
-import numpy as np
-import trimesh
-import trimesh.proximity
-import matplotlib.pyplot as plt
+# %% [markdown]
+"""
+# Calculate available space for a structure
 
-from pathlib import Path
+This script calculates the available space for intracellular structures by discretizing
+the space into a grid and calculating the distance of each grid point to the
+nearest nucleus and membrane.
+The distance is calculated using the signed distance function from the trimesh library and the
+distances are saved in a grid directory for each cellid.
+Distances are normalized by the cell diameter and saved in the grid directory.
+"""
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from tqdm import tqdm
+from pathlib import Path
+
 import pandas as pd
-import seaborn as sns
+from tqdm import tqdm
 
-import gc
-
-plt.rcParams.update({"font.size": 14})
-# %% set pixel size
-PIX_SIZE = 0.108  # um per pixel
+from cellpack_analysis.lib.mesh_tools import calculate_grid_distances
 
 # %% set structure id
-STRUCTURE_ID = "SLC25A17"  # peroxisomes
+STRUCTURE_ID = "RAB5A"  # SLC25A17: peroxisomes, RAB5A: early endosomes
+# %% set up parameters for grid
+SPACING = 1.5
 # %% set file paths and setup parameters
 base_datadir = Path(__file__).parents[3] / "data"
-base_results_dir = Path(__file__).parents[3] / "results"
-
-results_dir = base_results_dir / "stochastic_variation_analysis/rules/"
-results_dir.mkdir(exist_ok=True, parents=True)
-
-figures_dir = results_dir / "figures"
-figures_dir.mkdir(exist_ok=True, parents=True)
-print(f"Results directory: {results_dir}")
-print(f"Figures directory: {figures_dir}")
-
-# %% set up grid
-SPACING = 2
-bounding_box = np.array([[-190, -224, -66], [172, 216, 74]])
-grid = np.mgrid[
-    bounding_box[0, 0] : bounding_box[1, 0] : SPACING,
-    bounding_box[0, 1] : bounding_box[1, 1] : SPACING,
-    bounding_box[0, 2] : bounding_box[1, 2] : SPACING,
-]
-all_points = grid.reshape(3, -1).T
-
-# %%
-CHUNK_SIZE = 50000
-
-
-def get_nuc_distances(
-    nuc_mesh_path, mem_mesh_path, cellid, points, save_dir=None, skip_completed=True
-):
-    # check if distances already calculated
-    if skip_completed and save_dir is not None:
-        file_name = save_dir / f"nuc_distances_{cellid}.npy"
-        if file_name.exists():
-            return np.load(file_name), np.load(save_dir / f"mem_distances_{cellid}.npy")
-
-    # load meshes
-    nuc_mesh = trimesh.load_mesh(nuc_mesh_path)
-    mem_mesh = trimesh.load_mesh(mem_mesh_path)
-
-    # get points inside mem using chunking
-    inside_mem = np.empty(len(points), dtype=bool)
-    for i in range(0, len(points), CHUNK_SIZE):
-        inside_mem[i : i + CHUNK_SIZE] = mem_mesh.contains(points[i : i + CHUNK_SIZE])
-    inside_mem_points = points[inside_mem]
-    del points
-
-    gc.collect()
-
-    # get points inside nuc
-    # inside_nuc = np.empty(len(inside_mem_points), dtype=bool)
-    # for i in range(0, len(inside_mem_points), CHUNK_SIZE):
-    #     inside_nuc[i : i + CHUNK_SIZE] = nuc_mesh.contains(
-    #         inside_mem_points[i : i + CHUNK_SIZE]
-    #     )
-
-    # # get points inside mem but outside nuc
-    # inter_points = inside_mem_points[~inside_nuc]
-
-    # get distances to nuc_mesh
-    nuc_distances = -trimesh.proximity.signed_distance(nuc_mesh, inside_mem_points)
-    mem_distances = trimesh.proximity.signed_distance(mem_mesh, inside_mem_points)
-    if save_dir is not None:
-        np.save(save_dir / f"nuc_distances_{cellid}.npy", nuc_distances)
-        np.save(save_dir / f"mem_distances_{cellid}.npy", mem_distances)
-    return nuc_distances, mem_distances
-
+print(f"Data directory: {base_datadir}")
 
 # %% select cellids to use
-mesh_folder = base_datadir / "structure_data/SLC25A17/meshes/"
-df_cellid = pd.read_csv("s3://cellpack-analysis-data/all_cellids.csv")
-df_pex = df_cellid.loc[df_cellid["structure_name"] == "SLC25A17"]
-cellids_to_use = df_pex.loc[df_pex["8dsphere"], "CellId"]
+use_mean_shape = True
+if use_mean_shape:
+    mesh_folder = base_datadir / "average_shape_meshes"
+    cellids_to_use = ["mean"]
+else:
+    mesh_folder = base_datadir / f"structure_data/{STRUCTURE_ID}/meshes/"
+    df_cellid = pd.read_csv("s3://cellpack-analysis-data/all_cellids.csv")
+    df_struct = df_cellid.loc[df_cellid["structure_name"] == STRUCTURE_ID]
+    cellids_to_use = df_struct.loc[df_struct["8dsphere"], "CellId"]
 print(f"Using {len(cellids_to_use)} cellids")
-# %% use mean cell and nuclear shape
-mesh_folder = base_datadir / "average_shape_meshes"
-cellids_to_use = ["mean"]
-# %%
+# %% get meshes for cellids used
 cellid_list = []
 nuc_meshes_to_use = []
 mem_meshes_to_use = []
@@ -106,13 +47,18 @@ for cellid in cellids_to_use:
         cellid_list.append(cellid)
         nuc_meshes_to_use.append(nuc_mesh)
         mem_meshes_to_use.append(mem_mesh)
-print(f"Found {len(cellid_list)} meshes")
+print(f"Found {len(nuc_meshes_to_use)} meshes")
 # %% set up grid results directory
 grid_dir = base_datadir / f"structure_data/{STRUCTURE_ID}/grid_distances"
 grid_dir.mkdir(exist_ok=True, parents=True)
 # %% run in parallel
 PARALLEL = False
-skip_completed = False
+recalculate = False
+calc_nuc_distances = True
+calc_mem_distances = True
+calc_z_distances = True
+calc_inside_mem = True
+chunk_size = 50000
 if PARALLEL:
     num_cores = 4
     results = []
@@ -121,115 +67,37 @@ if PARALLEL:
         for i in range(len(nuc_meshes_to_use)):
             futures.append(
                 executor.submit(
-                    get_nuc_distances,
+                    calculate_grid_distances,
                     nuc_meshes_to_use[i],
                     mem_meshes_to_use[i],
                     cellid_list[i],
-                    all_points,
+                    SPACING,
                     grid_dir,
-                    skip_completed,
+                    recalculate,
+                    calc_nuc_distances,
+                    calc_mem_distances,
+                    calc_z_distances,
+                    chunk_size,
                 )
             )
 
-        with tqdm(total=len(futures)) as pbar:
+        with tqdm(total=len(futures), desc="CellIDs done") as pbar:
             for future in as_completed(futures):
-                results.append(future.result())
                 pbar.update(1)
 else:
     results = []
-    for i in tqdm(range(len(nuc_meshes_to_use))):
+    for i in tqdm(range(len(nuc_meshes_to_use)), desc="CellIDs done"):
         results.append(
-            get_nuc_distances(
+            calculate_grid_distances(
                 nuc_mesh_path=nuc_meshes_to_use[i],
                 mem_mesh_path=mem_meshes_to_use[i],
                 cellid=cellid_list[i],
-                points=all_points,
+                spacing=SPACING,
                 save_dir=grid_dir,
-                skip_completed=skip_completed,
+                recalculate=recalculate,
+                calc_nuc_distances=calc_nuc_distances,
+                calc_mem_distances=calc_mem_distances,
+                calc_z_distances=calc_z_distances,
+                chunk_size=chunk_size,
             )
         )
-# %% load meshes
-nuc_mesh = trimesh.load_mesh(nuc_meshes_to_use[0])
-mem_mesh = trimesh.load_mesh(mem_meshes_to_use[0])
-# %% use average mesh
-nuc_mesh = trimesh.load_mesh(base_datadir / "average_shape_meshes/nuc_mesh_mean.obj")
-mem_mesh = trimesh.load_mesh(base_datadir / "average_shape_meshes/mem_mesh_mean.obj")
-# %% try explicit inside-outside check
-print("Calculating nuc inside check")
-inside_nuc = nuc_mesh.contains(all_points)
-print("Calculating mem inside check")
-inside_mem = mem_mesh.contains(all_points)
-
-# %% find points inside mem but outside nuc
-inside_mem_outside_nuc = inside_mem & ~inside_nuc
-# %% plot grid point scatter plot
-fig, ax = plt.subplots(dpi=300)
-all_points_scaled = all_points * PIX_SIZE
-ax.scatter(
-    all_points_scaled[inside_mem_outside_nuc, 0],
-    all_points_scaled[inside_mem_outside_nuc, 1],
-    c="magenta",
-    label="inside mem outside nuc",
-    s=0.1,
-    alpha=0.7,
-)
-ax.scatter(
-    all_points_scaled[inside_nuc, 0],
-    all_points_scaled[inside_nuc, 1],
-    c="cyan",
-    label="inside nuc",
-    s=0.1,
-    alpha=0.7,
-)
-ax.set_xlabel("x (\u03BCm)")
-ax.set_ylabel("y (\u03BCm)")
-ax.legend(loc="lower center", bbox_to_anchor=(0.5, 1))
-ax.set_aspect("equal")
-plt.show()
-
-# %% load mesh information
-file_path = grid_dir.parent / "mesh_information.dat"
-with open(file_path, "rb") as f:
-    mesh_information_dict = pickle.load(f)
-# %% load saved distances
-# normalization = "cell_diameter"
-normalization = None
-nuc_distances = []
-mem_distances = []
-for cellid in tqdm(cellids_to_use):
-    normalization_factor = mesh_information_dict[str(cellid)].get(normalization, 1)
-    nuc_distances.append(
-        np.load(grid_dir / f"nuc_distances_{cellid}.npy") / normalization_factor
-    )
-    mem_distances.append(
-        np.load(grid_dir / f"mem_distances_{cellid}.npy") / normalization_factor
-    )
-
-# %% plot distance distribution kdeplot
-fig, ax = plt.subplots(dpi=300)
-cmap = plt.get_cmap("jet", len(nuc_distances))
-all_nuc_distances = []
-for i in tqdm(range(len(nuc_distances))):
-    distances_to_plot = nuc_distances[i] * PIX_SIZE
-    distances_to_plot = distances_to_plot[distances_to_plot > 0]
-    sns.kdeplot(distances_to_plot, ax=ax, color=cmap(i + 1), alpha=0.3)
-    all_nuc_distances.append(distances_to_plot)
-all_nuc_distances = np.concatenate(all_nuc_distances)
-sns.kdeplot(all_nuc_distances, ax=ax, color=cmap(0), linewidth=2)
-mean_distance = np.mean(all_nuc_distances)
-ax.axvline(mean_distance, color="black", linestyle="--")
-ax.set_title(f"Distance to nucleus\nMean: {mean_distance:.2f}\u03BCm")
-ax.set_xlabel("Distance (\u03BCm)")
-ax.set_ylabel("Probability density")
-plt.show()
-# %% plot distance distribution histogram for mean shape
-fig, ax = plt.subplots(dpi=300)
-nuc_distances = np.array(nuc_distances)
-distances_to_plot = nuc_distances[0][nuc_distances[0] > 0] * PIX_SIZE
-ax.hist(distances_to_plot, bins=100)
-ax.set_xlabel("Distance (\u03BCm)")
-ax.set_ylabel("Number of points")
-ax.set_title("Distance to nucleus")
-plt.show()
-
-# %%

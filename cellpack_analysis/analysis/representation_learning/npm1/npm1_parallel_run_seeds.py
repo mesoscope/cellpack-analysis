@@ -1,14 +1,15 @@
-import os
-import json
-import sys
-import pandas as pd
-import numpy as np
 import concurrent.futures
-import multiprocessing
-from time import time
-import subprocess
-from pathlib import Path
 import gc
+import json
+import multiprocessing
+import os
+import subprocess
+import sys
+from pathlib import Path
+from time import time
+
+import numpy as np
+import pandas as pd
 
 MAX_NUM_CLUSTERS = 5
 

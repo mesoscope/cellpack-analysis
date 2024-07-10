@@ -1,17 +1,16 @@
 # %%
 import argparse
-import pandas as pd
-import numpy as np
-
 import json
 from pathlib import Path
 
-from scipy.stats import pearsonr
-from cellpack_analysis.utilities.PILR_tools import get_cell_id_list
-
-from cellpack_analysis.utilities.plotting_tools import save_PILR_image
+import numpy as np
+import pandas as pd
 from aicsimageio.writers.ome_tiff_writer import OmeTiffWriter
+from scipy.stats import pearsonr
 from tqdm import tqdm
+
+from cellpack_analysis.utilities.PILR_tools import get_cell_id_list
+from cellpack_analysis.utilities.plotting_tools import save_PILR_image
 
 
 # %%
@@ -77,14 +76,16 @@ def create_df_for_correlations(individual_PILR_dict, cellid_list):
 # #### try to load previously calculated correlations
 def initialize_corr_df(individual_PILR_dict, cellid_list, base_folder, create_new=True):
     if create_new:
-        df = create_df_for_correlations(individual_PILR_dict, cellid_list)  
+        df = create_df_for_correlations(individual_PILR_dict, cellid_list)
     else:
         df_path = base_folder / "individual_PILR_corr.csv"
         if df_path.exists() and not create_new:
             df = pd.read_csv(
-                base_folder / "individual_PILR_corr.csv", index_col=[0, 1], header=[0, 1]
+                base_folder / "individual_PILR_corr.csv",
+                index_col=[0, 1],
+                header=[0, 1],
             )
-        # set 0 values to nan
+            # set 0 values to nan
             df[df == 0] = np.nan
             print("Loaded previously calculated correlations")
         else:
@@ -100,7 +101,9 @@ def initialize_corr_df(individual_PILR_dict, cellid_list, base_folder, create_ne
 # %% [markdown]
 # #### calculate cross correlations between pilrs
 def calculate_cross_correlations(individual_PILR_dict, cellid_list, base_folder):
-    df = initialize_corr_df(individual_PILR_dict, cellid_list, base_folder, create_new=True)
+    df = initialize_corr_df(
+        individual_PILR_dict, cellid_list, base_folder, create_new=True
+    )
     cellid_list_str = [str(cellid) for cellid in cellid_list]
     for ch1, pilr_list1 in individual_PILR_dict.items():
         for ch2, pilr_list2 in individual_PILR_dict.items():

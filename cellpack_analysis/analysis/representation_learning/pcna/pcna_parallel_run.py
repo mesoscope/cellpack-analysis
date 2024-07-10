@@ -1,25 +1,26 @@
-import os
-import json
-import pandas as pd
-import numpy as np
 import concurrent.futures
+import gc
+import json
 import multiprocessing
-from time import sleep, time
+import os
 import subprocess
 from pathlib import Path
-import gc
+from time import sleep, time
+
+import numpy as np
+import pandas as pd
 
 rules = [
-#     "random",
-#     "radial_gradient",
+    #     "random",
+    #     "radial_gradient",
     "surface_gradient",
-#     "planar_gradient_0deg",
-#     "planar_gradient_15deg",
-#     "planar_gradient_30deg",
-#     "planar_gradient_45deg",
-#     "planar_gradient_60deg",
-#     "planar_gradient_75deg",
-#     "planar_gradient_90deg",
+    #     "planar_gradient_0deg",
+    #     "planar_gradient_15deg",
+    #     "planar_gradient_30deg",
+    #     "planar_gradient_45deg",
+    #     "planar_gradient_60deg",
+    #     "planar_gradient_75deg",
+    #     "planar_gradient_90deg",
 ]
 
 CREATE_FILES = True

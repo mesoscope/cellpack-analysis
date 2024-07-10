@@ -1,0 +1,54 @@
+{
+    "structure_name": "peroxisome",
+    "structure_id": "SLC25A17",
+    "condition": "rules_shape",
+    "generate_recipes": true,
+    "use_mean_cell": false,
+    "use_cells_in_8d_sphere": true,
+    "get_counts_from_data": true,
+    "get_size_from_data": true,
+    "get_bounding_box_from_mesh": true,
+    "recipe_data": [
+        {
+            "random": {}
+        },
+        {
+            "nucleus_gradient_strong": {
+                "gradients": {
+                    "nucleus_gradient": {
+                        "description": "gradient based on distance from the surface of the nucleus mesh",
+                        "pick_mode": "rnd",
+                        "mode": "surface",
+                        "mode_settings": {
+                            "object": "nucleus",
+                            "scale_to_next_surface": false
+                        },
+                        "weight_mode": "exponential",
+                        "weight_mode_settings": {
+                            "decay_length": 0.1
+                        }
+                    }
+                }
+            }
+        },
+        {
+            "membrane_gradient_strong": {
+                "gradients": {
+                    "membrane_gradient": {
+                        "description": "gradient based on distance from the surface of the membrane mesh",
+                        "pick_mode": "rnd",
+                        "mode": "surface",
+                        "mode_settings": {
+                            "object": "membrane",
+                            "scale_to_next_surface": false
+                        },
+                        "weight_mode": "exponential",
+                        "weight_mode_settings": {
+                            "decay_length": 0.1
+                        }
+                    }
+                }
+            }
+        }
+    ]
+}

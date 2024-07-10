@@ -1,14 +1,17 @@
+import argparse
+import concurrent.futures
 import gc
 import json
-import subprocess
-import numpy as np
-import concurrent.futures
 import multiprocessing
-from time import time
-from pathlib import Path
-import pandas as pd
-import argparse
+import subprocess
 from datetime import datetime
+from pathlib import Path
+from time import time
+
+import numpy as np
+import pandas as pd
+
+from cellpack_analysis.lib.mesh_tools import get_mesh_boundaries
 
 np.random.seed(42)
 
@@ -93,39 +96,6 @@ def set_paths(
         grid_path,
         cellid_df_path,
     )
-
-
-def get_mesh_vertices(mesh_file_path):
-    """
-    Given a mesh file path, returns the coordinates of the mesh vertices.
-    """
-    coordinates = []
-    with open(mesh_file_path, "r") as mesh_file:
-        for line in mesh_file:
-            if line.startswith("v"):
-                coordinates.append([float(x) for x in line.split()[1:]])
-    coordinates = np.array(coordinates)
-    return coordinates
-
-
-def get_mesh_center(mesh_file_path):
-    """
-    Given a mesh file path, returns the center of the mesh.
-    """
-    coordinates = get_mesh_vertices(mesh_file_path)
-    center = np.mean(coordinates, axis=0)
-    return center
-
-
-def get_mesh_boundaries(mesh_file_path):
-    """
-    Given a mesh file path, returns the coordinates:
-    [max_x, max_y, max_z] , [min_x, min_y, min_z]
-    """
-    coordinates = get_mesh_vertices(mesh_file_path)
-    max_coordinates = np.max(coordinates, axis=0)
-    min_coordinates = np.min(coordinates, axis=0)
-    return max_coordinates, min_coordinates
 
 
 def transform_and_save_dict_for_rule(
@@ -363,11 +333,6 @@ def run_single_packing(recipe_path, config_path):
     except Exception as e:
         print(e)
         return False
-
-
-def chunk_list(input_list, chunk_size):
-    for i in range(0, len(input_list), chunk_size):
-        yield input_list[i : min(i + chunk_size, len(input_list))]
 
 
 def get_recipes_to_use(
