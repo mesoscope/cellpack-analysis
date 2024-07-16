@@ -57,5 +57,5 @@ def get_cellid_list_for_structure(
     if dsphere:
         condition = condition & df_cellID["8dsphere"]
 
-    cellid_list = df_cellID.loc[condition, "CellId"].astype(str).tolist()
+    cellid_list = df_cellID.loc[condition, "CellId"].tolist()
     return cellid_list

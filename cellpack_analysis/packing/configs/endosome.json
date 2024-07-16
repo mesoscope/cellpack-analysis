@@ -1,6 +1,6 @@
 {
-    "structure_name": "peroxisome",
-    "structure_id": "SLC25A17",
+    "structure_name": "endosome",
+    "structure_id": "RAB5A",
     "condition": "rules_shape",
     "generate_recipes": true,
     "generate_configs": true,

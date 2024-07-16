@@ -6,8 +6,8 @@ from cellpack_analysis.analysis.stochastic_variation_analysis import distance
 from cellpack_analysis.analysis.stochastic_variation_analysis.load_data import (
     get_position_data_from_outputs,
 )
-
 from cellpack_analysis.lib.mesh_tools import get_mesh_information_dict
+
 # %% [markdown]
 # ## Set up parameters
 # %% [markdown]

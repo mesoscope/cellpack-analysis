@@ -17,14 +17,22 @@ DATADIR = Path(__file__).parents[2] / "data"
 """Path to the data directory."""
 
 # Default simulation options
+DRY_RUN = False
+"""Flag indicating whether to run a dry run."""
 GENERATE_RECIPES = True
 """Flag indicating whether to generate recipes."""
+GENERATE_CONFIGS = True
+"""Flag indicating whether to generate configs."""
 GET_COUNTS_FROM_DATA = False
 """Flag indicating whether to get counts from data."""
 GET_SIZE_FROM_DATA = False
 """Flag indicating whether to get size from data."""
 GET_BOUNDING_BOX_FROM_MESH = False
 """Flag indicating whether to get bounding box from mesh."""
+RESULT_TYPE = "simularium"
+"""While skipping the packing, check for simularium file."""
+SKIP_COMPLETED = False
+"""Flag indicating whether to skip completed packings."""
 USE_CELLS_IN_8D_SPHERE = False
 """Flag indicating whether to use cells in 8D sphere."""
 USE_MEAN_CELL = False
@@ -35,8 +43,8 @@ Flag indicating whether a single recipe packs multiple replicates.
 If this flag is true, the random seed is not assigned based on cellid and instead
 calculated from the cellPACK algorithm.
 """
-NUM_PROCESSES = 32
-"""Number of processes to use for parallel processing."""
+NUM_PROCESSES = 1
+"""Number of processes to use for parallel processing. 1 indicates serial processing."""
 
 # Default gradient settings
 SURFACE_GRADIENT = {

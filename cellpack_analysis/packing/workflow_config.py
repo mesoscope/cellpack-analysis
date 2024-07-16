@@ -33,8 +33,12 @@ class WorkflowConfig:
         self.datadir = self.data.get("datadir", default_values.DATADIR)
 
         # simulation settings
+        self.dry_run = self.data.get("dry_run", default_values.DRY_RUN)
         self.generate_recipes = self.data.get(
             "generate_recipes", default_values.GENERATE_RECIPES
+        )
+        self.generate_configs = self.data.get(
+            "generate_configs", default_values.GENERATE_CONFIGS
         )
         self.get_counts_from_data = self.data.get(
             "get_counts_from_data", default_values.GET_COUNTS_FROM_DATA
@@ -48,6 +52,10 @@ class WorkflowConfig:
         self.multiple_replicates = self.data.get(
             "multiple_replicates", default_values.MULTIPLE_REPLICATES
         )
+        self.result_type = self.data.get("result_type", default_values.RESULT_TYPE)
+        self.skip_completed = self.data.get(
+            "skip_completed", default_values.SKIP_COMPLETED
+        )
         self.use_mean_cell = self.data.get(
             "use_mean_cell", default_values.USE_MEAN_CELL
         )
@@ -55,17 +63,24 @@ class WorkflowConfig:
             "use_cells_in_8d_sphere", default_values.USE_CELLS_IN_8D_SPHERE
         )
 
+        # number of processes
+        self.num_processes = self.data.get(
+            "num_processes", default_values.NUM_PROCESSES
+        )
+
+        # resolve paths
         self.recipe_template_path = Path(
             self.data.get(
                 "recipe_template_path",
-                self.datadir / f"templates/{self.structure_name}_template.json",
+                self.datadir / f"templates/recipes/{self.structure_name}_recipe_template.json",
             )
         )
 
-        self.cellpack_config_path = Path(
+        self.config_template_path = Path(
             self.data.get(
-                "cellpack_config_path",
-                self.datadir / f"configs/{self.structure_name}_config.json",
+                "config_template_path",
+                self.datadir
+                / f"templates/configs/{self.structure_name}_config_template.json",
             )
         )
 
@@ -76,6 +91,14 @@ class WorkflowConfig:
             )
         )
         self.generated_recipe_path.mkdir(parents=True, exist_ok=True)
+
+        self.generated_config_path = Path(
+            self.data.get(
+                "generated_config_path",
+                self.datadir / f"configs/{self.structure_name}/{self.condition}",
+            )
+        )
+        self.generated_config_path.mkdir(parents=True, exist_ok=True)
 
         self.grid_path = Path(
             self.data.get(
@@ -100,7 +123,7 @@ class WorkflowConfig:
             self.data.get(
                 "output_path",
                 self.datadir
-                / f"packing_outputs/{subfolder}/{self.condition}/{self.structure_name}",
+                / f"packing_outputs/{subfolder}/{self.condition}",
             )
         )
         self.output_path.mkdir(parents=True, exist_ok=True)

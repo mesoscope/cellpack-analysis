@@ -1,7 +1,6 @@
 import concurrent.futures
 import gc
 import logging
-import logging.config
 import pickle
 import time
 from pathlib import Path
@@ -14,9 +13,7 @@ from trimesh import proximity
 
 from cellpack_analysis.lib.get_cellid_list import get_cellid_list_for_structure
 
-log_file_path = Path(__file__).parents[2] / "logging.conf"
-logging.config.fileConfig(log_file_path, disable_existing_loggers=True)
-log = logging.getLogger()
+log = logging.getLogger(__name__)
 
 
 def round_away_from_zero(array):

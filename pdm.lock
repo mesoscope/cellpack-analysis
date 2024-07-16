@@ -4,8 +4,8 @@
 [metadata]
 groups = ["default", "lint", "debug"]
 strategy = ["cross_platform", "inherit_metadata"]
-lock_version = "4.4.1"
-content_hash = "sha256:688eb7bba59a6522848f95757b915308a7aaa6cc67164b6014bf47f2c4dc51bd"
+lock_version = "4.4.2"
+content_hash = "sha256:ad6b82c734e0c275d4180b1f11897e6bb4b66c8d0b5cbf9fa4d741c8b877573c"
 
 [[package]]
 name = "aicsimageio"
@@ -308,22 +308,22 @@ files = [
 
 [[package]]
 name = "cachetools"
-version = "5.3.3"
+version = "5.4.0"
 requires_python = ">=3.7"
 summary = "Extensible memoizing collections and decorators"
 groups = ["default"]
 files = [
-    {file = "cachetools-5.3.3-py3-none-any.whl", hash = "sha256:0abad1021d3f8325b2fc1d2e9c8b9c9d57b04c3932657a72465447332c24d945"},
-    {file = "cachetools-5.3.3.tar.gz", hash = "sha256:ba29e2dfa0b8b556606f097407ed1aa62080ee108ab0dc5ec9d6a723a007d105"},
+    {file = "cachetools-5.4.0-py3-none-any.whl", hash = "sha256:3ae3b49a3d5e28a77a0be2b37dbcb89005058959cb2323858c2657c4a8cab474"},
+    {file = "cachetools-5.4.0.tar.gz", hash = "sha256:b8adc2e7c07f105ced7bc56dbb6dfbe7c4a00acce20e2227b3f355be89bc6827"},
 ]
 
 [[package]]
 name = "cellpack"
 version = "1.0.8"
 requires_python = ">=3.8"
-git = "ssh://git@github.com/mesoscope/cellpack.git"
-ref = "main"
-revision = "d2bcfbc6e6eb6fb792be953bba3c5996289a1c56"
+git = "https://github.com/mesoscope/cellpack.git"
+ref = "cellpack-analysis"
+revision = "36efe0cb36a3e65354a6f3e43933994f16a59531"
 summary = "algorithm to pack molecular recipes"
 groups = ["default"]
 dependencies = [
@@ -863,7 +863,7 @@ files = [
 
 [[package]]
 name = "google-api-python-client"
-version = "2.136.0"
+version = "2.137.0"
 requires_python = ">=3.7"
 summary = "Google API Client Library for Python"
 groups = ["default"]
@@ -875,13 +875,13 @@ dependencies = [
     "uritemplate<5,>=3.0.1",
 ]
 files = [
-    {file = "google-api-python-client-2.136.0.tar.gz", hash = "sha256:161c722c8864e7ed39393e2b7eea76ef4e1c933a6a59f9d7c70409b6635f225d"},
-    {file = "google_api_python_client-2.136.0-py2.py3-none-any.whl", hash = "sha256:5a554c8b5edf0a609b905d89d7ced82e8f6ac31da1e4d8d5684ef63dbc0e49f5"},
+    {file = "google_api_python_client-2.137.0-py2.py3-none-any.whl", hash = "sha256:a8b5c5724885e5be9f5368739aa0ccf416627da4ebd914b410a090c18f84d692"},
+    {file = "google_api_python_client-2.137.0.tar.gz", hash = "sha256:e739cb74aac8258b1886cb853b0722d47c81fe07ad649d7f2206f06530513c04"},
 ]
 
 [[package]]
 name = "google-auth"
-version = "2.31.0"
+version = "2.32.0"
 requires_python = ">=3.7"
 summary = "Google Authentication Library"
 groups = ["default"]
@@ -891,8 +891,8 @@ dependencies = [
     "rsa<5,>=3.1.4",
 ]
 files = [
-    {file = "google-auth-2.31.0.tar.gz", hash = "sha256:87805c36970047247c8afe614d4e3af8eceafc1ebba0c679fe75ddd1d575e871"},
-    {file = "google_auth-2.31.0-py2.py3-none-any.whl", hash = "sha256:042c4702efa9f7d3c48d3a69341c209381b125faa6dbf3ebe56bc7e40ae05c23"},
+    {file = "google_auth-2.32.0-py2.py3-none-any.whl", hash = "sha256:53326ea2ebec768070a94bee4e1b9194c9646ea0c2bd72422785bd0f9abfad7b"},
+    {file = "google_auth-2.32.0.tar.gz", hash = "sha256:49315be72c55a6a37d62819e3573f6b416aca00721f7e3e31a008d928bf64022"},
 ]
 
 [[package]]
@@ -1545,6 +1545,7 @@ files = [
 [[package]]
 name = "mdutils"
 version = "1.6.0"
+requires_python = "<4.0,>=3.6"
 summary = "Useful package for creating Markdown files while executing python code."
 groups = ["default"]
 files = [
@@ -1553,7 +1554,7 @@ files = [
 
 [[package]]
 name = "moto"
-version = "5.0.10"
+version = "5.0.11"
 requires_python = ">=3.8"
 summary = ""
 groups = ["default"]
@@ -1569,8 +1570,8 @@ dependencies = [
     "xmltodict",
 ]
 files = [
-    {file = "moto-5.0.10-py2.py3-none-any.whl", hash = "sha256:9ffae2f64cc8fe95b9a12d63ae7268a7d6bea9993b922905b5abd8197d852cd0"},
-    {file = "moto-5.0.10.tar.gz", hash = "sha256:eff37363221c93ea44f95721ae0ddb56f977fe70437a041b6cc641ee90266279"},
+    {file = "moto-5.0.11-py2.py3-none-any.whl", hash = "sha256:bdba9bec0afcde9f99b58c5271d6458dbfcda0a0a1e9beaecd808d2591db65ea"},
+    {file = "moto-5.0.11.tar.gz", hash = "sha256:606b641f4c6ef69f28a84147d6d6806d052011e7ae7b0fe46ae8858e7a27a0a3"},
 ]
 
 [[package]]
@@ -1908,7 +1909,7 @@ files = [
 
 [[package]]
 name = "pint"
-version = "0.24.1"
+version = "0.24.3"
 requires_python = ">=3.9"
 summary = "Physical quantities module"
 groups = ["default"]
@@ -1919,8 +1920,8 @@ dependencies = [
     "typing-extensions",
 ]
 files = [
-    {file = "Pint-0.24.1-py3-none-any.whl", hash = "sha256:69b05357c4cb2ac8f3346e235aff4477447e2f56805a79a4f59a2b6d5fc32020"},
-    {file = "pint-0.24.1.tar.gz", hash = "sha256:8849fe9d7b8532e5a5dc41e719e9e19268e18eac179d9a5645f21929a2a15caf"},
+    {file = "Pint-0.24.3-py3-none-any.whl", hash = "sha256:d98667e46fd03a1b94694fbfa104ec30858684d8ab26952e2a348b48059089bb"},
+    {file = "pint-0.24.3.tar.gz", hash = "sha256:d54771093e8b94c4e0a35ac638c2444ddf3ef685652bab7675ffecfa0c5c5cdf"},
 ]
 
 [[package]]

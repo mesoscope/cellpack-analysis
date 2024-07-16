@@ -1,7 +1,7 @@
 # %% [markdown]
 # # Occupancy analysis workflow
-from pathlib import Path
 import time
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 
@@ -195,13 +195,13 @@ fig, ax = distance.plot_combined_occupancy_ratio(
 # plt.rcParams.update({"font.size": 16})
 # ax.set_ylim([-5, 20])
 # ax.set_xlim([0, 0.25])
-# # ax.set_xlabel("")
-# # ax.set_ylabel("")
+# ax.set_xlabel("")
+# ax.set_ylabel("")
 # ax.xaxis.set_major_locator(MaxNLocator(5))
 # plt.tight_layout()
 # fig
-# # %% [markdown]
-# # #### save edited figure
+# %% [markdown]
+# #### save edited figure
 # fig.savefig(
 #     occupancy_figures_dir / f"combined_space_corrected_kde_aspect{suffix}.svg", dpi=300
 # )

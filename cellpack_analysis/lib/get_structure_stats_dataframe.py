@@ -17,6 +17,8 @@ def get_datadir_path() -> Path:
 
 
 def get_structure_stats_dataframe(datadir: Optional[Path] = None):
+    if datadir is None:
+        datadir = get_datadir_path()
     df_path = get_local_stats_dataframe_path(datadir)
     if df_path.exists():
         return pd.read_parquet(df_path)

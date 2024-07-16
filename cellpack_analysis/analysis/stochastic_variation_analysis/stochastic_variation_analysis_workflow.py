@@ -239,16 +239,14 @@ kde_dict = distance.get_individual_distance_distribution_kde(
     distance_measure=occupancy_distance_measure,
 )
 # %% plot illustration for space corrected kde
-kde_distance, kde_available_space, xvals = (
-    distance.plot_occupancy_illustration(
-        distance_dict=all_distance_dict[occupancy_distance_measure],
-        kde_dict=kde_dict,
-        baseline_mode="random",
-        figures_dir=occupancy_figdir,
-        suffix=suffix,
-        distance_measure=occupancy_distance_measure,
-        struct_diameter=avg_struct_diameter,
-    )
+kde_distance, kde_available_space, xvals = distance.plot_occupancy_illustration(
+    distance_dict=all_distance_dict[occupancy_distance_measure],
+    kde_dict=kde_dict,
+    baseline_mode="random",
+    figures_dir=occupancy_figdir,
+    suffix=suffix,
+    distance_measure=occupancy_distance_measure,
+    struct_diameter=avg_struct_diameter,
 )
 
 # %% plot individual space corrected individual kde values
@@ -296,6 +294,7 @@ fig, ax = distance.plot_combined_occupancy_ratio(
 # aspect = 0.01
 # ax.set_aspect(aspect)
 from matplotlib.ticker import MaxNLocator
+
 plt.rcParams.update({"font.size": 18})
 ax.set_ylim([0, 1.5])
 # ax.set_xlim([0, 0.4])

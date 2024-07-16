@@ -24,7 +24,7 @@ dependencies = [
     "quilt3>=5.4.0",
     "rtree>=1.2.0",
     "python-dotenv>=1.0.1",
-    "cellpack @ git+ssh://git@github.com/mesoscope/cellpack.git@main",
+    "cellpack @ git+https://github.com/mesoscope/cellpack.git@cellpack-analysis",
 ]
 requires-python = "==3.9.*"
 readme = "README.md"

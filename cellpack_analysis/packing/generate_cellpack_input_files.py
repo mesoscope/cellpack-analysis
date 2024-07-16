@@ -1,16 +1,19 @@
 import concurrent.futures
-import json
+import logging
 import multiprocessing
 from pathlib import Path
 
 import numpy as np
 from tqdm import tqdm
 
+from cellpack_analysis.lib.file_io import read_json, write_json
 from cellpack_analysis.lib.get_cellid_list import get_cellid_list_for_structure
 from cellpack_analysis.lib.get_structure_stats_dataframe import (
     get_structure_stats_dataframe,
 )
 from cellpack_analysis.lib.mesh_tools import get_bounding_box
+
+log = logging.getLogger(__name__)
 
 
 def update_and_save_recipe(
@@ -53,11 +56,12 @@ def update_and_save_recipe(
         updated_recipe[rule_key] = rule_data
         if "gradients" in rule_key:
             updated_recipe["objects"][structure_name]["packing_mode"] = "gradient"
-            gradient_list = []
-            for gradient_key in rule_data:
-                gradient_list.append(gradient_key)
+            gradient_keys = list(rule_data.keys())
+            if len(gradient_keys) > 1:
+                raise ValueError("Only one gradient is supported")
+            gradient_key = gradient_keys[0]
 
-            updated_recipe["objects"][structure_name]["gradient"] = gradient_list
+            updated_recipe["objects"][structure_name]["gradient"] = gradient_key
 
     # update counts
     if count is not None:
@@ -86,8 +90,7 @@ def update_and_save_recipe(
     Path(rule_path).mkdir(parents=True, exist_ok=True)
     recipe_path = f"{rule_path}/{structure_name}_{rule_name}_{cellid}.json"
     # print(f"Saving recipe to {recipe_path}")
-    with open(recipe_path, "w") as f:
-        json.dump(updated_recipe, f, indent=4)
+    write_json(recipe_path, updated_recipe)
 
     return updated_recipe
 
@@ -110,23 +113,6 @@ def get_cellids(workflow_config):
             dsphere=workflow_config.use_cells_in_8d_sphere,
             load_local=True,
         )
-
-
-def load_recipe_template(workflow_config):
-    """
-    Load recipe template
-
-    Parameters
-    ----------
-    workflow_config: type
-        workflow configuration
-    """
-    recipe_template_path = workflow_config.recipe_template_path
-
-    with open(recipe_template_path, "r") as f:
-        recipe_template = json.load(f)
-
-    return recipe_template
 
 
 def generate_recipes(
@@ -152,7 +138,7 @@ def generate_recipes(
         [int(np.floor(0.8 * multiprocessing.cpu_count())), len(cellid_list)]
     )
 
-    recipe_template = load_recipe_template(workflow_config)
+    recipe_template = read_json(workflow_config.recipe_template_path)
 
     stats_df = get_structure_stats_dataframe()
 
@@ -168,12 +154,12 @@ def generate_recipes(
                         # get count from cell stats
                         count = None
                         if workflow_config.get_counts_from_data:
-                            count = stats_df.loc[cellid, ("count", "mean")]
+                            count = int(stats_df.loc[cellid, "count"])
 
                         # get size from cell stats
                         radius = None
                         if workflow_config.get_size_from_data:
-                            radius = stats_df.loc[cellid, ("radius", "mean")]
+                            radius = stats_df.loc[cellid, "radius"]
 
                         future = executor.submit(
                             update_and_save_recipe,
@@ -194,3 +180,32 @@ def generate_recipes(
 
                     for future in concurrent.futures.as_completed(futures):
                         pbar.update(1)
+
+
+def generate_configs(workflow_config):
+    """
+    Generate cellpack config file
+
+    Parameters
+    ----------
+    workflow_config: type
+        workflow configuration
+    """
+    config_template = read_json(workflow_config.config_template_path)
+
+    packing_info = workflow_config.data.get("packings_to_run", {})
+    rule_list = packing_info.get("rules", [])
+
+    for rule in rule_list:
+        rule_config_path = (
+            f"{workflow_config.generated_config_path}"
+            f"/{rule}/{workflow_config.structure_name}_{rule}_config.json"
+        )
+        Path(rule_config_path).parent.mkdir(parents=True, exist_ok=True)
+
+        rule_output_path = workflow_config.output_path / rule
+        rule_output_path.mkdir(parents=True, exist_ok=True)
+
+        config_template["out"] = str(rule_output_path)
+
+        write_json(rule_config_path, config_template)

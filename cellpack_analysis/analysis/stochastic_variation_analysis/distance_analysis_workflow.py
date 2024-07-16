@@ -1,7 +1,7 @@
 # %% [markdown]
 # # Occupancy analysis workflow
-from pathlib import Path
 import time
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 

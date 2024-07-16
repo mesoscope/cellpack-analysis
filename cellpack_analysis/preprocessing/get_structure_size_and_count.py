@@ -16,9 +16,7 @@ meta_df = get_variance_dataframe()
 structures_of_interest = ["SLC25A17", "RAB5A", "LAMP1", "RAB7A"]
 
 df_stats = pd.DataFrame(
-    columns=pd.MultiIndex.from_product(
-        [["count", "volume", "radius"], ["mean", "std"]],
-    ),
+    columns=["count", "volume", "radius"],
     index=meta_df.index,
 )
 
@@ -30,12 +28,9 @@ for gene, df_gene in meta_df.groupby("structure_name"):
 
     df_stats.loc[df_gene.index, "structure_name"] = gene
 
-    df_stats.loc[df_gene.index, ("count", "mean")] = np.mean(counts)
-    df_stats.loc[df_gene.index, ("count", "std")] = np.std(counts)
-    df_stats.loc[df_gene.index, ("volume", "mean")] = np.mean(volume_per_unit)
-    df_stats.loc[df_gene.index, ("volume", "std")] = np.std(volume_per_unit)
-    df_stats.loc[df_gene.index, ("radius", "mean")] = np.mean(unit_radius)
-    df_stats.loc[df_gene.index, ("radius", "std")] = np.std(unit_radius)
+    df_stats.loc[df_gene.index, "count"] = counts
+    df_stats.loc[df_gene.index, "volume"] = volume_per_unit
+    df_stats.loc[df_gene.index, "radius"] = unit_radius
 
     if gene in structures_of_interest:
         print(gene)
