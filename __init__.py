@@ -9,5 +9,11 @@ __email__ = "saurabh.mogre@alleninstitute.org"
 __version__ = "0.0.1"
 
 
+from dotenv import load_dotenv
+
+
 def get_module_version():
     return __version__
+
+
+load_dotenv()
