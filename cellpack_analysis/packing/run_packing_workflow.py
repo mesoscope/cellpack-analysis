@@ -32,7 +32,7 @@ def _run_packing_workflow(workflow_config_path: Path):
         None
     """
     if workflow_config_path is None:
-        workflow_config_path = Path(__file__).parent / "configs/example.json"
+        workflow_config_path = Path(__file__).parent / "configs/peroxisome.json"
 
     workflow_config = WorkflowConfig(config_file_path=workflow_config_path)
 
@@ -47,6 +47,9 @@ def _run_packing_workflow(workflow_config_path: Path):
         generate_configs(workflow_config=workflow_config)
 
     # ## pack recipes
+    if workflow_config.dry_run:
+        log.info("Dry run. Skipping packing.")
+        return
     log.info("Packing recipes")
     pack_recipes(workflow_config=workflow_config)
 
