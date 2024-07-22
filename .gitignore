@@ -169,3 +169,6 @@ results/
 
 # credentials
 .creds
+
+# VSCode
+.vscode
