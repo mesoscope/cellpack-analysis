@@ -9,7 +9,7 @@ STRUCTURE_ID = "SLC25A17"
 """ID of the structure to pack."""
 CONDITION = "rules_shape"
 """Simulation condition."""
-WORKFLOW_CONFIG_PATH = Path(__file__).parent.parent / "packing/configs/example.json"
+WORKFLOW_CONFIG_PATH = Path(__file__).parent.parent / "packing/configs/peroxisome.json"
 """Path to the workflow configuration file."""
 
 # Data directory
