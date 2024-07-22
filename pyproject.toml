@@ -42,6 +42,9 @@ lint = [
 debug = [
     "ipdb>=0.13.13",
 ]
+test = [
+    "pytest>=8.2.2",
+]
 
 [tool.black]
 line-length = 88
