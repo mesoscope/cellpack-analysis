@@ -5,7 +5,7 @@
 groups = ["default", "debug", "dev", "docs", "lint", "test"]
 strategy = ["cross_platform", "inherit_metadata"]
 lock_version = "4.4.2"
-content_hash = "sha256:0d1e4ecc8be712d33d9964c38f08300ea53703b07f43f8a954b07ab0c1ab1bfa"
+content_hash = "sha256:afc510f1dd4f91f5c8465dcc943865c3d9289fba40386fb7ecfaf91f39cdb2d1"
 
 [[package]]
 name = "aicsimageio"
