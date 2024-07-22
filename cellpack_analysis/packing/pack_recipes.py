@@ -2,16 +2,16 @@ import gc
 import importlib.util
 import logging
 import os
-from pathlib import Path
 import subprocess
 import time
-
-from dotenv import load_dotenv
-import numpy as np
-from cellpack_analysis.lib.file_io import read_json
-
-from cellpack_analysis.lib.get_cellid_list import get_cellid_list_for_structure
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from pathlib import Path
+
+import numpy as np
+from dotenv import load_dotenv
+
+from cellpack_analysis.lib.file_io import read_json
+from cellpack_analysis.lib.get_cellid_list import get_cellid_list_for_structure
 
 log = logging.getLogger(__name__)
 
@@ -26,7 +26,7 @@ if CELLPACK_PATH is None:
 
 PACK_PATH: str = CELLPACK_PATH + "/cellpack/bin/pack.py"  # type: ignore
 assert os.path.exists(PACK_PATH), f"PACK path {PACK_PATH} does not exist"
-log.info(f"Using cellPACK at {PACK_PATH}")
+log.debug(f"Using cellPACK at {PACK_PATH}")
 
 
 def check_recipe_completed(recipe_path, config_data, workflow_config):
@@ -193,7 +193,7 @@ def run_single_packing(
     config_path,
 ):
     try:
-        log.info(f"Running {recipe_path}")
+        log.debug(f"Running {recipe_path}")
         result = subprocess.run(
             [
                 "python",
@@ -244,17 +244,12 @@ def pack_recipes(workflow_config):
                     recipe_path, config_data, workflow_config
                 ):
                     skipped_count += 1
-                    log.info(
+                    log.debug(
                         (
                             f"Skipping packing for completed recipe {recipe_path}. "
                             f"{skipped_count} skipped"
                         )
                     )
-                    continue
-
-                # check if this is a dry run
-                if workflow_config.dry_run:
-                    log.info(f"Skipping packing for {recipe_path}")
                     continue
 
                 futures.append(
@@ -264,7 +259,7 @@ def pack_recipes(workflow_config):
                         config_path,
                     )
                 )
-                log.info(f"Submitted packing for {recipe_path}")
+                log.debug(f"Submitted packing for {recipe_path}")
 
             log.info(
                 f"Submitted {len(futures)} packings for rule {rule}. {skipped_count} skipped"

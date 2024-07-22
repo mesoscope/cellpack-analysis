@@ -11,7 +11,7 @@ class WorkflowConfig:
     def __init__(self, config_file_path: Optional[Path] = None):
 
         if config_file_path is None:
-            config_file_path = Path(__file__).parent / "configs/example.json"
+            config_file_path = Path(__file__).parent / "configs/peroxisome.json"
 
         self.config_file_path = config_file_path
         self.data = self._read_config_file()
@@ -72,7 +72,8 @@ class WorkflowConfig:
         self.recipe_template_path = Path(
             self.data.get(
                 "recipe_template_path",
-                self.datadir / f"templates/recipes/{self.structure_name}_recipe_template.json",
+                self.datadir
+                / f"templates/recipes/{self.structure_name}_recipe_template.json",
             )
         )
 
@@ -122,8 +123,7 @@ class WorkflowConfig:
         self.output_path = Path(
             self.data.get(
                 "output_path",
-                self.datadir
-                / f"packing_outputs/{subfolder}/{self.condition}",
+                self.datadir / f"packing_outputs/{subfolder}/{self.condition}",
             )
         )
         self.output_path.mkdir(parents=True, exist_ok=True)
