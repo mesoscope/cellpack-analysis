@@ -100,7 +100,6 @@ def get_distance_dictionary(
     all_nuc_distances = {}  # distance to nucleus surface
     all_nearest_distances = {}  # distance to nearest neighbor
     all_z_distances = {}  # distance from z-axis
-
     for mode, position_dict in all_positions.items():
         print(mode)
         all_pairwise_distances[mode] = {}
@@ -111,7 +110,7 @@ def get_distance_dictionary(
             if mode in VARIABLE_SHAPE_MODES:
                 seed_to_use = seed.split("_")[0]
             else:
-                seed_to_use = seed
+                seed_to_use = str(seed)
 
             all_distances = cdist(positions, positions, metric="euclidean")
 
@@ -1078,8 +1077,8 @@ def plot_occupancy_illustration(
         ax.set_xlabel(f"{DISTANCE_MEASURE_LABELS[distance_measure]} / Cell Diameter")
         ax.xaxis.set_major_locator(MaxNLocator(5))
         if struct_diameter and mesh_information_dict is not None:
-            avg_diameter, std_diameter = get_average_scaled_diameter(
-                struct_diameter=struct_diameter,
+            avg_diameter, std_diameter = get_average_scaled_value(
+                value=struct_diameter,
                 mesh_information_dict=mesh_information_dict,
             )
             ax.axvline(avg_diameter, color="r", linestyle="--")
@@ -1117,8 +1116,8 @@ def add_struct_diameter_to_plot(ax, struct_diameter, mesh_information_dict):
     Returns:
         matplotlib.axes.Axes: The modified axes object.
     """
-    avg_diameter, std_diameter = get_average_scaled_diameter(
-        struct_diameter=struct_diameter,
+    avg_diameter, std_diameter = get_average_scaled_value(
+        value=struct_diameter,
         mesh_information_dict=mesh_information_dict,
     )
     ax.axvspan(
@@ -1512,11 +1511,11 @@ def plot_occupancy_ks_test(
     plt.show()
 
 
-def get_average_scaled_diameter(struct_diameter, mesh_information_dict):
-    scaled_diameter = []
+def get_average_scaled_value(value, mesh_information_dict):
+    value_list = []
     for _, mesh_info in mesh_information_dict.items():
-        scaled_diameter.append(struct_diameter / mesh_info["cell_diameter"])
-    scaled_diameter = np.array(scaled_diameter)
-    average_scaled_diameter = np.mean(scaled_diameter)
-    std_scaled_diameter = np.std(scaled_diameter)
-    return average_scaled_diameter, std_scaled_diameter
+        value_list.append(value / mesh_info["cell_diameter"])
+    value_list = np.array(value_list)
+    average_scaled_value = np.mean(value_list)
+    std_scaled_value = np.std(value_list)
+    return average_scaled_value, std_scaled_value

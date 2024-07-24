@@ -6,7 +6,7 @@ from cellpack_analysis.lib.mesh_tools import get_mesh_information_dict
 # %%
 base_datadir = Path(__file__).parents[3] / "data"
 # %%
-STRUCTURE_ID = "RAB5A"
+STRUCTURE_ID = "SLC25A17"
 
 # %%
 mesh_information_dict = get_mesh_information_dict(

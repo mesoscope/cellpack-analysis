@@ -11,7 +11,7 @@ GRADIENTS = {
         "mode": "surface",
         "mode_settings": {"object": "membrane", "scale_to_next_surface": False},
         "weight_mode": "exponential",
-        "weight_mode_settings": {"decay_length": 0.1},
+        "weight_mode_settings": {"decay_length": 0.01},
     },
     "apical_gradient": {
         "description": "gradient based on distance from a plane",

@@ -13,8 +13,11 @@ MODE_LABELS = {
     "random": "Random",
     "shape": "Shape",
     "nucleus_moderate": "Nucleus bias",
+    "nucleus_gradient_strong": "Nucleus bias",
     "nucleus_moderate_invert": "Membrane bias",
+    "membrane_gradient_strong": "Membrane bias",
     "planar_gradient_Z_moderate": "Apical bias",
+    "apical_gradient": "Apical bias",
     "planar_gradient_Z_moderate_invert": "Basal bias",
 }
 
@@ -27,6 +30,9 @@ VARIABLE_SHAPE_MODES = [
     "nucleus_moderate_invert",
     "planar_gradient_Z_moderate",
     "planar_gradient_Z_moderate_invert",
+    "nucleus_gradient_strong",
+    "membrane_gradient_strong",
+    "apical_gradient",
 ]
 
 DISTANCE_MEASURE_LABELS = {

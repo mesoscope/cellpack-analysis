@@ -253,7 +253,7 @@ def get_mesh_information_dict(
         )
 
     for seed, result in zip(cellid_list, results):
-        mesh_information_dict[seed] = result
+        mesh_information_dict[str(seed)] = result
 
     # save mesh information dictionary
     with open(file_path, "wb") as f:

@@ -1,12 +1,12 @@
 # %% [markdown]
-# # Occupancy analysis workflow
+# # Distance analysis workflow
 import time
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 
 from cellpack_analysis.analysis.stochastic_variation_analysis import distance
-from cellpack_analysis.analysis.stochastic_variation_analysis.load_data import (
+from cellpack_analysis.lib.load_data import (
     get_position_data_from_outputs,
 )
 from cellpack_analysis.analysis.stochastic_variation_analysis.stats_functions import (
@@ -20,8 +20,8 @@ start_time = time.time()
 # ## Set up parameters
 # %% [markdown]
 # ### Set structure ID and radius
-STRUCTURE_ID = "SLC25A17"  # "SLC25A17" for peroxisomes, "RAB5A" for early endosomes
-STRUCT_RADIUS = 2.37  # 2.37 um for peroxisomes, 2.6 um for early endosomes
+STRUCTURE_ID = "RAB5A"  # "SLC25A17" for peroxisomes, "RAB5A" for early endosomes
+STRUCT_RADIUS = 2.6  # 2.37 um for peroxisomes, 2.6 um for early endosomes
 # %% [markdown]
 # ### Set packing modes to analyze
 baseline_analysis = False
@@ -34,9 +34,9 @@ packing_modes_baseline = [
 packing_modes_rules = [
     STRUCTURE_ID,
     "random",
-    "nucleus_moderate",
-    "nucleus_moderate_invert",
-    "planar_gradient_Z_moderate",
+    "nucleus_gradient_strong",
+    "membrane_gradient_strong",
+    "apical_gradient",
 ]
 
 # relative path to packing outputs
@@ -46,7 +46,7 @@ if baseline_analysis:
     baseline_mode = "mean_count_and_size"
 else:
     # TODO: update path with new packings
-    packing_output_folder = "packing_outputs/8d_sphere_data/RS/"
+    packing_output_folder = "packing_outputs/8d_sphere_data/rules_shape/"
     packing_modes = packing_modes_rules
     baseline_mode = STRUCTURE_ID
 # %% [markdown]
@@ -81,7 +81,7 @@ all_positions = get_position_data_from_outputs(
     base_datadir=base_datadir,
     results_dir=results_dir,
     packing_output_folder=packing_output_folder,
-    recalculate=False,
+    recalculate=True,
     baseline_analysis=baseline_analysis,
 )
 # %% [markdown]
@@ -93,16 +93,16 @@ for mode, position_dict in all_positions.items():
 mesh_information_dict = get_mesh_information_dict(
     structure_id=STRUCTURE_ID,
     base_datadir=base_datadir,
-    recalculate=False,
+    recalculate=True,
 )
 # %% [markdown]
 # ### Plot distribution of cell diameters
 distance.plot_cell_diameter_distribution(mesh_information_dict)
 
 # %% [markdown]
-# ### Get average structure diameter
-avg_struct_diameter, std_struct_diameter = distance.get_average_scaled_diameter(
-    struct_diameter=STRUCT_RADIUS, mesh_information_dict=mesh_information_dict
+# ### Get average structure radius
+avg_struct_radius, std_struct_radius = distance.get_average_scaled_value(
+    value=STRUCT_RADIUS, mesh_information_dict=mesh_information_dict
 )
 # %% [markdown]
 # ### Calculate distance measures and normalize
@@ -111,7 +111,7 @@ all_distance_dict = distance.get_distance_dictionary(
     distance_measures=distance_measures,
     mesh_information_dict=mesh_information_dict,
     results_dir=results_dir,
-    recalculate=False,
+    recalculate=True,
 )
 
 all_distance_dict = normalize_distances(
@@ -224,3 +224,5 @@ distance.plot_emd_boxplots(
     pairwise_emd_dir=pairwise_emd_dir,
     suffix=suffix,
 )
+
+# %%

@@ -10,7 +10,7 @@
     "get_size_from_data": true,
     "get_bounding_box_from_mesh": true,
     "num_processes": 16,
-    "skip_completed": true,
+    "skip_completed": false,
     "dry_run": false,
     "recipe_data": {
         "random": {},
@@ -32,7 +32,7 @@
     },
     "packings_to_run": {
         "rules": [
-            "apical_gradient"
+            "membrane_gradient_strong"
         ]
     }
 }

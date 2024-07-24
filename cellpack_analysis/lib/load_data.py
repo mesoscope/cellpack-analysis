@@ -8,6 +8,7 @@ from cellpack_analysis.analysis.stochastic_variation_analysis.label_tables impor
     STRUCTURE_NAME_DICT,
     VARIABLE_SHAPE_MODES,
 )
+from cellpack_analysis.lib.file_io import read_json, write_json
 
 
 def combine_multiple_seeds_to_dictionary(
@@ -15,7 +16,7 @@ def combine_multiple_seeds_to_dictionary(
     ingredient_key="membrane_interior_peroxisome",
     search_prefix="positions_",
     rule_name="random",
-    save_name="positions_peroxisome_analyze_random_mean",
+    save_name="positions_peroxisome_analyze_random_mean.json",
 ):
     """
     Combine data from multiple seeds into a dictionary.
@@ -45,17 +46,16 @@ def combine_multiple_seeds_to_dictionary(
         if ("invert" not in rule_name) and ("invert" in file.name):
             continue
 
+        raw_data = read_json(file)
+
         seed = file.stem.split("_")[-1].split("_")[0]
-        with open(file) as j:
-            raw_data = json.load(j)
         for seed_key, ingr_dict in raw_data.items():
             output_dict[f"{seed}_{seed_key}"] = {}
             for ingr_key, positions in ingr_dict.items():
                 if ingr_key == ingredient_key:
                     output_dict[f"{seed}_{seed_key}"][ingr_key] = positions
 
-    with open(data_folder / f"{save_name}.json", "w") as f:
-        json.dump(output_dict, f, indent=4)
+    write_json(data_folder / save_name, output_dict)
 
     return output_dict
 
@@ -108,6 +108,7 @@ def get_position_data_from_outputs(
         results_dir (str): The directory to save results.
         recalculate (bool, optional): Whether to recalculate the position data.
             Defaults to False.
+        baseline_analysis (bool, optional): Whether to use baseline analysis.
 
     Returns:
         dict: A dictionary containing the position data for each packing mode.
@@ -132,17 +133,15 @@ def get_position_data_from_outputs(
                 / f"structure_data/{structure_id}/sample_8d/positions_{structure_id}.json"
             )
         else:
-            if baseline_analysis:
-                subfolder = f"{mode}/{STRUCTURE_NAME_DICT[structure_id]}/spheresSST/"
-            else:
-                subfolder = f"{STRUCTURE_NAME_DICT[structure_id]}/spheresSST/"
+            subfolder = f"{mode}/{STRUCTURE_NAME_DICT[structure_id]}/spheresSST/"
 
             data_folder = base_datadir / f"{packing_output_folder}/{subfolder}"
 
-            file_path = (
-                data_folder
-                / f"all_positions_{STRUCTURE_NAME_DICT[structure_id]}_analyze_{mode}.json"
+            mode_position_filename = (
+                f"all_positions_{STRUCTURE_NAME_DICT[structure_id]}_analyze_{mode}.json"
             )
+
+            file_path = data_folder / mode_position_filename
 
             if file_path.exists() and not recalculate:
                 positions = get_positions_dictionary_from_file(
@@ -160,7 +159,7 @@ def get_position_data_from_outputs(
                 ingredient_key=f"membrane_interior_{STRUCTURE_NAME_DICT[structure_id]}",
                 search_prefix="positions_",
                 rule_name=rule_name,
-                save_name=f"all_positions_{STRUCTURE_NAME_DICT[structure_id]}_analyze_{mode}",
+                save_name=mode_position_filename,
             )
 
         positions = get_positions_dictionary_from_file(
