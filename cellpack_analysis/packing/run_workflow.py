@@ -1,6 +1,7 @@
 """Workflow to generate simulated packed structures using cellPACK."""
 
 import argparse
+from dataclasses import dataclass
 import logging
 import time
 from pathlib import Path
@@ -19,6 +20,22 @@ from cellpack_analysis.packing.workflow_config import WorkflowConfig
 np.random.seed(42)
 
 log = logging.getLogger(__name__)
+
+
+@dataclass
+class StructureConfig:
+    structure_name: str
+    structure_id: str
+
+
+@dataclass
+class SeriesConfig:
+    condition: str
+
+
+@dataclass
+class RecipeConfig:
+    name: str
 
 
 def _run_packing_workflow(workflow_config_path: Path):

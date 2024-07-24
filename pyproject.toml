@@ -28,6 +28,7 @@ dependencies = [
     "rtree>=1.2.0",
     "python-dotenv>=1.0.1",
     "cellpack @ git+https://github.com/mesoscope/cellpack.git@cellpack-analysis",
+    "hydra-core>=1.3.2",
 ]
 
 [build-system]
