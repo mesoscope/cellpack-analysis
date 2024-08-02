@@ -60,6 +60,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--workflow_config_path",
+        "-c",
         type=str,
         help="Path to the packing configuration file",
         default=default_values.WORKFLOW_CONFIG_PATH,

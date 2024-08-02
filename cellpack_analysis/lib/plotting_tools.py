@@ -4,7 +4,7 @@ import seaborn as sns
 from aicsimageio.aics_image import AICSImage
 
 
-def save_PILR_image(
+def plot_PILR(
     avg_gfp,
     ch_name=None,
     save_dir="./results",

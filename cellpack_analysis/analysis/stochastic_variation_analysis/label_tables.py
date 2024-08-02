@@ -3,6 +3,11 @@ STRUCTURE_NAME_DICT = {
     "RAB5A": "endosome",
 }
 
+STRUCTURE_RADIUS_DICT = {
+    "SLC25A17": 2.37,
+    "RAB5A": 2.6,
+}
+
 MODE_LABELS = {
     "SLC25A17": "Observed Peroxisomes",
     "RAB5A": "Observed Endosomes",
@@ -50,4 +55,5 @@ GRID_DISTANCE_LABELS = {
 NORMALIZATION_LABELS = {
     "cell_diameter": "Cell Diameter",
     "intracellular_radius": "Intracellular Radius",
+    "max_distance": "Max Distance",
 }

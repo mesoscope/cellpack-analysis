@@ -20,7 +20,7 @@ from cellpack_analysis.lib.mesh_tools import calculate_grid_distances
 # %% set structure id
 STRUCTURE_ID = "RAB5A"  # SLC25A17: peroxisomes, RAB5A: early endosomes
 # %% set up parameters for grid
-SPACING = 1.5
+SPACING = 2
 # %% set file paths and setup parameters
 base_datadir = Path(__file__).parents[3] / "data"
 print(f"Data directory: {base_datadir}")
@@ -52,8 +52,8 @@ print(f"Found {len(nuc_meshes_to_use)} meshes")
 grid_dir = base_datadir / f"structure_data/{STRUCTURE_ID}/grid_distances"
 grid_dir.mkdir(exist_ok=True, parents=True)
 # %% run in parallel
-PARALLEL = False
-recalculate = False
+PARALLEL = True
+recalculate = True
 calc_nuc_distances = True
 calc_mem_distances = True
 calc_z_distances = True

@@ -12,8 +12,7 @@ from aicsshparam import shtools
 STRUCTURE_NAME = "RAB5A"
 
 datadir = Path(__file__).parents[2] / f"data/structure_data/{STRUCTURE_NAME}"
-image_path = datadir / "sample_8d/segmented/"
-file_glob = image_path.glob("*.tiff")
+image_path = datadir / "full/segmented/"
 
 save_folder = datadir / "meshes/"
 save_folder.mkdir(exist_ok=True, parents=True)
@@ -57,7 +56,7 @@ def get_mesh_for_file(
 
 
 # %% run function in parallel using concurrent futures
-files_to_use = list(file_glob)
+files_to_use = list(image_path.glob("*.tiff"))
 subsample = True
 input_files = []
 for file in files_to_use:
@@ -82,7 +81,7 @@ if len(input_files):
         )
         # get number of completed futures
         done = 0
-        for fs in concurrent.futures.as_completed(futures):  # type: ignore
+        for _ in concurrent.futures.as_completed(futures):  # type: ignore
             done += 1
             print(f"Completed {done} meshes")
 else:

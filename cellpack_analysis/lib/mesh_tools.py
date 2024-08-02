@@ -351,40 +351,17 @@ def calculate_grid_distances(
     points = get_list_of_grid_points(bounding_box, spacing)
 
     if calc_mem_distances:
-        # check if points are inside encapsulating sphere
-        log.debug(f"Calculating points inside encapsulating sphere for {cellid}")
-
-        mem_centroid = mem_mesh.centroid
-        mem_radius = np.max(np.linalg.norm(mem_mesh.bounds[1] - mem_mesh.bounds[0]) / 2)
-
-        outside_encapsulating_sphere = (
-            np.linalg.norm(points - mem_centroid, axis=1) > mem_radius
-        )
-        num_to_check = np.sum(~outside_encapsulating_sphere)
-
-        log.debug(
-            f"Checking {num_to_check} "
-            f"points inside encapsulating sphere for {cellid}"
-        )
-        log.debug(f"Fraction of points: {num_to_check / len(points):0.2g}")
-
-        points_to_check_indices = np.where(~outside_encapsulating_sphere)[0]
-        log.info(
-            f"Calculating membrane distance for {len(points_to_check_indices)} points in {cellid}"
-        )
-
         if chunk_size is None:
-            chunk_size = int(len(points_to_check_indices) / 10)
+            chunk_size = int(len(points) / 10)
 
         start_time = time.time()
         mem_distances = np.full(len(points), np.inf)
         for i in tqdm(
-            range(0, len(points_to_check_indices), chunk_size),
+            range(0, len(points), chunk_size),
             desc=f"Membrane distance chunks for {cellid}",
         ):
-            chunk_indices = points_to_check_indices[i : i + chunk_size]
-            chunk_points = points[chunk_indices]
-            mem_distances[chunk_indices] = trimesh.proximity.signed_distance(
+            chunk_points = points[i : (i + chunk_size)]
+            mem_distances[i : (i + chunk_size)] = trimesh.proximity.signed_distance(
                 mem_mesh, chunk_points
             )
 

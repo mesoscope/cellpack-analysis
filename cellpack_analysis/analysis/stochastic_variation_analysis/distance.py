@@ -100,6 +100,7 @@ def get_distance_dictionary(
     all_nuc_distances = {}  # distance to nucleus surface
     all_nearest_distances = {}  # distance to nearest neighbor
     all_z_distances = {}  # distance from z-axis
+    all_scaled_nuc_distnces = {}  # scaled distance to nucleus surface
     for mode, position_dict in all_positions.items():
         print(mode)
         all_pairwise_distances[mode] = {}
@@ -171,6 +172,7 @@ def plot_distance_distributions_kde(
     figures_dir=None,
     suffix="",
     normalization=None,
+    overlay=False,
 ):
     print("Plotting distance distributions")
 
@@ -191,7 +193,7 @@ def plot_distance_distributions_kde(
         for j, mode in enumerate(packing_modes):
             mode_dict = distance_dict[mode]
             print(f"Distance measure: {distance_measure}, Mode: {mode}")
-            cmap = plt.get_cmap("jet", len(mode_dict))
+            cmap = plt.get_cmap("viridis", len(mode_dict))
 
             # plot individual kde plots of distance distributions
             for k, (_, distances) in tqdm(
@@ -204,6 +206,14 @@ def plot_distance_distributions_kde(
 
             # plot combined kde plot of distance distributions
             combined_mode_distances = np.concatenate(list(mode_dict.values()))
+            if overlay:
+                sns.kdeplot(
+                    combined_mode_distances,
+                    ax=ax,
+                    color="k",
+                    linewidth=1.5,
+                    label=MODE_LABELS[mode],
+                )
 
             # plot mean distance and add title
             mean_distance = combined_mode_distances.mean()
@@ -941,6 +951,7 @@ def get_individual_distance_distribution_kde(
     suffix="",
     normalization=None,
     distance_measure="nucleus",
+    bandwidth="scott",
 ):
     file_path = None
     if results_dir is not None:
@@ -969,17 +980,28 @@ def get_individual_distance_distribution_kde(
                     available_space_distances > 0
                 ]
 
-                if normalization is not None:
-                    available_space_distances /= mesh_information_dict[seed][
-                        normalization
+                if normalization == "intracellular_radius":
+                    normalization_factor = mesh_information_dict[seed][
+                        "intracellular_radius"
                     ]
-                kde_available_space = gaussian_kde(available_space_distances)
+                elif normalization == "cell_diameter":
+                    normalization_factor = mesh_information_dict[seed]["cell_diameter"]
+                elif normalization == "max_distance":
+                    normalization_factor = available_space_distances.max()
+                else:
+                    normalization_factor = 1
+
+                available_space_distances /= normalization_factor
+
+                kde_available_space = gaussian_kde(
+                    available_space_distances, bw_method=bandwidth
+                )
                 kde_dict[seed]["available_distance"] = {
                     "distances": available_space_distances,
                     "kde": kde_available_space,
                 }
             distances = distances[distances > 0]
-            kde_distance = gaussian_kde(distances)
+            kde_distance = gaussian_kde(distances, bw_method=bandwidth)
             kde_dict[seed][mode] = {
                 "distances": distances,
                 "kde": kde_distance,
@@ -992,28 +1014,77 @@ def get_individual_distance_distribution_kde(
     return kde_dict
 
 
+def normalize_density(xvals, density):
+    return density / np.trapz(density, xvals)
+
+
 def density_ratio(xvals, density1, density2):
+    """
+    Calculate the density ratio between two densities.
+
+    Parameters:
+    xvals (array-like): The x-values of the densities.
+    density1 (array-like): The first density.
+    density2 (array-like): The second density.
+
+    Returns:
+    array-like: The density ratio between density1 and density2.
+    array-like: The normalized density1.
+    array-like: The normalized density2.
+    """
+
     # normalize densities
-    density1 = density1 / np.trapz(density1, xvals)
-    density2 = density2 / np.trapz(density2, xvals)
+    density1 = normalize_density(xvals, density1)
+    density2 = normalize_density(xvals, density2)
 
     # regularize
-    regularization = np.minimum(np.min(density1), np.min(density2))
-    density1 += regularization
-    density2 += regularization
+    min_value = np.minimum(np.min(density1), np.min(density2))
+    density1 = np.where(density1 <= min_value, min_value, density1)
+    density2 = np.where(density2 <= min_value, min_value, density2)
 
     return density1 / density2, density1, density2
 
 
-def occupancy_ratio(xvals, density1, density2):
-    occupancy_ratio = np.zeros(len(xvals))
-    density1 = density1 / np.trapz(density1, xvals)
-    density2 = density2 / np.trapz(density2, xvals)
+def cumulative_ratio(xvals, density1, density2):
+    """
+    Calculate the cumulative ratio between two density distributions.
+
+    Parameters:
+    - xvals (array-like): The x-values of the density distributions.
+    - density1 (array-like): The first density distribution.
+    - density2 (array-like): The second density distribution.
+
+    Returns:
+    - cumulative_ratio (array-like): The cumulative ratio at each x-value.
+
+    """
+    cumulative_ratio = np.zeros(len(xvals))
+    density1 = normalize_density(xvals, density1)
+    density2 = normalize_density(xvals, density2)
     for ct in range(len(xvals)):
-        occupancy_ratio[ct] = np.trapz(density1[: ct + 1], xvals[: ct + 1]) / np.trapz(
+        cumulative_ratio[ct] = np.trapz(density1[: ct + 1], xvals[: ct + 1]) / np.trapz(
             density2[: ct + 1], xvals[: ct + 1]
         )
-    return occupancy_ratio
+    return cumulative_ratio, density1, density2
+
+
+def get_pdf_ratio(xvals, density1, density2, method="ratio"):
+    """
+    Calculate the ratio of two probability density functions (PDFs) based on the given method.
+
+    Parameters:
+        xvals (array-like): The x-values of the PDFs.
+        density1 (array-like): The values of the first PDF.
+        density2 (array-like): The values of the second PDF.
+        method (str, optional): The method to calculate the ratio. Default is "ratio".
+
+    Returns:
+        float: The ratio of the two PDFs based on the specified method.
+    """
+    if method == "ratio":
+        return density_ratio(xvals, density1, density2)
+    elif method == "cumulative":
+        return cumulative_ratio(xvals, density1, density2)
 
 
 def plot_occupancy_illustration(
@@ -1025,9 +1096,18 @@ def plot_occupancy_illustration(
     distance_measure="nucleus",
     struct_diameter=None,
     mesh_information_dict=None,
-    ratio_to_plot="occupancy",
+    method="ratio",
 ):
     print("Plotting space corrected kde illustration")
+
+    avg_diameter = None
+    std_diameter = None
+    if struct_diameter and mesh_information_dict is not None:
+        avg_diameter, std_diameter = get_average_scaled_value(
+            value=struct_diameter,
+            mesh_information_dict=mesh_information_dict,
+        )
+
     fig, axs = plt.subplots(nrows=3, ncols=1, dpi=300, figsize=(7, 7))
     mode_dict = distance_dict[baseline_mode]
     seed = next(iter(mode_dict.keys()))
@@ -1035,15 +1115,15 @@ def plot_occupancy_illustration(
 
     kde_distance = kde_dict[seed][baseline_mode]["kde"]
     kde_available_space = kde_dict[seed]["available_distance"]["kde"]
-    xvals = np.linspace(distances.min(), distances.max(), 100)
+
+    xvals = np.linspace(0, distances.max(), 100)
+
     kde_distance_values = kde_distance(xvals)
     kde_available_space_values = kde_available_space(xvals)
 
     yvals, kde_distance_values_normalized, kde_available_space_values_normalized = (
-        density_ratio(xvals, kde_distance_values, kde_available_space_values)
+        get_pdf_ratio(xvals, kde_distance_values, kde_available_space_values, method)
     )
-    if ratio_to_plot == "occupancy":
-        yvals = occupancy_ratio(xvals, kde_distance_values, kde_available_space_values)
 
     # plot occupied distance values
     ax = axs[0]
@@ -1059,28 +1139,29 @@ def plot_occupancy_illustration(
         xvals, kde_available_space_values_normalized, label="available space", c="b"
     )
     ax.set_xlim([0, xlim[1]])
-    ax.set_ylim(axs[0].get_ylim())
     ax.set_ylabel("Probability Density")
     ax.set_title("Available Space")
+
+    ylims = [axs[i].get_ylim() for i in range(2)]
+    ylim = [min([y[0] for y in ylims]), max([y[1] for y in ylims])]
+
+    for i in range(2):
+        axs[i].set_ylim(ylim)
 
     # plot ratio
     ax = axs[2]
     ax.plot(xvals, yvals, label="space corrected", c="g")
     # ax.set_xlim([0, 0.2])
-    # ax.set_ylim([0, 2])
+    ax.set_ylim([0, 2])
     ax.set_xlim([0, xlim[1]])
     ax.axhline(1, color="k", linestyle="--")
-    ax.set_ylabel("Cumulative Occupancy Ratio")
+    ax.set_ylabel("Ratio")
     ax.set_title("Occupancy Ratio")
 
     for ax in axs:
         ax.set_xlabel(f"{DISTANCE_MEASURE_LABELS[distance_measure]} / Cell Diameter")
         ax.xaxis.set_major_locator(MaxNLocator(5))
-        if struct_diameter and mesh_information_dict is not None:
-            avg_diameter, std_diameter = get_average_scaled_value(
-                value=struct_diameter,
-                mesh_information_dict=mesh_information_dict,
-            )
+        if avg_diameter is not None and std_diameter is not None:
             ax.axvline(avg_diameter, color="r", linestyle="--")
             ax.axvspan(
                 avg_diameter - std_diameter,
@@ -1151,14 +1232,30 @@ def plot_individual_occupancy_ratio(
     figures_dir=None,
     suffix="",
     mesh_information_dict=None,
-    struct_diameter=4.74,
+    struct_diameter=None,
     distance_measure="nucleus",
-    ratio_to_plot="occupancy",
+    method="ratio",
 ):
+    """
+    Plots the individual occupancy ratio based on the given parameters.
+
+    Parameters:
+        distance_dict (dict): A dictionary containing distance information.
+        kde_dict (dict): A dictionary containing KDE information.
+        packing_modes (list): A list of packing modes.
+        figures_dir (str, optional): The directory to save the figures. Defaults to None.
+        suffix (str, optional): A suffix to add to the figure filename. Defaults to "".
+        mesh_information_dict (dict, optional): A dictionary containing mesh information. Defaults to None.
+        struct_diameter (float, optional): The diameter of the structure. Defaults to None.
+        distance_measure (str, optional): The distance measure to plot. Defaults to "nucleus".
+        ratio_to_plot (str, optional): The ratio to plot ("density" or "ratio"). Defaults to "ratio".
+    """
     print("Plotting individual space corrected kde values")
     cmap = plt.get_cmap("tab10")
     nrows = len(packing_modes)
-    fig, axs = plt.subplots(dpi=300, figsize=(9, 3 * nrows), nrows=nrows, sharey=True)
+    fig, axs = plt.subplots(
+        dpi=300, figsize=(9, 3 * nrows), nrows=nrows, sharey=True, sharex=True
+    )
     for ct, mode in enumerate(packing_modes):
         print(mode)
         mode_dict = distance_dict[mode]
@@ -1168,26 +1265,22 @@ def plot_individual_occupancy_ratio(
         for seed, distances in tqdm(mode_dict.items(), total=len(mode_dict)):
             kde_distance = kde_dict[seed][mode]["kde"]
             kde_available_space = kde_dict[seed]["available_distance"]["kde"]
+
             xvals = np.linspace(0, distances.max(), 100)
             mode_xvals.append(xvals)
 
             kde_distance_values = kde_distance(xvals)
             kde_available_space_values = kde_available_space(xvals)
 
-            if ratio_to_plot == "density":
-                yvals, _, _ = density_ratio(
-                    xvals, kde_distance_values, kde_available_space_values
-                )
-            elif ratio_to_plot == "occupancy":
-                yvals = occupancy_ratio(
-                    xvals, kde_distance_values, kde_available_space_values
-                )
+            yvals, _, _ = get_pdf_ratio(
+                xvals, kde_distance_values, kde_available_space_values, method
+            )
+
             mode_yvals.append(yvals)
 
             ax.plot(xvals, yvals, c=cmap(ct), alpha=0.25)
-            # break
 
-        if mesh_information_dict is not None and struct_diameter:
+        if mesh_information_dict is not None and struct_diameter is not None:
             ax = add_struct_diameter_to_plot(ax, struct_diameter, mesh_information_dict)
 
         ax.xaxis.set_major_locator(MaxNLocator(5))
@@ -1216,6 +1309,7 @@ def get_combined_distance_distribution_kde(
     suffix="",
     distance_measure="nucleus",
     sample=None,
+    bandwidth="scott",
 ):
     """
     Calculate the combined distance distribution using kernel density estimation (KDE).
@@ -1233,7 +1327,6 @@ def get_combined_distance_distribution_kde(
     Returns:
     - combined_kde_dict (dict): A dictionary containing the combined KDE values.
     """
-
     file_path = None
     if results_dir is not None:
         file_path = (
@@ -1262,7 +1355,7 @@ def get_combined_distance_distribution_kde(
         mode_dict = distance_dict[mode]
 
         combined_mode_distances = np.concatenate(list(mode_dict.values()))
-        kde_distance = gaussian_kde(combined_mode_distances)
+        kde_distance = gaussian_kde(combined_mode_distances, bw_method=bandwidth)
 
         combined_available_distances = np.concatenate(
             [
@@ -1273,7 +1366,9 @@ def get_combined_distance_distribution_kde(
                 for seed in mode_dict.keys()
             ]
         )
-        kde_available_space = gaussian_kde(combined_available_distances)
+        kde_available_space = gaussian_kde(
+            combined_available_distances, bw_method=bandwidth
+        )
 
         combined_kde_dict[mode] = {
             "mode_distances": combined_mode_distances,
@@ -1293,41 +1388,53 @@ def plot_combined_occupancy_ratio(
     figures_dir=None,
     suffix="",
     mesh_information_dict=None,
-    struct_diameter=2.37,
+    struct_diameter=None,
     normalization=None,
     aspect=None,
     save_format="png",
     save_intermediates=False,
     distance_measure="nucleus",
     num_points=100,
-    ratio_to_plot="occupancy",
+    method="ratio",
 ):
     print("Plotting combined occupancy ratio")
+
+    min_distance = 0.0
+    if struct_diameter and mesh_information_dict is not None:
+        avg_diameter, std_diameter = get_average_scaled_value(
+            value=struct_diameter,
+            mesh_information_dict=mesh_information_dict,
+        )
+        min_distance = avg_diameter - std_diameter
+
     fig, ax = plt.subplots(dpi=300, figsize=(6, 6))
 
     for ct, mode in enumerate(packing_modes):
         print(mode)
+
         kde_mode_dict = combined_kde_dict[mode]
         mode_distances = kde_mode_dict["mode_distances"]
+
         kde_distance = kde_mode_dict["kde_distance"]
         kde_available_space = kde_mode_dict["kde_available_space"]
-        xvals = np.linspace(mode_distances.min(), mode_distances.max(), num_points)
+
+        min_distance = np.maximum(np.min(mode_distances), min_distance)
+        xvals = np.linspace(min_distance, mode_distances.max(), num_points)
 
         kde_distance_values = kde_distance(xvals)
         kde_available_space_values = kde_available_space(xvals)
 
-        if ratio_to_plot == "density":
-            yvals, _, _ = density_ratio(
-                xvals, kde_distance_values, kde_available_space_values
-            )
-        elif ratio_to_plot == "occupancy":
-            yvals = occupancy_ratio(
-                xvals, kde_distance_values, kde_available_space_values
-            )
+        yvals, _, _ = get_pdf_ratio(
+            xvals, kde_distance_values, kde_available_space_values, method
+        )
 
         ax.plot(xvals, yvals, label=MODE_LABELS[mode])
 
-        if mesh_information_dict is not None and struct_diameter and ct == 0:
+        if (
+            mesh_information_dict is not None
+            and struct_diameter is not None
+            and ct == 0
+        ):
             ax = add_struct_diameter_to_plot(ax, struct_diameter, mesh_information_dict)
 
         if ct == 0:

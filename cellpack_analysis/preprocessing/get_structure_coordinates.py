@@ -19,14 +19,16 @@ structure_name_dict = {
     "SLC25A17": "peroxisome",
     "RAB5A": "endosome",
 }
-STRUCTURE_ID = "RAB5A"  # peroxisome: "SLC25A17", early endosome: "RAB5A"
+STRUCTURE_ID = "SLC25A17"  # peroxisome: "SLC25A17", early endosome: "RAB5A"
 STRUCTURE_NAME = structure_name_dict[STRUCTURE_ID]
+dsphere = False
+subfolder = "sample_8d" if dsphere else "full"
 # %% [markdown]
 # ### get data directory
 datadir = Path(__file__).parents[2] / "data"
 # %% [markdown]
 # ### Get path for images
-img_path = datadir / f"structure_data/{STRUCTURE_ID}/sample_8d/segmented/"
+img_path = datadir / f"structure_data/{STRUCTURE_ID}/{subfolder}/segmented/"
 
 # %% [markdown]
 # ### Get list of files
@@ -176,7 +178,7 @@ else:
         positions_dict[cellid][structure_name] = positions
 # %% save positions
 save_path = (
-    datadir / f"structure_data/{STRUCTURE_ID}/sample_8d/positions_{STRUCTURE_ID}.json"
+    datadir / f"structure_data/{STRUCTURE_ID}/{subfolder}/positions_{STRUCTURE_ID}.json"
 )
 with open(save_path, "w") as f:
     json.dump(positions_dict, f, indent=4, sort_keys=True)

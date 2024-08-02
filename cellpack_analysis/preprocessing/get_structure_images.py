@@ -31,12 +31,13 @@ print(meta_df.structure_name.unique())
 # - `SLC25A17` is peroxisomes
 # - `RAB5A` is early endosomes
 # - `LAMP1` is lysosomes
-STRUCTURE_ID = "LAMP1"
+STRUCTURE_ID = "RAB5A"
 
 # %% [markdown]
 # ### Get cellID list for structure
-dsphere = True
+dsphere = False
 cellid_list = get_cellid_list_for_structure(STRUCTURE_ID, dsphere=dsphere)
+print(f"Found {len(cellid_list)} cell IDs for {STRUCTURE_ID}")
 # %% [markdown]
 # ### Create dataframe for structure metadata
 meta_df_struct = meta_df.loc[cellid_list].reset_index()
@@ -50,6 +51,7 @@ save_path = Path(
     datadir / f"structure_data/{STRUCTURE_ID}/{subfolder_name}/{folder_name}"
 )
 save_path.mkdir(exist_ok=True, parents=True)
+print(f"Images will be saved to {save_path}")
 
 
 # %% [markdown]

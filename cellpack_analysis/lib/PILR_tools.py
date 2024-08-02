@@ -9,13 +9,23 @@ from aicsimageio.aics_image import AICSImage
 from aicsshparam import shtools
 from sklearn.decomposition import PCA
 
-from cellpack_analysis.lib.mesh_tools import (
-    calculate_scaled_distances_from_mesh,
-    get_average_shape_mesh_objects,
-)
+from cellpack_analysis.lib.mesh_tools import calculate_scaled_distances_from_mesh
 
 
 def get_pilr_for_single_image(file, ch_name, raw_image_channel="SLC25A17"):
+    """
+    Get the PILR for a single image.
+
+    Args:
+        file (str): The file path of the image.
+        ch_name (str): The name of the channel.
+        raw_image_channel (str, optional): The name of the raw image channel.
+            Defaults to "SLC25A17".
+
+    Returns:
+        numpy.ndarray: The PILR data for the image.
+    """
+
     img = AICSImage(file)
 
     gfp_channel = 2
@@ -60,16 +70,37 @@ def get_pilr_for_single_image(file, ch_name, raw_image_channel="SLC25A17"):
 
 
 def average_over_dimension(value, dim=1):
-    # averages the PILR over the dimension dim
-    # default is phi
+    """
+    Calculate the average over a specified dimension of a given value.
+
+    Parameters:
+        value (ndarray): The input value to calculate the average over.
+        dim (int): The dimension along which to calculate the average. Default is 1.
+
+    Returns:
+        ndarray: The average value along the specified dimension.
+    """
     return value[:, 2:].reshape(65, 128, 64).mean(axis=dim).squeeze()  # R, phi, theta
 
 
 def get_processed_PILR_from_dict(
     pilr_dict, ch_ind, average_over_phi=True, mask_nucleus=True
 ):
-    # Get the flattened and processed PILR from the dictionary
+    """
+    Get the flattened and processed PILR from the dictionary.
 
+    Args:
+        pilr_dict (dict): Dictionary containing PILR data.
+        ch_ind (int): Index of the channel in the dictionary.
+        average_over_phi (bool, optional): Whether to average over the phi dimension.
+            Defaults to True.
+        mask_nucleus (bool, optional): Whether to mask the nucleus.
+            Defaults to True.
+
+    Returns:
+        tuple: Tuple containing the processed PILR array and the standard deviation
+        of the PILR array.
+    """
     if average_over_phi:
         pilr = average_over_dimension(pilr_dict[ch_ind])
     else:
@@ -88,10 +119,21 @@ def get_processed_PILR_from_dict(
 
 
 def get_embeddings(individual_PILR_dict, metric, channels_for_embedding=None, **kwargs):
-    # calculates PCA or pacmap embeddings from input dict
-    # returns a list of embeddings for each channel
-    # input_PILR_dict: dictionary of PILR values for each channel
+    """
+    Calculates PCA or pacmap embeddings from input dict.
 
+    Args:
+        individual_PILR_dict (dict): Dictionary of PILR values for each channel.
+        metric (str): The embedding metric to use. Options: "pacmap", "pca", "pacmap_pca", "umap".
+        channels_for_embedding (list, optional): List of channels to calculate embeddings for.
+            Defaults to None.
+        **kwargs: Additional keyword arguments for the embedding algorithm.
+
+    Returns:
+        tuple: A tuple containing the embedding dictionary and the embedding object.
+            - embedding_dict (dict): Dictionary containing the embeddings for each channel.
+            - embedding (object): The embedding object used for calculation.
+    """
     if channels_for_embedding is None:
         channels_for_embedding = list(individual_PILR_dict.keys())
 
@@ -163,7 +205,15 @@ def get_embeddings(individual_PILR_dict, metric, channels_for_embedding=None, **
 
 
 def get_domain(mesh_dict):
-    # Get the domain for the average shape
+    """
+    Get the domain for the average shape.
+
+    Parameters:
+    - mesh_dict (dict): A dictionary containing the meshes for the membrane and nucleus.
+
+    Returns:
+    - domain (object): The domain object representing the average shape.
+    """
     domain, _ = cytoparam.voxelize_meshes([mesh_dict["mem"], mesh_dict["nuc"]])
     return domain
 
@@ -171,7 +221,15 @@ def get_domain(mesh_dict):
 def get_parametrized_coords_for_avg_shape(
     domain,
 ):
-    # Get the parametrized coordinates for the average shape
+    """
+    Get parameterized coordinates for average shape.
+
+    Args:
+        domain: The domain image.
+
+    Returns:
+        The parameterized coordinates.
+    """
     coords_param, _ = cytoparam.parameterize_image_coordinates(
         seg_mem=(domain > 0).astype(np.uint8),
         seg_nuc=(domain > 1).astype(np.uint8),
@@ -187,7 +245,21 @@ def morph_PILRs_into_average_shape(
     domain=None,
     coords_param=None,
 ):
-    # Morph the PILRs into the average shape
+    """
+    Morphs a list of PILRs into the average shape defined by a mesh.
+
+    Args:
+        pilr_list (list): List of PILRs to be morphed.
+        mesh_dict (dict): Dictionary containing mesh information.
+        domain (ndarray, optional): Domain image representing the average shape.
+            If not provided, it will be obtained from the mesh_dict.
+        coords_param (ndarray, optional): Parametrized coordinates for the average shape.
+            If not provided, it will be obtained from the mesh_dict.
+
+    Returns:
+        list: List of morphed PILRs.
+
+    """
     if domain is None:
         domain = get_domain(mesh_dict)
     if coords_param is None:
@@ -206,18 +278,18 @@ def morph_PILRs_into_average_shape(
     return morphed
 
 
-def get_cell_id_list(df_cellID, structure_id):
-    # get cell id list for given structure
-    all_cellid_as_strings = df_cellID.loc[structure_id, "CellIds"].split(",")
+def get_cellid_ch_seed_from_filename(fname, config_name="analyze", suffix="_pilr"):
+    """
+    Extracts the cell ID, channel, and seed name from a given file name.
 
-    cellid_list = []
-    for cellid in all_cellid_as_strings:
-        cellid_list.append(int(cellid.replace("[", "").replace("]", "")))
+    Parameters:
+        fname (str): The file name from which to extract the information.
+        config_name (str, optional): The configuration name. Defaults to "analyze".
+        suffix (str, optional): The suffix to remove from the file name. Defaults to "_pilr".
 
-    return cellid_list
-
-
-def get_cellid_ch_seed_from_fname(fname, config_name="analyze", suffix="_pilr"):
+    Returns:
+        tuple: A tuple containing the cell ID, channel, and seed name.
+    """
     fname = fname.split(suffix)[0]
     seed_name = fname.split("_")[-1].split(".")[0]
     cellid = fname.split("_")[-3]
@@ -228,7 +300,18 @@ def get_cellid_ch_seed_from_fname(fname, config_name="analyze", suffix="_pilr"):
 def get_correlations_between_average_PILRs(
     average_pilr_dict, channel_name_dict, save_dir
 ):
-    # Get correlations between average PILRs
+    """
+    Calculate correlations between average PILRs and save the results.
+
+    Parameters:
+        average_pilr_dict (dict): A dictionary containing average PILR values for each channel.
+        channel_name_dict (dict): A dictionary mapping channel indices to channel names.
+        save_dir (str): The directory where the results will be saved.
+
+    Returns:
+        None
+    """
+
     df = pd.DataFrame(
         index=channel_name_dict.values(),
         columns=channel_name_dict.values(),
@@ -276,7 +359,14 @@ def get_individual_PILRs_from_images(pilr_img_folder, channel_name_dict):
 
 def cartesian_to_sph(xyz, center=None):
     """
-    Converts cartesian to spherical coordinates
+    Convert Cartesian coordinates to spherical coordinates.
+
+    Parameters:
+    - xyz (numpy.ndarray): Array of Cartesian coordinates with shape (N, 3).
+    - center (numpy.ndarray, optional): Center point for the conversion. Defaults to None.
+
+    Returns:
+    - sph_pts (numpy.ndarray): Array of spherical coordinates with shape (N, 3).
     """
     if center is None:
         center = np.zeros(3)
@@ -311,6 +401,7 @@ def calculate_simplified_PILR(positions, nuc_mesh, mem_mesh, scale=True):
     spilr : float
         Simplified PILR value.
     """
+    spilr = None
     # Convert positions to spherical coordinates
     sph_positions = cartesian_to_sph(positions)
 
@@ -323,15 +414,25 @@ def calculate_simplified_PILR(positions, nuc_mesh, mem_mesh, scale=True):
     return spilr
 
 
-import matplotlib.pyplot as plt
-import numpy as np
-from aicscytoparam import cytoparam
-from skimage import measure as skmeasure
-
-
 def get_mean_shape_as_image(
     outer_mesh, inner_mesh, lmax=16, nisos_outer=32, nisos_inner=32
 ):
+    """
+    Converts the outer and inner meshes into an image representation of the mean shape.
+
+    Parameters:
+    - outer_mesh: The outer mesh of the cell.
+    - inner_mesh: The inner mesh of the cell.
+    - lmax: The maximum level of spherical harmonics used for parameterization. Default is 16.
+    - nisos_outer: The number of isosurfaces for the outer mesh. Default is 32.
+    - nisos_inner: The number of isosurfaces for the inner mesh. Default is 32.
+
+    Returns:
+    - domain: The voxelized domain of the cell.
+    - domain_nuc: The voxelized domain of the nucleus.
+    - domain_mem: The voxelized domain of the cell membrane.
+    - coords_param: The parameterized image coordinates.
+    """
 
     domain, origin = cytoparam.voxelize_meshes([outer_mesh, inner_mesh])
     coords_param, _ = cytoparam.parameterize_image_coordinates(

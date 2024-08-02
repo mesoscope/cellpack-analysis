@@ -6,12 +6,10 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 
 from cellpack_analysis.analysis.stochastic_variation_analysis import distance
-from cellpack_analysis.lib.load_data import (
-    get_position_data_from_outputs,
-)
 from cellpack_analysis.analysis.stochastic_variation_analysis.stats_functions import (
     normalize_distances,
 )
+from cellpack_analysis.lib.load_data import get_position_data_from_outputs
 from cellpack_analysis.lib.mesh_tools import get_mesh_information_dict
 
 plt.rcParams.update({"font.size": 14})
@@ -127,6 +125,7 @@ distance.plot_distance_distributions_kde(
     figures_dir=distance_figures_dir,
     suffix=suffix,
     normalization=normalization,
+    overlay=True,
 )
 # %% [markdown]
 # ### plot distance PDFs overlaid for comparison

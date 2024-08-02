@@ -80,7 +80,7 @@ else:
     mem_mesh = trimesh.load_mesh(mem_meshes_to_use[0])
 
 # %% set up grid
-SPACING = 1
+SPACING = 2
 bounds = mem_mesh.bounds
 bounding_box = round_away_from_zero(bounds)
 all_points = get_list_of_grid_points(bounding_box, SPACING)

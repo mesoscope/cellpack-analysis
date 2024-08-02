@@ -6,12 +6,13 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 
 from cellpack_analysis.analysis.stochastic_variation_analysis import distance
-from cellpack_analysis.analysis.stochastic_variation_analysis.load_data import (
-    get_position_data_from_outputs,
+from cellpack_analysis.analysis.stochastic_variation_analysis.label_tables import (
+    STRUCTURE_RADIUS_DICT,
 )
 from cellpack_analysis.analysis.stochastic_variation_analysis.stats_functions import (
     normalize_distances,
 )
+from cellpack_analysis.lib.load_data import get_position_data_from_outputs
 from cellpack_analysis.lib.mesh_tools import get_mesh_information_dict
 
 plt.rcParams.update({"font.size": 14})
@@ -21,40 +22,28 @@ start_time = time.time()
 # %% [markdown]
 # ### Set structure ID and radius
 STRUCTURE_ID = "SLC25A17"  # "SLC25A17" for peroxisomes, "RAB5A" for early endosomes
-STRUCT_RADIUS = 2.37  # 2.37 um for peroxisomes, 2.6 um for early endosomes
+STRUCT_RADIUS = STRUCTURE_RADIUS_DICT.get(
+    STRUCTURE_ID
+)  # 2.37 um for peroxisomes, 2.6 um for early endosomes
 # %% [markdown]
 # ### Set packing modes to analyze
-baseline_analysis = False
-packing_modes_baseline = [
-    "mean_count_and_size",
-    "variable_size",
-    "variable_count",
-    "shape",
-]
-packing_modes_rules = [
+packing_modes = [
     STRUCTURE_ID,
     "random",
-    "nucleus_moderate",
-    "nucleus_moderate_invert",
-    "planar_gradient_Z_moderate",
+    "nucleus_gradient_strong",
+    "membrane_gradient_strong",
+    "apical_gradient",
 ]
 
 # relative path to packing outputs
-if baseline_analysis:
-    packing_output_folder = "packing_outputs/stochastic_variation_analysis/"
-    packing_modes = packing_modes_baseline
-    baseline_mode = "mean_count_and_size"
-else:
-    # TODO: update path with new packings
-    packing_output_folder = "packing_outputs/8d_sphere_data/RS/"
-    packing_modes = packing_modes_rules
-    baseline_mode = STRUCTURE_ID
+packing_output_folder = "packing_outputs/8d_sphere_data/rules_shape/"
+baseline_mode = STRUCTURE_ID
 # %% [markdown]
 # ### Set file paths and setup parameters
 base_datadir = Path(__file__).parents[3] / "data"
 base_results_dir = Path(__file__).parents[3] / "results"
 
-folder_name = "baseline" if baseline_analysis else "rules"
+folder_name = "rules"
 results_dir = (
     base_results_dir / f"stochastic_variation_analysis/{STRUCTURE_ID}/{folder_name}"
 )
@@ -63,15 +52,11 @@ results_dir.mkdir(exist_ok=True, parents=True)
 occupancy_figures_dir = results_dir / "figures/occupancy"
 occupancy_figures_dir.mkdir(exist_ok=True, parents=True)
 
+distance_figures_dir = results_dir / "figures/distance"
+distance_figures_dir.mkdir(exist_ok=True, parents=True)
 # %% [markdown]
 # ### Distance measures to use
 distance_measures = ["pairwise", "nucleus", "nearest", "z"]
-# %% [markdown]
-# ### Set normalization
-# options: None, "intracellular_radius", "cell_diameter", "max_distance"
-normalization = "cell_diameter"
-if normalization is not None:
-    suffix = f"_normalized_{normalization}"
 
 # %% [markdown]
 # ### Read position data from outputs
@@ -81,8 +66,7 @@ all_positions = get_position_data_from_outputs(
     base_datadir=base_datadir,
     results_dir=results_dir,
     packing_output_folder=packing_output_folder,
-    recalculate=True,
-    baseline_analysis=baseline_analysis,
+    recalculate=False,
 )
 # %% [markdown]
 # ### Check number of packings for each result
@@ -93,11 +77,23 @@ for mode, position_dict in all_positions.items():
 mesh_information_dict = get_mesh_information_dict(
     structure_id=STRUCTURE_ID,
     base_datadir=base_datadir,
-    recalculate=True,
+    recalculate=False,
+)
+# %% [markdown]
+# ### Get average scaled radius
+scaled_avg_radius, scaled_std_radius = distance.get_average_scaled_value(
+    value=STRUCT_RADIUS,
+    mesh_information_dict=mesh_information_dict,
 )
 # %% [markdown]
 # ### Plot distribution of cell diameters
 distance.plot_cell_diameter_distribution(mesh_information_dict)
+# %% [markdown]
+# ### Set normalization
+# options: None, "intracellular_radius", "cell_diameter", "max_distance"
+normalization = "cell_diameter"
+if normalization is not None:
+    suffix = f"_normalized_{normalization}"
 
 # %% [markdown]
 # ### Calculate distance measures and normalize
@@ -106,11 +102,33 @@ all_distance_dict = distance.get_distance_dictionary(
     distance_measures=distance_measures,
     mesh_information_dict=mesh_information_dict,
     results_dir=results_dir,
-    recalculate=True,
+    recalculate=False,
 )
 
 all_distance_dict = normalize_distances(
     all_distance_dict, normalization, mesh_information_dict
+)
+
+# %% [markdown]
+# ### plot distance distribution histograms
+distance.plot_distance_distributions_histogram(
+    distance_measures,
+    packing_modes,
+    all_distance_dict,
+    suffix=suffix,
+    normalization=normalization,
+    figures_dir=distance_figures_dir,
+)
+# %% [markdown]
+# ### plot distance PDFs as kde plots
+distance.plot_distance_distributions_kde(
+    distance_measures=distance_measures,
+    packing_modes=packing_modes,
+    all_distance_dict=all_distance_dict,
+    figures_dir=distance_figures_dir,
+    suffix=suffix,
+    normalization=normalization,
+    overlay=True,
 )
 
 # %% [markdown]
@@ -125,11 +143,12 @@ kde_dict = distance.get_individual_distance_distribution_kde(
     all_distance_dict=all_distance_dict,
     mesh_information_dict=mesh_information_dict,
     packing_modes=packing_modes,
-    results_dir=results_dir,
+    # results_dir=results_dir,
     recalculate=True,
     suffix=suffix,
     normalization=normalization,
     distance_measure=occupancy_distance_measure,
+    bandwidth=0.2,  # type: ignore
 )
 # %% [markdown]
 # ### Plot illustration for occupancy distribution
@@ -142,7 +161,7 @@ kde_distance, kde_available_space, xvals, yvals = distance.plot_occupancy_illust
     distance_measure=occupancy_distance_measure,
     struct_diameter=STRUCT_RADIUS,
     mesh_information_dict=mesh_information_dict,
-    ratio_to_plot="occupancy",
+    method="ratio",
 )
 
 # %% [markdown]
@@ -155,6 +174,7 @@ distance.plot_individual_occupancy_ratio(
     suffix=suffix,
     mesh_information_dict=mesh_information_dict,
     struct_diameter=STRUCT_RADIUS,
+    method="ratio",
 )
 # %% [markdown]
 # ### get combined space corrected kde
@@ -163,10 +183,10 @@ combined_kde_dict = distance.get_combined_distance_distribution_kde(
     mesh_information_dict=mesh_information_dict,
     packing_modes=packing_modes,
     results_dir=results_dir,
-    recalculate=False,
+    recalculate=True,
     suffix=suffix,
     distance_measure=occupancy_distance_measure,
-    # sample=0.01,
+    sample=0.01,
 )
 # %% [markdown]
 # ### plot combined space corrected kde
@@ -184,7 +204,7 @@ fig, ax = distance.plot_combined_occupancy_ratio(
     save_format="png",
     distance_measure=occupancy_distance_measure,
     num_points=100,
-    ratio_to_plot="occupancy",
+    method="ratio",
 )
 # %% [markdown]
 # #### edit figure as needed
