@@ -1,9 +1,8 @@
+from pathlib import Path
+
 from cellpack_analysis.packing.generate_cellpack_input_files import (
     update_and_save_recipe,
 )
-import pytest
-from pathlib import Path
-import json
 
 
 def test_update_and_save_recipe():

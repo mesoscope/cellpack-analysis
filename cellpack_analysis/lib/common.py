@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 from aicscytoparam import cytoparam
+from aicsshparam import shparam
 from skimage import measure as skmeasure
 
 
@@ -8,7 +9,7 @@ def get_mean_shape_as_image(
     outer_mesh, inner_mesh, lmax=16, nisos_outer=32, nisos_inner=32
 ):
 
-    domain, origin = cytoparam.voxelize_meshes([outer_mesh, inner_mesh])
+    domain, origin = shparam.shtools.voxelize_meshes([outer_mesh, inner_mesh])
     coords_param, _ = cytoparam.parameterize_image_coordinates(
         seg_mem=(domain > 0).astype(np.uint8),
         seg_nuc=(domain > 1).astype(np.uint8),
@@ -91,7 +92,7 @@ class Projector:
             if self.proj_mode[alias] == "mean":
                 p = img.mean(axis=ax)
             if self.proj_mode[alias] == "top_nuc":
-                zc, yc, xc = [int(np.max(u)) for u in np.where(self.data["nuc"])]
+                zc, yc, xc = (int(np.max(u)) for u in np.where(self.data["nuc"]))
                 if self.proj_ax == "z":
                     p = img[zc]
                 if self.proj_ax == "y":
@@ -99,7 +100,7 @@ class Projector:
                 if self.proj_ax == "x":
                     p = img[:, :, xc]
             if self.proj_mode[alias] == "center_nuc":
-                zc, yc, xc = [int(np.mean(u)) for u in np.where(self.data["nuc"])]
+                zc, yc, xc = (int(np.mean(u)) for u in np.where(self.data["nuc"]))
                 if self.proj_ax == "z":
                     p = img[zc]
                 if self.proj_ax == "y":
@@ -107,7 +108,7 @@ class Projector:
                 if self.proj_ax == "x":
                     p = img[:, :, xc]
             if self.proj_mode[alias] == "center_mem":
-                zc, yc, xc = [int(np.mean(u)) for u in np.where(self.data["mem"])]
+                zc, yc, xc = (int(np.mean(u)) for u in np.where(self.data["mem"]))
                 if self.proj_ax == "z":
                     p = img[zc]
                 if self.proj_ax == "y":
@@ -116,7 +117,7 @@ class Projector:
                     p = img[:, :, xc]
             if self.proj_mode[alias] == "max_buffer_center_nuc":
                 buf = 3
-                zc, yc, xc = [int(np.mean(u)) for u in np.where(self.data["nuc"])]
+                zc, yc, xc = (int(np.mean(u)) for u in np.where(self.data["nuc"]))
                 if self.proj_ax == "z":
                     p = img[zc - buf : zc + buf].max(axis=ax)
                 if self.proj_ax == "y":
@@ -125,7 +126,7 @@ class Projector:
                     p = img[:, :, xc - buf : xc + buf].max(axis=ax)
             if self.proj_mode[alias] == "max_buffer_top_nuc":
                 buf = 3
-                zc, yc, xc = [int(np.max(u)) for u in np.where(self.data["nuc"])]
+                zc, yc, xc = (int(np.max(u)) for u in np.where(self.data["nuc"]))
                 if self.proj_ax == "z":
                     p = img[zc - buf : zc + buf].max(axis=ax)
                 if self.proj_ax == "y":

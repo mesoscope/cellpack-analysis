@@ -1,0 +1,34 @@
+{
+    "workflow": "peroxisome_radial_bias",
+    "data": {
+        "peroxisome": {
+            "structure_label": "Peroxisome",
+            "rules": {
+                "SLC25A17": {
+                    "structure_id": "SLC25A17",
+                    "label": "Observed",
+                    "color": "#FF5733",
+                    "dsphere": true
+                },
+                "random": {
+                    "structure_id": "SLC25A17",
+                    "label": "Random",
+                    "color": "#C0C0C0",
+                    "dsphere": true
+                },
+                "nucleus_gradient_strong": {
+                    "structure_id": "SLC25A17",
+                    "label": "Nucleus",
+                    "color": "#0000FF",
+                    "dsphere": true
+                },
+                "membrane_gradient_strong": {
+                    "structure_id": "SLC25A17",
+                    "label": "Membrane",
+                    "color": "#008000",
+                    "dsphere": true
+                }
+            }
+        }
+    }
+}

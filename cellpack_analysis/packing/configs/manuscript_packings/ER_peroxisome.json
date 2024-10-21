@@ -1,0 +1,48 @@
+{
+    "structure_name": "ER_peroxisome",
+    "structure_id": "SEC61B",
+    "condition": "rules_shape",
+    "generate_recipes": true,
+    "generate_configs": true,
+    "use_additional_struct": true,
+    "use_mean_cell": false,
+    "use_cells_in_8d_sphere": true,
+    "gradient_structure_name": "peroxisome",
+    "get_counts_from_data": false,
+    "get_size_from_data": false,
+    "get_bounding_box_from_mesh": true,
+    "num_processes": 32,
+    "skip_completed": true,
+    "dry_run": false,
+    "recipe_data": {
+        "random": {},
+        "nucleus_gradient_strong": {
+            "gradients": [
+                "nucleus_gradient"
+            ]
+        },
+        "membrane_gradient_strong": {
+            "gradients": [
+                "membrane_gradient"
+            ]
+        },
+        "apical_gradient": {
+            "gradients": [
+                "apical_gradient"
+            ]
+        },
+        "struct_gradient": {
+            "gradients": [
+                "struct_gradient"
+            ]
+        }
+    },
+    "packings_to_run": {
+        "rules": [
+            "random",
+            "nucleus_gradient_strong",
+            "membrane_gradient_strong",
+            "struct_gradient"
+        ]
+    }
+}

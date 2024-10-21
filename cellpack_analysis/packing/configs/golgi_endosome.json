@@ -1,0 +1,51 @@
+{
+    "structure_name": "golgi_endosome",
+    "structure_id": "ST6GAL1",
+    "condition": "rules_shape",
+    "generate_recipes": true,
+    "generate_configs": false,
+    "use_additional_struct": true,
+    "use_mean_cell": false,
+    "use_cells_in_8d_sphere": true,
+    "gradient_structure_name": "endosome",
+    "get_counts_from_data": false,
+    "get_size_from_data": false,
+    "get_bounding_box_from_mesh": true,
+    "num_processes": 32,
+    "skip_completed": false,
+    "dry_run": false,
+    "recipe_data": {
+        "random": {},
+        "nucleus_gradient_strong": {
+            "gradients": [
+                "nucleus_gradient"
+            ]
+        },
+        "membrane_gradient_strong": {
+            "gradients": [
+                "membrane_gradient"
+            ]
+        },
+        "apical_gradient": {
+            "gradients": [
+                "apical_gradient"
+            ]
+        },
+        "struct_gradient": {
+            "gradients": [
+                "struct_gradient"
+            ]
+        },
+        "nuc_apical_gradient": {
+            "gradients": [
+                "nucleus_gradient",
+                "apical_gradient"
+            ]
+        }
+    },
+    "packings_to_run": {
+        "rules": [
+            "nuc_apical_gradient"
+        ]
+    }
+}

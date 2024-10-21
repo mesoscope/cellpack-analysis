@@ -76,7 +76,7 @@ def get_mesh_vertices(mesh_file_path):
     Given a mesh file path, returns the coordinates of the mesh vertices.
     """
     coordinates = []
-    with open(mesh_file_path, "r") as mesh_file:
+    with open(mesh_file_path) as mesh_file:
         for line in mesh_file:
             if line.startswith("v"):
                 coordinates.append([float(x) for x in line.split()[1:]])
@@ -207,7 +207,7 @@ def transform_and_save_dict_for_rule(
 
 def update_config_file(config_path, output_path):
     # read json
-    with open(config_path, "r") as j:
+    with open(config_path) as j:
         config = json.load(j)
 
     # update paths
@@ -228,7 +228,7 @@ def generate_recipes(
     rule_list=RULE_LIST,
 ):
     # read json
-    with open(template_path, "r") as j:
+    with open(template_path) as j:
         template = json.load(j)
 
     if not output_path.exists():

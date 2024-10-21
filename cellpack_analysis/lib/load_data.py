@@ -1,14 +1,15 @@
 import json
+import logging
 import pickle
 from pathlib import Path
 
 import numpy as np
 
-from cellpack_analysis.analysis.stochastic_variation_analysis.label_tables import (
-    STRUCTURE_NAME_DICT,
-    VARIABLE_SHAPE_MODES,
-)
-from cellpack_analysis.lib.file_io import read_json, write_json
+from cellpack_analysis.lib.file_io import get_project_root, read_json, write_json
+from cellpack_analysis.lib.label_tables import STATIC_SHAPE_MODES, STRUCTURE_NAME_DICT
+
+log = logging.getLogger(__name__)
+PROJECT_ROOT = get_project_root()
 
 
 def combine_multiple_seeds_to_dictionary(
@@ -22,6 +23,7 @@ def combine_multiple_seeds_to_dictionary(
     Combine data from multiple seeds into a dictionary.
 
     Args:
+    ----
         data_folder (str): Path to the folder containing the data files.
         ingredient_key (str, optional): Key of the ingredient to extract from the data.
             Defaults to "membrane_interior_peroxisome".
@@ -33,6 +35,7 @@ def combine_multiple_seeds_to_dictionary(
             Defaults to "positions_peroxisome_analyze_random_mean".
 
     Returns:
+    -------
         dict: A dictionary containing the combined data from multiple seeds.
     """
 
@@ -67,6 +70,7 @@ def get_positions_dictionary_from_file(
     Retrieve positions dictionary from a file.
 
     Args:
+    ----
         filename (str):
             The path to the file containing the positions data.
         ingredient_key (str, optional):
@@ -74,6 +78,7 @@ def get_positions_dictionary_from_file(
             Defaults to "membrane_interior_peroxisome".
 
     Returns:
+    -------
         dict: A dictionary containing the positions data,
             where the keys are integers and the values are NumPy arrays.
     """
@@ -91,88 +96,105 @@ def get_positions_dictionary_from_file(
 
 def get_position_data_from_outputs(
     structure_id,
+    structure_name,
     packing_modes,
     base_datadir,
     results_dir,
     packing_output_folder,
     recalculate=False,
-    baseline_analysis=False,
+    ingredient_key=None,
 ):
     """
     Retrieves position data from outputs.
 
-    Args:
-        structure_id (str): The ID of the structure.
-        packing_modes (list): List of packing modes.
-        base_datadir (str): The base directory for data.
-        results_dir (str): The directory to save results.
-        recalculate (bool, optional): Whether to recalculate the position data.
-            Defaults to False.
-        baseline_analysis (bool, optional): Whether to use baseline analysis.
+    Parameters
+    ----------
+    structure_id : str
+        The ID of the structure.
+    structure_name : str
+        The name of the structure.
+    packing_modes : list
+        List of packing modes.
+    base_datadir : str
+        The base directory for data.
+    results_dir : str
+        The directory to save results.
+    packing_output_folder : str
+        The folder containing packing outputs.
+    recalculate : bool, optional
+        Whether to recalculate the position data. Default is False.
+    ingredient_key : str, optional
+        The key for the ingredient in the raw data. Default is None.
 
-    Returns:
-        dict: A dictionary containing the position data for each packing mode.
+    Returns
+    -------
+    :
+        A dictionary containing the position data for each packing mode.
     """
-    if not recalculate:
-        file_path = results_dir / "packing_modes_positions.dat"
-        if file_path.exists():
-            with open(file_path, "rb") as f:
-                all_positions = pickle.load(f)
-            return all_positions
+    save_file_name = f"{structure_name}_positions.dat"
+    save_file_path = results_dir / save_file_name
+    if not recalculate and save_file_path.exists():
+        log.info(f"Loading positions from {save_file_path.relative_to(PROJECT_ROOT)}")
+        with open(save_file_path, "rb") as f:
+            all_positions = pickle.load(f)
+        return all_positions
 
-    print("Reading position data from outputs")
+    if ingredient_key is None:
+        ingredient_key = f"membrane_interior_{structure_name}"
+
+    log.info("Reading position data from outputs")
     all_positions = {}
 
     for mode in packing_modes:
-        # available modes are:
-        # SLC25A17 (peroxisomes), RAB5A (endosomes),
-        # random, nucleus_moderate, nucleus_moderate_invert, planar_gradient_Z_moderate
-        if mode in STRUCTURE_NAME_DICT:
-            file_path = (
+        if mode in STRUCTURE_NAME_DICT:  # if the mode is from observed microscopy data
+            mode_file_path = (
                 base_datadir
                 / f"structure_data/{structure_id}/sample_8d/positions_{structure_id}.json"
             )
-        else:
-            subfolder = f"{mode}/{STRUCTURE_NAME_DICT[structure_id]}/spheresSST/"
+        else:  # if the mode is from cellPACK outputs
+            subfolder = f"{mode}/{structure_name}/spheresSST/"
 
             data_folder = base_datadir / f"{packing_output_folder}/{subfolder}"
 
             mode_position_filename = (
-                f"all_positions_{STRUCTURE_NAME_DICT[structure_id]}_analyze_{mode}.json"
+                f"all_positions_{structure_name}_analyze_{mode}.json"
             )
 
-            file_path = data_folder / mode_position_filename
+            mode_file_path = data_folder / mode_position_filename
 
-            if file_path.exists() and not recalculate:
+            if mode_file_path.exists() and not recalculate:
                 positions = get_positions_dictionary_from_file(
-                    file_path,
-                    ingredient_key=f"membrane_interior_{STRUCTURE_NAME_DICT[structure_id]}",
-                    drop_random_seed=mode in VARIABLE_SHAPE_MODES,
+                    mode_file_path,
+                    ingredient_key=ingredient_key,
+                    drop_random_seed=mode not in STATIC_SHAPE_MODES,
                 )
                 all_positions[mode] = positions
                 continue
 
-            rule_name = mode if not baseline_analysis else "random"
+            rule_name = mode if mode not in STATIC_SHAPE_MODES else "random"
 
             combine_multiple_seeds_to_dictionary(
                 data_folder,
-                ingredient_key=f"membrane_interior_{STRUCTURE_NAME_DICT[structure_id]}",
+                ingredient_key=ingredient_key,
                 search_prefix="positions_",
                 rule_name=rule_name,
                 save_name=mode_position_filename,
             )
 
+        log.info(
+            f"Reading positions for {mode} from {mode_file_path.relative_to(PROJECT_ROOT)}"
+        )
         positions = get_positions_dictionary_from_file(
-            file_path,
-            ingredient_key=f"membrane_interior_{STRUCTURE_NAME_DICT[structure_id]}",
-            drop_random_seed=mode in VARIABLE_SHAPE_MODES,
+            mode_file_path,
+            ingredient_key=ingredient_key,
+            drop_random_seed=mode not in STATIC_SHAPE_MODES,
         )
 
         all_positions[mode] = positions
-        print(f"Read {len(positions)} packings for {mode}")
+        log.info(f"Read {len(positions)} cellids for {mode}")
+
     # save all positions dictionary
-    file_path = results_dir / "packing_modes_positions.dat"
-    with open(file_path, "wb") as f:
+    with open(save_file_path, "wb") as f:
         pickle.dump(all_positions, f)
 
     return all_positions

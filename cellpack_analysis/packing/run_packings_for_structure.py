@@ -216,7 +216,7 @@ def transform_and_save_dict_for_rule(
 
 def update_config_file(config_path, output_path):
     # read json
-    with open(config_path, "r") as j:
+    with open(config_path) as j:
         config = json.load(j)
 
     # update paths
@@ -241,7 +241,7 @@ def generate_recipes(
 ):
     # if cellID_list is None, will use mean cell
     # read json template
-    with open(template_path, "r") as j:
+    with open(template_path) as j:
         template = json.load(j)
 
     if not output_path.exists():
@@ -367,7 +367,7 @@ def get_recipes_to_use(
 
 
 def check_run_this_recipe(recipe_path, config_data, structure_name, check_type="image"):
-    with open(recipe_path, "r") as j:
+    with open(recipe_path) as j:
         recipe_data = json.load(j)
 
     number_of_packings = config_data.get("number_of_packings", 1)
@@ -655,9 +655,9 @@ if __name__ == "__main__":
     )
 
     # create files if needed
-    cellID_list = None
+    cellid_list = None
     if args.generate_recipes:
-        cellID_list = get_cell_ids_to_use(
+        cellid_list = get_cell_ids_to_use(
             cellid_df_path=cellid_df_path,
             structure_id=args.structure_id,
             num_cells=args.num_packings,
@@ -665,7 +665,7 @@ if __name__ == "__main__":
             use_cells_in_8d_sphere=args.use_cells_in_8d_sphere,
         )
         generate_recipes(
-            cellID_list=cellID_list,
+            cellID_list=cellid_list,
             template_path=recipe_template_path,
             output_path=generated_recipe_path,
             mesh_base_path=mesh_path,
@@ -690,7 +690,7 @@ if __name__ == "__main__":
             out_path=out_folder,
             skip_completed=args.skip_completed,
             dry_run=args.dry_run,
-            cell_ids_to_use=cellID_list,
+            cell_ids_to_use=cellid_list,
             use_mean_cell=args.use_mean_cell,
             use_cells_in_8d_sphere=args.use_cells_in_8d_sphere,
         )

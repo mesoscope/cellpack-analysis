@@ -1,0 +1,26 @@
+{
+    "structure_name": "peroxisome",
+    "structure_id": "SLC25A17",
+    "condition": "biological_variation",
+    "generated_recipe_path": "/allen/aics/animated-cell/Saurabh/dev/cellpack-analysis/data/recipes/biological_variation/shape/peroxisome",
+    "generated_config_path": "/allen/aics/animated-cell/Saurabh/dev/cellpack-analysis/data/configs/biological_variation/shape/peroxisome",
+    "output_path": "/allen/aics/animated-cell/Saurabh/dev/cellpack-analysis/data/packing_outputs/biological_variation/shape",
+    "generate_recipes": true,
+    "generate_configs": true,
+    "use_mean_cell": false,
+    "use_cells_in_8d_sphere": true,
+    "get_counts_from_data": false,
+    "get_size_from_data": false,
+    "get_bounding_box_from_mesh": true,
+    "num_processes": 16,
+    "skip_completed": true,
+    "dry_run": false,
+    "recipe_data": {
+        "random": {}
+    },
+    "packings_to_run": {
+        "rules": [
+            "random"
+        ]
+    }
+}

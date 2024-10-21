@@ -5,7 +5,7 @@ import multiprocessing
 import os
 import subprocess
 from pathlib import Path
-from time import sleep, time
+from time import time
 
 import numpy as np
 import pandas as pd
@@ -56,7 +56,7 @@ def create_rule_files(
     # read json
     for rule in cellpack_rules:
         print(f"Creating files for {rule}")
-        with open(rule, "r") as j:
+        with open(rule) as j:
             contents = json.load(j)
             contents_shape = contents.copy()
             base_version = contents_shape["version"]

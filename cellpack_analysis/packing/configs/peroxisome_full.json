@@ -9,7 +9,7 @@
     "get_counts_from_data": true,
     "get_size_from_data": true,
     "get_bounding_box_from_mesh": true,
-    "num_processes": 8,
+    "num_processes": 4,
     "skip_completed": true,
     "dry_run": false,
     "recipe_data": {

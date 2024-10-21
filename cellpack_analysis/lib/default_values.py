@@ -9,7 +9,7 @@ STRUCTURE_ID = "SLC25A17"
 """ID of the structure to pack."""
 CONDITION = "rules_shape"
 """Simulation condition."""
-WORKFLOW_CONFIG_PATH = Path(__file__).parent.parent / "packing/configs/peroxisome.json"
+WORKFLOW_CONFIG_PATH = Path(__file__).parents[1] / "packing/configs/peroxisome.json"
 """Path to the workflow configuration file."""
 
 # Data directory
@@ -36,6 +36,10 @@ SKIP_COMPLETED = False
 USE_CELLS_IN_8D_SPHERE = False
 """Flag indicating whether to use cells in 8D sphere."""
 USE_MEAN_CELL = False
+"""Flag indicating whether additional structure is packed"""
+USE_ADDITIONAL_STRUCT = False
+"""Structure to apply gradient to."""
+GRADIENT_STRUCTURE_NAME = None
 """Flag indicating whether to use mean cell."""
 MULTIPLE_REPLICATES = False
 """

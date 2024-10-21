@@ -1,3 +1,5 @@
+import logging
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pacmap
@@ -7,41 +9,51 @@ import umap
 from aicscytoparam import cytoparam
 from aicsimageio.aics_image import AICSImage
 from aicsshparam import shtools
+from skimage import measure as skmeasure
 from sklearn.decomposition import PCA
 
 from cellpack_analysis.lib.mesh_tools import calculate_scaled_distances_from_mesh
 
+log = logging.getLogger(__name__)
 
-def get_pilr_for_single_image(file, ch_name, raw_image_channel="SLC25A17"):
+DEFAULT_CHANNEL_MAP = {
+    "gfp": 3,
+    "mem": 2,
+    "nuc": 0,
+}
+
+
+def get_pilr_for_single_image(
+    file, ch_name, raw_image_channel="SLC25A17", channel_map=DEFAULT_CHANNEL_MAP
+):
     """
     Get the PILR for a single image.
 
     Args:
+    ----
         file (str): The file path of the image.
         ch_name (str): The name of the channel.
         raw_image_channel (str, optional): The name of the raw image channel.
             Defaults to "SLC25A17".
+        channel_map (dict, optional): The channel map. Defaults to None.
 
     Returns:
+    -------
         numpy.ndarray: The PILR data for the image.
     """
+    try:
+        img = AICSImage(file)
+    except Exception as e:
+        log.error(f"Error reading image: {e}")
+        return
 
-    img = AICSImage(file)
+    img_data, _ = shtools.align_image_2d(
+        img.data[0], alignment_channel=channel_map["mem"]
+    )
 
-    gfp_channel = 2
-    mem_channel = 0
-    nuc_channel = 1
-
-    if ch_name == raw_image_channel:
-        gfp_channel = 4
-        mem_channel = 2
-        nuc_channel = 0
-
-    img_data, _ = shtools.align_image_2d(img.data[0], alignment_channel=mem_channel)
-
-    gfp = img_data[gfp_channel, :, :, :].squeeze()
-    mem = img_data[mem_channel, :, :, :].squeeze()
-    nuc = img_data[nuc_channel, :, :, :].squeeze()
+    gfp = img_data[channel_map["gfp"], :, :, :].squeeze()
+    mem = img_data[channel_map["mem"], :, :, :].squeeze()
+    nuc = img_data[channel_map["nuc"], :, :, :].squeeze()
 
     # gfp[gfp > 0] = 1
     # mem[mem > 0] = 1
@@ -73,23 +85,26 @@ def average_over_dimension(value, dim=1):
     """
     Calculate the average over a specified dimension of a given value.
 
-    Parameters:
+    Parameters
+    ----------
         value (ndarray): The input value to calculate the average over.
         dim (int): The dimension along which to calculate the average. Default is 1.
 
-    Returns:
+    Returns
+    -------
         ndarray: The average value along the specified dimension.
     """
     return value[:, 2:].reshape(65, 128, 64).mean(axis=dim).squeeze()  # R, phi, theta
 
 
 def get_processed_PILR_from_dict(
-    pilr_dict, ch_ind, average_over_phi=True, mask_nucleus=True
+    pilr_dict, ch_ind, average_over_phi=False, mask_nucleus=True
 ):
     """
     Get the flattened and processed PILR from the dictionary.
 
     Args:
+    ----
         pilr_dict (dict): Dictionary containing PILR data.
         ch_ind (int): Index of the channel in the dictionary.
         average_over_phi (bool, optional): Whether to average over the phi dimension.
@@ -98,6 +113,7 @@ def get_processed_PILR_from_dict(
             Defaults to True.
 
     Returns:
+    -------
         tuple: Tuple containing the processed PILR array and the standard deviation
         of the PILR array.
     """
@@ -113,9 +129,8 @@ def get_processed_PILR_from_dict(
         pilr = pilr[(len(pilr) // 2) :]
 
     pilr = pilr / np.max(pilr)
-    std_pilr = np.std(pilr)
 
-    return pilr, std_pilr
+    return pilr
 
 
 def get_embeddings(individual_PILR_dict, metric, channels_for_embedding=None, **kwargs):
@@ -123,6 +138,7 @@ def get_embeddings(individual_PILR_dict, metric, channels_for_embedding=None, **
     Calculates PCA or pacmap embeddings from input dict.
 
     Args:
+    ----
         individual_PILR_dict (dict): Dictionary of PILR values for each channel.
         metric (str): The embedding metric to use. Options: "pacmap", "pca", "pacmap_pca", "umap".
         channels_for_embedding (list, optional): List of channels to calculate embeddings for.
@@ -130,6 +146,7 @@ def get_embeddings(individual_PILR_dict, metric, channels_for_embedding=None, **
         **kwargs: Additional keyword arguments for the embedding algorithm.
 
     Returns:
+    -------
         tuple: A tuple containing the embedding dictionary and the embedding object.
             - embedding_dict (dict): Dictionary containing the embeddings for each channel.
             - embedding (object): The embedding object used for calculation.
@@ -208,14 +225,46 @@ def get_domain(mesh_dict):
     """
     Get the domain for the average shape.
 
-    Parameters:
+    Parameters
+    ----------
     - mesh_dict (dict): A dictionary containing the meshes for the membrane and nucleus.
 
-    Returns:
+    Returns
+    -------
     - domain (object): The domain object representing the average shape.
     """
     domain, _ = cytoparam.voxelize_meshes([mesh_dict["mem"], mesh_dict["nuc"]])
     return domain
+
+
+def get_projection(domain, dim, projection):
+    if projection == "mean":
+        proj = np.mean(domain, axis=dim)
+    elif projection == "center":
+        proj = np.take(domain, domain.shape[dim] // 2, axis=dim)
+    elif projection == "max":
+        proj = np.max(domain, axis=dim)
+    return proj
+
+
+def add_contour_to_axis(ax, projection, dim, domain_nuc, domain_mem, **kwargs):
+
+    nuc_proj = get_projection(domain_nuc, dim, projection)
+    mem_proj = get_projection(domain_mem, dim, projection)
+
+    nuc_contour = skmeasure.find_contours(nuc_proj, 0.5)
+    mem_contour = skmeasure.find_contours(mem_proj, 0.5)
+
+    for alias_cont, alias_color in zip([nuc_contour, mem_contour], ["cyan", "magenta"]):
+        [
+            ax.plot(c[:, 1], c[:, 0], lw=kwargs.get("lw", 1), color=alias_color)
+            for c in alias_cont
+        ]
+        [
+            ax.plot(c[:, 1], c[:, 0], lw=kwargs.get("lw", 1), color=alias_color)
+            for c in alias_cont
+        ]
+    return ax
 
 
 def get_parametrized_coords_for_avg_shape(
@@ -225,9 +274,11 @@ def get_parametrized_coords_for_avg_shape(
     Get parameterized coordinates for average shape.
 
     Args:
+    ----
         domain: The domain image.
 
     Returns:
+    -------
         The parameterized coordinates.
     """
     coords_param, _ = cytoparam.parameterize_image_coordinates(
@@ -249,6 +300,7 @@ def morph_PILRs_into_average_shape(
     Morphs a list of PILRs into the average shape defined by a mesh.
 
     Args:
+    ----
         pilr_list (list): List of PILRs to be morphed.
         mesh_dict (dict): Dictionary containing mesh information.
         domain (ndarray, optional): Domain image representing the average shape.
@@ -257,6 +309,7 @@ def morph_PILRs_into_average_shape(
             If not provided, it will be obtained from the mesh_dict.
 
     Returns:
+    -------
         list: List of morphed PILRs.
 
     """
@@ -282,12 +335,14 @@ def get_cellid_ch_seed_from_filename(fname, config_name="analyze", suffix="_pilr
     """
     Extracts the cell ID, channel, and seed name from a given file name.
 
-    Parameters:
+    Parameters
+    ----------
         fname (str): The file name from which to extract the information.
         config_name (str, optional): The configuration name. Defaults to "analyze".
         suffix (str, optional): The suffix to remove from the file name. Defaults to "_pilr".
 
-    Returns:
+    Returns
+    -------
         tuple: A tuple containing the cell ID, channel, and seed name.
     """
     fname = fname.split(suffix)[0]
@@ -303,12 +358,14 @@ def get_correlations_between_average_PILRs(
     """
     Calculate correlations between average PILRs and save the results.
 
-    Parameters:
+    Parameters
+    ----------
         average_pilr_dict (dict): A dictionary containing average PILR values for each channel.
         channel_name_dict (dict): A dictionary mapping channel indices to channel names.
         save_dir (str): The directory where the results will be saved.
 
-    Returns:
+    Returns
+    -------
         None
     """
 
@@ -361,11 +418,13 @@ def cartesian_to_sph(xyz, center=None):
     """
     Convert Cartesian coordinates to spherical coordinates.
 
-    Parameters:
+    Parameters
+    ----------
     - xyz (numpy.ndarray): Array of Cartesian coordinates with shape (N, 3).
     - center (numpy.ndarray, optional): Center point for the conversion. Defaults to None.
 
-    Returns:
+    Returns
+    -------
     - sph_pts (numpy.ndarray): Array of spherical coordinates with shape (N, 3).
     """
     if center is None:
@@ -420,14 +479,16 @@ def get_mean_shape_as_image(
     """
     Converts the outer and inner meshes into an image representation of the mean shape.
 
-    Parameters:
+    Parameters
+    ----------
     - outer_mesh: The outer mesh of the cell.
     - inner_mesh: The inner mesh of the cell.
     - lmax: The maximum level of spherical harmonics used for parameterization. Default is 16.
     - nisos_outer: The number of isosurfaces for the outer mesh. Default is 32.
     - nisos_inner: The number of isosurfaces for the inner mesh. Default is 32.
 
-    Returns:
+    Returns
+    -------
     - domain: The voxelized domain of the cell.
     - domain_nuc: The voxelized domain of the nucleus.
     - domain_mem: The voxelized domain of the cell membrane.
@@ -517,7 +578,7 @@ class Projector:
             if self.proj_mode[alias] == "mean":
                 p = img.mean(axis=ax)
             if self.proj_mode[alias] == "top_nuc":
-                zc, yc, xc = [int(np.max(u)) for u in np.where(self.data["nuc"])]
+                zc, yc, xc = (int(np.max(u)) for u in np.where(self.data["nuc"]))
                 if self.proj_ax == "z":
                     p = img[zc]
                 if self.proj_ax == "y":
@@ -525,7 +586,7 @@ class Projector:
                 if self.proj_ax == "x":
                     p = img[:, :, xc]
             if self.proj_mode[alias] == "center_nuc":
-                zc, yc, xc = [int(np.mean(u)) for u in np.where(self.data["nuc"])]
+                zc, yc, xc = (int(np.mean(u)) for u in np.where(self.data["nuc"]))
                 if self.proj_ax == "z":
                     p = img[zc]
                 if self.proj_ax == "y":
@@ -533,7 +594,7 @@ class Projector:
                 if self.proj_ax == "x":
                     p = img[:, :, xc]
             if self.proj_mode[alias] == "center_mem":
-                zc, yc, xc = [int(np.mean(u)) for u in np.where(self.data["mem"])]
+                zc, yc, xc = (int(np.mean(u)) for u in np.where(self.data["mem"]))
                 if self.proj_ax == "z":
                     p = img[zc]
                 if self.proj_ax == "y":
@@ -542,7 +603,7 @@ class Projector:
                     p = img[:, :, xc]
             if self.proj_mode[alias] == "max_buffer_center_nuc":
                 buf = 3
-                zc, yc, xc = [int(np.mean(u)) for u in np.where(self.data["nuc"])]
+                zc, yc, xc = (int(np.mean(u)) for u in np.where(self.data["nuc"]))
                 if self.proj_ax == "z":
                     p = img[zc - buf : zc + buf].max(axis=ax)
                 if self.proj_ax == "y":
@@ -551,7 +612,7 @@ class Projector:
                     p = img[:, :, xc - buf : xc + buf].max(axis=ax)
             if self.proj_mode[alias] == "max_buffer_top_nuc":
                 buf = 3
-                zc, yc, xc = [int(np.max(u)) for u in np.where(self.data["nuc"])]
+                zc, yc, xc = (int(np.max(u)) for u in np.where(self.data["nuc"]))
                 if self.proj_ax == "z":
                     p = img[zc - buf : zc + buf].max(axis=ax)
                 if self.proj_ax == "y":
@@ -704,3 +765,40 @@ class Projector:
                         minmax[ax].append(np.percentile(values, pcts))
         print(minmax)
         return dict([(ax, (np.min(vals), np.max(vals))) for ax, vals in minmax.items()])
+
+
+def vectorized_pixelwise_correlation(images: np.ndarray, flatten=False) -> np.ndarray:
+    """
+    Vectorized computation of pixel-wise Pearson correlation.
+
+    Parameters
+    ----------
+    images : np.ndarray
+        List of 2D arrays.
+        Shape should be (N, H, W) where N is the number of images,
+        H is the height, and W is the width of each image.
+    flatten : bool, optional
+        If True, returns the upper triangular part of the correlation matrix
+        in a flat format. Default is False.
+
+    Returns
+    -------
+    np.ndarray
+        Correlation matrix of shape (N, N).
+    """
+    flat = np.array(
+        [(img > 0)[(img.shape[0] // 2) :, :].flatten() for img in images]
+    ).astype(
+        np.float32
+    )  # Shape: (N, H*W)
+
+    mean = flat.mean(axis=1, keepdims=True)
+    std = flat.std(axis=1, keepdims=True)
+
+    normed = (flat - mean) / std
+    corr = normed @ normed.T / flat.shape[1]
+
+    if flatten:
+        corr = corr[np.triu_indices(corr.shape[0], k=0)]
+
+    return corr

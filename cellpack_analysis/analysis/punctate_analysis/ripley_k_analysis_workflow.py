@@ -2,9 +2,9 @@
 # # Ripley's K Analysis Workflow
 from pathlib import Path
 
-from cellpack_analysis.analysis.stochastic_variation_analysis import distance
+from cellpack_analysis.analysis.punctate_analysis import distance
 from cellpack_analysis.lib.load_data import get_position_data_from_outputs
-from cellpack_analysis.lib.mesh_tools import get_mesh_information_dict
+from cellpack_analysis.lib.mesh_tools import get_mesh_information_dict_for_structure
 
 # %% [markdown]
 # ## Set up parameters
@@ -63,7 +63,7 @@ for mode, position_dict in all_positions.items():
     print(mode, len(position_dict))
 # %% [markdown]
 # ### calculate mesh information
-mesh_information_dict = get_mesh_information_dict(
+mesh_information_dict = get_mesh_information_dict_for_structure(
     structure_id=STRUCTURE_ID,
     base_datadir=base_datadir,
     recalculate=False,

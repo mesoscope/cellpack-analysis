@@ -1,16 +1,24 @@
 # %% [markdown]
 # # Distance analysis workflow
+# Used to compare distance distributions for punctate structures packed in the presence
+# or absence of other influencing structures
+# Current structure pairs include:
+# * Peroxisomes (SLC25A17) and Endoplasmic Reticulum (SEC61B)
+# * Endosomes (RAB5A) and Golgi (ST6GAL1)
+import logging
 import time
-from pathlib import Path
 
 import matplotlib.pyplot as plt
 
-from cellpack_analysis.analysis.stochastic_variation_analysis import distance
-from cellpack_analysis.analysis.stochastic_variation_analysis.stats_functions import (
+from cellpack_analysis.analysis.punctate_analysis import distance
+from cellpack_analysis.analysis.punctate_analysis.stats_functions import (
     normalize_distances,
 )
+from cellpack_analysis.lib.file_io import get_project_root
 from cellpack_analysis.lib.load_data import get_position_data_from_outputs
-from cellpack_analysis.lib.mesh_tools import get_mesh_information_dict
+from cellpack_analysis.lib.mesh_tools import get_mesh_information_dict_for_structure
+
+log = logging.getLogger(__name__)
 
 plt.rcParams.update({"font.size": 14})
 start_time = time.time()
@@ -18,8 +26,13 @@ start_time = time.time()
 # ## Set up parameters
 # %% [markdown]
 # ### Set structure ID and radius
-STRUCTURE_ID = "RAB5A"  # "SLC25A17" for peroxisomes, "RAB5A" for early endosomes
-STRUCT_RADIUS = 2.6  # 2.37 um for peroxisomes, 2.6 um for early endosomes
+# SLC25A17: peroxisomes
+# RAB5A: early endosomes
+# SEC61B: ER
+# ST6GAL1: Golgi
+STRUCTURE_ID = "SLC25A17"
+STRUCTURE_NAME = "peroxisome"
+STRUCT_RADIUS = 2.37  # 2.37 um for peroxisomes, 2.6 um for early endosomes
 # %% [markdown]
 # ### Set packing modes to analyze
 baseline_analysis = False
@@ -34,9 +47,18 @@ packing_modes_rules = [
     "random",
     "nucleus_gradient_strong",
     "membrane_gradient_strong",
-    "apical_gradient",
+    # "apical_gradient",
+    "struct_gradient",
 ]
 
+channel_map = {
+    "SLC25A17": "SLC25A17",
+    "random": "SLC25A17",
+    "nucleus_gradient_strong": "SLC25A17",
+    "membrane_gradient_strong": "SLC25A17",
+    # "struct_gradient": "SEC61B",
+}
+all_structures = list(set(channel_map.values()))
 # relative path to packing outputs
 if baseline_analysis:
     packing_output_folder = "packing_outputs/stochastic_variation_analysis/"
@@ -49,13 +71,12 @@ else:
     baseline_mode = STRUCTURE_ID
 # %% [markdown]
 # ### Set file paths and setup parameters
-base_datadir = Path(__file__).parents[3] / "data"
-base_results_dir = Path(__file__).parents[3] / "results"
+project_root = get_project_root()
+base_datadir = project_root / "data"
+base_results_dir = project_root / "results"
 
 folder_name = "baseline" if baseline_analysis else "rules"
-results_dir = (
-    base_results_dir / f"stochastic_variation_analysis/{STRUCTURE_ID}/{folder_name}"
-)
+results_dir = base_results_dir / f"punctate_analysis/{STRUCTURE_NAME}/{folder_name}"
 results_dir.mkdir(exist_ok=True, parents=True)
 
 distance_figures_dir = results_dir / "figures/distance"
@@ -63,11 +84,18 @@ distance_figures_dir.mkdir(exist_ok=True, parents=True)
 
 # %% [markdown]
 # ### Distance measures to use
-distance_measures = ["pairwise", "nucleus", "nearest", "z"]
+distance_measures = [
+    "pairwise",
+    "nearest",
+    "nucleus",
+    # "scaled_nucleus",
+    # "z",
+]
 # %% [markdown]
 # ### Set normalization
 # options: None, "intracellular_radius", "cell_diameter", "max_distance"
-normalization = "cell_diameter"
+normalization = None
+suffix = ""
 if normalization is not None:
     suffix = f"_normalized_{normalization}"
 
@@ -75,6 +103,7 @@ if normalization is not None:
 # ### Read position data from outputs
 all_positions = get_position_data_from_outputs(
     structure_id=STRUCTURE_ID,
+    structure_name=STRUCTURE_NAME,
     packing_modes=packing_modes,
     base_datadir=base_datadir,
     results_dir=results_dir,
@@ -83,39 +112,43 @@ all_positions = get_position_data_from_outputs(
     baseline_analysis=baseline_analysis,
 )
 # %% [markdown]
-# ### Check number of packings for each result
-for mode, position_dict in all_positions.items():
-    print(mode, len(position_dict))
-# %% [markdown]
 # ### Get mesh information
-mesh_information_dict = get_mesh_information_dict(
-    structure_id=STRUCTURE_ID,
-    base_datadir=base_datadir,
-    recalculate=True,
-)
-# %% [markdown]
-# ### Plot distribution of cell diameters
-distance.plot_cell_diameter_distribution(mesh_information_dict)
-
-# %% [markdown]
-# ### Get average structure radius
-avg_struct_radius, std_struct_radius = distance.get_average_scaled_value(
-    value=STRUCT_RADIUS, mesh_information_dict=mesh_information_dict
-)
+combined_mesh_information_dict = {}
+for structure_id in all_structures:
+    mesh_information_dict = get_mesh_information_dict_for_structure(
+        structure_id=structure_id,
+        base_datadir=base_datadir,
+        recalculate=True,
+    )
+    combined_mesh_information_dict[structure_id] = mesh_information_dict
 # %% [markdown]
 # ### Calculate distance measures and normalize
 all_distance_dict = distance.get_distance_dictionary(
     all_positions=all_positions,
     distance_measures=distance_measures,
-    mesh_information_dict=mesh_information_dict,
+    mesh_information_dict=combined_mesh_information_dict,
+    channel_map=channel_map,
     results_dir=results_dir,
     recalculate=True,
 )
 
 all_distance_dict = normalize_distances(
-    all_distance_dict, normalization, mesh_information_dict
+    all_distance_dict=all_distance_dict,
+    mesh_information_dict=combined_mesh_information_dict,
+    channel_map=channel_map,
+    normalization=normalization,
 )
 
+# %% [markdown]
+# ### plot distance distribution histograms
+distance.plot_distance_distributions_histogram(
+    distance_measures,
+    packing_modes,
+    all_distance_dict,
+    suffix=suffix,
+    normalization=normalization,
+    figures_dir=distance_figures_dir,
+)
 # %% [markdown]
 # ### plot distance PDFs as kde plots
 distance.plot_distance_distributions_kde(
@@ -126,66 +159,49 @@ distance.plot_distance_distributions_kde(
     suffix=suffix,
     normalization=normalization,
     overlay=True,
+    distance_limits={
+        "pairwise": (-2, 25),
+        "nucleus": (-1, 8),
+        "nearest": (-0.2, 5),
+        "z": (-2, 12),
+        "scaled_nucleus": (-0.2, 1.2),
+        "membrane": (-0.4, 3.2),
+    },
 )
+
 # %% [markdown]
-# ### plot distance PDFs overlaid for comparison
-distance.plot_distance_distributions_overlay(
+# ### plot distance distributions as vertical kde
+plt.rcParams.update({"font.size": 10})
+fig_list, ax_list = distance.plot_distance_distributions_kde_vertical(
     distance_measures=distance_measures,
     packing_modes=packing_modes,
     all_distance_dict=all_distance_dict,
-    figures_dir=distance_figures_dir,
     suffix=suffix,
     normalization=normalization,
-)
-# %% [markdown]
-# ### plot distance distribution histograms
-distance.plot_distance_distributions_histogram(
-    distance_measures,
-    packing_modes,
-    all_distance_dict,
+    overlay=True,
     figures_dir=distance_figures_dir,
-    suffix=suffix,
-    normalization=normalization,
+    distance_limits={
+        "pairwise": (-2, 25),
+        "nucleus": (-1, 8),
+        "nearest": (-0.2, 5),
+        "z": (-2, 12),
+        "scaled_nucleus": (-0.2, 1.2),
+        "membrane": (-0.4, 3.2),
+    },
 )
-# %% [markdown]
-# ## KS Test Analysis for distance distributions
-# %% [markdown]
-# ### Run ks test between observed and other modes
-ks_observed_dict = distance.get_ks_observed_dict(
-    distance_measures,
-    packing_modes,
-    all_distance_dict,
-    baseline_mode=baseline_mode,
-)
-# %% [markdown]
-# ### plot ks test results as barplots
-distance.plot_ks_observed_barplots(
-    ks_observed_dict=ks_observed_dict,
-    figures_dir=distance_figures_dir,
-    suffix=suffix,
-)
-# %% [markdown]
-# ### plot colorized ks distance distributions
-distance.plot_ks_test_distance_distributions_kde(
-    distance_measures=distance_measures,
-    packing_modes=packing_modes,
-    all_distance_dict=all_distance_dict,
-    ks_observed_dict=ks_observed_dict,
-    figures_dir=distance_figures_dir,
-    suffix=suffix,
-    normalization=normalization,
-    baseline_mode=baseline_mode,
-)
+
 # %% [markdown]
 # ## Pairwise EMD Analysis for distance distributions
 # %% [markdown]
 # ### create pairwise emd folders
 pairwise_emd_dir = distance_figures_dir / "pairwise_emd"
 pairwise_emd_dir.mkdir(exist_ok=True, parents=True)
+
 # %% [markdown]
 # ### Get pairwise earth movers distances between distance distributions
-all_pairwise_emd = distance.get_pairwise_emd_dictionary(
+all_pairwise_emd = distance.get_distance_distribution_emd_dictionary(
     all_distance_dict=all_distance_dict,
+    distance_measures=distance_measures,
     packing_modes=packing_modes,
     results_dir=results_dir,
     recalculate=True,
@@ -193,10 +209,10 @@ all_pairwise_emd = distance.get_pairwise_emd_dictionary(
 )
 # %% [markdown]
 # ### calculate pairwise EMD distances across modes
-distance.plot_pairwise_emd_heatmaps(
+distance.plot_emd_heatmaps(
     distance_measures=distance_measures,
     all_pairwise_emd=all_pairwise_emd,
-    pairwise_emd_dir=pairwise_emd_dir,
+    figures_dir=pairwise_emd_dir,
     suffix=suffix,
 )
 # %% [markdown]
@@ -211,7 +227,7 @@ corr_df_dict = distance.get_average_emd_correlation(
 distance.plot_emd_correlation_circles(
     distance_measures=distance_measures,
     corr_df_dict=corr_df_dict,
-    pairwise_emd_dir=pairwise_emd_dir,
+    figures_dir=pairwise_emd_dir,
     suffix=suffix,
 )
 # %% [markdown]
@@ -220,7 +236,7 @@ distance.plot_emd_boxplots(
     distance_measures=distance_measures,
     all_pairwise_emd=all_pairwise_emd,
     baseline_mode=baseline_mode,
-    pairwise_emd_dir=pairwise_emd_dir,
+    figures_dir=pairwise_emd_dir,
     suffix=suffix,
 )
 

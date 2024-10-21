@@ -5,20 +5,23 @@ from pathlib import Path
 import vtk
 from aicsimageio.aics_image import AICSImage
 from aicsshparam import shtools
+from tqdm import tqdm
 
-# NOTE: Raw images should be downloaded prior to running this script
-# Run this script using: `python get_meshes_from_raw_images.py`
+# NOTE: Raw images should be downloaded prior to running this script using `get_structure_images.py`
+# Run this script using: `python get_meshes_from_images.py`
 # %%
-STRUCTURE_NAME = "RAB5A"
+STRUCTURE_ID = "ST6GAL1"
+RECALCULATE = False
 
-datadir = Path(__file__).parents[2] / f"data/structure_data/{STRUCTURE_NAME}"
-image_path = datadir / "full/segmented/"
+datadir = Path(__file__).parents[2] / f"data/structure_data/{STRUCTURE_ID}"
+image_path = datadir / "sample_8d/segmented/"
 
 save_folder = datadir / "meshes/"
 save_folder.mkdir(exist_ok=True, parents=True)
 
 nuc_channel = 0
 mem_channel = 1
+struct_channel = 3
 
 
 # %%
@@ -33,24 +36,32 @@ def decimation_pro(data, ratio):
     return sim.GetOutput()
 
 
-def get_mesh_for_file(
-    file, nuc_channel, mem_channel, save_folder=save_folder, subsample=0.95
+def get_meshes_for_file(
+    file,
+    nuc_channel,
+    mem_channel,
+    struct_channel,
+    save_folder=save_folder,
+    subsample=0.95,
+    recalculate=RECALCULATE,
 ):
-    cellID = file.stem.split("_")[1]
+    cellid = file.stem.split("_")[1]
     reader = AICSImage(file)
     data = reader.get_image_data("CZYX", S=0, T=0)
     writer = vtk.vtkOBJWriter()
-    for name, channel in zip(["nuc", "mem"], [nuc_channel, mem_channel]):
-        save_path = save_folder / f"{name}_mesh_{cellID}.obj"
-        if save_path.exists():
+    for name, channel in zip(
+        ["nuc", "mem", "struct"], [nuc_channel, mem_channel, struct_channel]
+    ):
+        save_path = save_folder / f"{name}_mesh_{cellid}.obj"
+        if save_path.exists() and not recalculate:
             print(f"Mesh for {file.stem} already exists. Skipping.")
             return
-        mesh = shtools.get_mesh_from_image(data[channel])
+        mesh = shtools.get_mesh_from_image(data[channel], translate_to_origin=False)
         if subsample:
             subsampled_mesh = decimation_pro(mesh[0], 0.95)
         else:
             subsampled_mesh = mesh[0]
-        writer.SetFileName(save_path)
+        writer.SetFileName(f"{save_path}")
         writer.SetInputData(subsampled_mesh)
         writer.Write()
 
@@ -60,7 +71,7 @@ files_to_use = list(image_path.glob("*.tiff"))
 subsample = True
 input_files = []
 for file in files_to_use:
-    if (STRUCTURE_NAME not in file.stem) or (".tiff" not in file.suffix):
+    if (STRUCTURE_ID not in file.stem) or (".tiff" not in file.suffix):
         print(f"Skipping {file.stem}")
         continue
     input_files.append(file)
@@ -71,19 +82,27 @@ num_cores = 64
 if len(input_files):
     with concurrent.futures.ProcessPoolExecutor(max_workers=num_cores) as executor:
         futures = []
-        futures = executor.map(
-            get_mesh_for_file,
-            input_files,
-            [nuc_channel] * len(input_files),
-            [mem_channel] * len(input_files),
-            [save_folder] * len(input_files),
-            [subsample] * len(input_files),
-        )
-        # get number of completed futures
-        done = 0
-        for _ in concurrent.futures.as_completed(futures):  # type: ignore
-            done += 1
-            print(f"Completed {done} meshes")
+        for file in tqdm(input_files, desc="Processing files", unit="file"):
+            future = executor.submit(
+                get_meshes_for_file,
+                file,
+                nuc_channel,
+                mem_channel,
+                struct_channel,
+                save_folder,
+                subsample,
+                RECALCULATE,
+            )
+            futures.append(future)
+
+        # Wait for all futures to complete
+        for _ in tqdm(
+            concurrent.futures.as_completed(futures),
+            total=len(futures),
+            desc="Waiting for completion",
+            unit="file",
+        ):
+            pass
 else:
     print("No files to process")
 

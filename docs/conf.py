@@ -22,7 +22,7 @@ sys.path.insert(0, os.path.abspath("../cellpack_analysis"))
 # -- Project information -----------------------------------------------------
 
 project = "cellPACK"
-copyright = f"{datetime.now().year}, Allen Institute for Cell Science"
+project_copyright = f"{datetime.now().year}, Allen Institute for Cell Science"
 release = importlib.metadata.version("cellpack-analysis")
 
 # -- General configuration ---------------------------------------------------

@@ -16,7 +16,6 @@ from cellpack_analysis.lib.PILR_tools import (
 )
 from cellpack_analysis.lib.plotting_tools import (
     plot_and_save_center_slice,
-    plot_and_save_max_proj,
     plot_PILR,
 )
 

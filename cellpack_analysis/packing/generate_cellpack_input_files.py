@@ -85,7 +85,7 @@ def resolve_gradient_names(gradient_list):
     return resolved_gradient_dict
 
 
-def process_gradient_data(recipe_entry, recipe, structure_name):
+def process_gradient_data(recipe_entry, recipe, gradient_structure_name):
     """
     Process gradient data
 
@@ -109,20 +109,17 @@ def process_gradient_data(recipe_entry, recipe, structure_name):
     recipe["gradients"] = recipe_entry
 
     # set packing mode of structure to gradient
-    recipe["objects"][structure_name]["packing_mode"] = "gradient"
+    recipe["objects"][gradient_structure_name]["packing_mode"] = "gradient"
 
     # set the gradients required for the structure
     gradient_keys = list(recipe_entry.keys())
-    # currently only supports single gradient
-    if len(gradient_keys) >= 1:
-        gradient_keys = gradient_keys[0]
 
-    recipe["objects"][structure_name]["gradient"] = gradient_keys
+    recipe["objects"][gradient_structure_name]["gradient"] = gradient_keys
 
     return recipe
 
 
-def process_rule_dict(updated_recipe, rule_dict, structure_name):
+def process_rule_dict(updated_recipe, rule_dict, gradient_structure_name):
     """
     Process rule dictionary
 
@@ -137,7 +134,7 @@ def process_rule_dict(updated_recipe, rule_dict, structure_name):
 
         if recipe_key == "gradients":
             updated_recipe = process_gradient_data(
-                recipe_entry, updated_recipe, structure_name
+                recipe_entry, updated_recipe, gradient_structure_name
             )
 
     return updated_recipe
@@ -156,6 +153,8 @@ def update_and_save_recipe(
     count=None,
     radius=None,
     get_bounding_box_from_mesh=False,
+    use_additional_struct=False,
+    gradient_structure_name=None,
 ):
     """
     Updates the recipe template with the provided parameters and saves the updated
@@ -187,13 +186,16 @@ def update_and_save_recipe(
         The radius of the structure. Defaults to None.
     get_bounding_box_from_mesh : bool, optional
         Indicates whether to get the bounding box from the mesh. Defaults to False.
+    use_additional_struct : bool, optional
+        Indicates whether to use an additional structure. Defaults to False.
+    gradient_structure_name : str, optional
+        The name of the structure to apply the gradient. Defaults to None.
 
     Returns
     -------
     dict
         The updated recipe.
     """
-
     updated_recipe = recipe_template.copy()
 
     # update recipe version
@@ -223,6 +225,15 @@ def update_and_save_recipe(
             "name"
         ] = f"{short_name}_mesh_{cellid}.obj"
 
+    # update mesh path for additional structure if needed
+    if use_additional_struct:
+        updated_recipe["objects"]["struct_mesh"]["representations"]["mesh"][
+            "path"
+        ] = f"{mesh_path}"
+        updated_recipe["objects"]["struct_mesh"]["representations"]["mesh"][
+            "name"
+        ] = f"struct_mesh_{cellid}.obj"
+
     # update counts
     if count is not None:
         updated_recipe["composition"]["membrane"]["regions"]["interior"] = [
@@ -238,13 +249,17 @@ def update_and_save_recipe(
         updated_recipe["objects"][structure_name]["radius"] = radius
 
     # update recipe rule data
-    updated_recipe = process_rule_dict(updated_recipe, rule_dict, structure_name)
+    if gradient_structure_name is None:
+        gradient_structure_name = structure_name
+    updated_recipe = process_rule_dict(
+        updated_recipe, rule_dict, gradient_structure_name
+    )
 
     # save recipe
     rule_path = f"{generated_recipe_path}/{rule_name}"
     Path(rule_path).mkdir(parents=True, exist_ok=True)
     recipe_path = f"{rule_path}/{structure_name}_{rule_name}_{cellid}.json"
-    # print(f"Saving recipe to {recipe_path}")
+    log.debug(f"Saving recipe to {recipe_path}")
     write_json(recipe_path, updated_recipe)
 
     return updated_recipe
@@ -289,16 +304,19 @@ def generate_recipes(
 
     recipe_data = workflow_config.data.get("recipe_data", {})
 
-    num_processes = np.min(
-        [int(np.floor(0.8 * multiprocessing.cpu_count())), len(cellid_list)]
-    )
+    if hasattr(workflow_config, "num_processes"):
+        num_processes = workflow_config.num_processes
+    else:
+        num_processes = np.min(
+            [int(np.floor(0.8 * multiprocessing.cpu_count())), len(cellid_list)]
+        )
 
     recipe_template = read_json(workflow_config.recipe_template_path)
 
     stats_df = get_structure_stats_dataframe()
 
     for rule_name, rule_dict in recipe_data.items():
-        print("Generating recipes for rule:", rule_name)
+        log.info(f"Generating recipes for rule: {rule_name}")
         with tqdm(total=len(cellid_list)) as pbar:
             with concurrent.futures.ProcessPoolExecutor(
                 max_workers=num_processes
@@ -308,7 +326,7 @@ def generate_recipes(
                     # get count from cell stats
                     count = None
                     if workflow_config.get_counts_from_data:
-                        count = stats_df.loc[cellid, "count"].astype(int)
+                        count = stats_df.loc[cellid, "count"]
 
                     # get size from cell stats
                     radius = None
@@ -317,18 +335,20 @@ def generate_recipes(
 
                     future = executor.submit(
                         update_and_save_recipe,
-                        cellid,
-                        workflow_config.structure_name,
-                        recipe_template,
-                        rule_name,
-                        rule_dict,
-                        workflow_config.grid_path,
-                        workflow_config.mesh_path,
-                        workflow_config.generated_recipe_path,
-                        workflow_config.multiple_replicates,
+                        cellid=cellid,
+                        structure_name=workflow_config.structure_name,
+                        recipe_template=recipe_template,
+                        rule_name=rule_name,
+                        rule_dict=rule_dict,
+                        grid_path=workflow_config.grid_path,
+                        mesh_path=workflow_config.mesh_path,
+                        generated_recipe_path=workflow_config.generated_recipe_path,
+                        multiple_replicates=workflow_config.multiple_replicates,
                         count=count,
                         radius=radius,
                         get_bounding_box_from_mesh=workflow_config.get_bounding_box_from_mesh,
+                        use_additional_struct=workflow_config.use_additional_struct,
+                        gradient_structure_name=workflow_config.gradient_structure_name,
                     )
                     futures.append(future)
 

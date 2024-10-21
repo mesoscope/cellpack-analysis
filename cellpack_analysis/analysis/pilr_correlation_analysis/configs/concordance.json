@@ -1,0 +1,65 @@
+{
+    "workflow": "concordance",
+    "data": {
+        "peroxisome": {
+            "structure_label": "Peroxisome",
+            "structure_color": "#00FF00",
+            "rules": {
+                "SLC25A17": {
+                    "structure_id": "SLC25A17",
+                    "label": "Peroxisome",
+                    "color": "#FF5733",
+                    "dsphere": true
+                }
+            }
+        },
+        "endosome": {
+            "structure_label": "Endosome",
+            "structure_color": "#00FF00",
+            "rules": {
+                "RAB5A": {
+                    "structure_id": "RAB5A",
+                    "label": "Endosome",
+                    "color": "gold",
+                    "dsphere": true
+                }
+            }
+        },
+        "ER": {
+            "structure_label": "ER",
+            "structure_color": "#00FF00",
+            "rules": {
+                "SEC61B": {
+                    "structure_id": "SEC61B",
+                    "label": "ER",
+                    "color": "blue",
+                    "dsphere": true
+                }
+            }
+        },
+        "golgi": {
+            "structure_label": "Golgi",
+            "structure_color": "#00FF00",
+            "rules": {
+                "ST6GAL1": {
+                    "structure_id": "ST6GAL1",
+                    "label": "Golgi",
+                    "color": "purple",
+                    "dsphere": true
+                }
+            }
+        },
+        "mitochondria": {
+            "structure_label": "Mitochondria",
+            "structure_color": "#00FF00",
+            "rules": {
+                "TOMM20": {
+                    "structure_id": "TOMM20",
+                    "label": "Mitochondria",
+                    "color": "pink",
+                    "dsphere": true
+                }
+            }
+        }
+    }
+}

@@ -279,7 +279,7 @@ def grabResultFromTXT(self, n, doanalyze=False):
     ingrrot = {}
     ingrpos = {}
     for i in range(1000):
-        files = open("results_seed_" + str(i) + ".txt", "r")
+        files = open("results_seed_" + str(i) + ".txt")
         lines = files.readlines()
         files.close()
         for line in lines:
@@ -553,7 +553,9 @@ def PairCorrelationFunction_3D(self, data, S, rMax, dr):
     around the particle will fit entirely within the cube, eliminating the need
     to compensate for edge effects. If no such particles exist, an error is
     returned. Try a smaller rMax...or write some code to handle edge effects! ;)
+
     Arguments:
+    ---------
     x an array of x positions of centers of particles
     y an array of y positions of centers of particles
     z an array of z positions of centers of particles
@@ -637,6 +639,7 @@ def PairCorrelationFunction_2D(self, x, y, S, rMax, dr):
     returned. Try a smaller rMax...or write some code to handle edge effects! ;)
 
     Arguments:
+    ---------
         x               an array of x positions of centers of particles
         y               an array of y positions of centers of particles
         S               length of each side of the square region of the plane

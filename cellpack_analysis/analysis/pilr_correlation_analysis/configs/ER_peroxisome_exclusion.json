@@ -1,0 +1,71 @@
+{
+    "workflow": "ER_peroxisome_exclusion",
+    "data": {
+        "peroxisome": {
+            "structure_label": "Peroxisome",
+            "structure_color": "#00FF00",
+            "rules": {
+                "SLC25A17": {
+                    "structure_id": "SLC25A17",
+                    "label": "Observed",
+                    "color": "#FF5733",
+                    "dsphere": true
+                }
+            }
+        },
+        "ER_peroxisome": {
+            "structure_label": "Packing with ER",
+            "structure_color": "#FFFF00",
+            "rules": {
+                "random": {
+                    "structure_id": "SEC61B",
+                    "label": "Random",
+                    "color": "#C0C0C0",
+                    "dsphere": true
+                },
+                "nucleus_gradient_strong": {
+                    "structure_id": "SEC61B",
+                    "label": "Nucleus",
+                    "color": "#0000FF",
+                    "dsphere": true
+                },
+                "membrane_gradient_strong": {
+                    "structure_id": "SEC61B",
+                    "label": "Membrane",
+                    "color": "#008000",
+                    "dsphere": true
+                },
+                "struct_gradient": {
+                    "structure_id": "SEC61B",
+                    "label": "ER",
+                    "color": "#FFFF00",
+                    "dsphere": true
+                }
+            }
+        },
+        "ER_peroxisome_no_struct": {
+            "structure_label": "Packing without ER",
+            "structure_color": "#FFFF00",
+            "rules": {
+                "random": {
+                    "structure_id": "SEC61B",
+                    "label": "Random",
+                    "color": "#C0C0C0",
+                    "dsphere": true
+                },
+                "nucleus_gradient_strong": {
+                    "structure_id": "SEC61B",
+                    "label": "Nucleus",
+                    "color": "#0000FF",
+                    "dsphere": true
+                },
+                "membrane_gradient_strong": {
+                    "structure_id": "SEC61B",
+                    "label": "Membrane",
+                    "color": "#008000",
+                    "dsphere": true
+                }
+            }
+        }
+    }
+}

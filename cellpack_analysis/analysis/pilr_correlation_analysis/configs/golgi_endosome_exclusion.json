@@ -1,0 +1,71 @@
+{
+    "workflow": "golgi_endosome_exclusion",
+    "data": {
+        "endosome": {
+            "structure_label": "Endosome",
+            "structure_color": "#00FF00",
+            "rules": {
+                "RAB5A": {
+                    "structure_id": "RAB5A",
+                    "label": "Observed",
+                    "color": "#FF5733",
+                    "dsphere": true
+                }
+            }
+        },
+        "golgi_endosome": {
+            "structure_label": "Packing with Golgi",
+            "structure_color": "#FFFF00",
+            "rules": {
+                "random": {
+                    "structure_id": "ST6GAL1",
+                    "label": "Random",
+                    "color": "#C0C0C0",
+                    "dsphere": true
+                },
+                "nucleus_gradient_strong": {
+                    "structure_id": "ST6GAL1",
+                    "label": "Nucleus",
+                    "color": "#0000FF",
+                    "dsphere": true
+                },
+                "membrane_gradient_strong": {
+                    "structure_id": "ST6GAL1",
+                    "label": "Membrane",
+                    "color": "#008000",
+                    "dsphere": true
+                },
+                "struct_gradient": {
+                    "structure_id": "ST6GAL1",
+                    "label": "Golgi",
+                    "color": "#FFFF00",
+                    "dsphere": true
+                }
+            }
+        },
+        "golgi_endosome_no_struct": {
+            "structure_label": "Packing without Golgi",
+            "structure_color": "#FFFF00",
+            "rules": {
+                "random": {
+                    "structure_id": "ST6GAL1",
+                    "label": "Random",
+                    "color": "#C0C0C0",
+                    "dsphere": true
+                },
+                "nucleus_gradient_strong": {
+                    "structure_id": "ST6GAL1",
+                    "label": "Nucleus",
+                    "color": "#0000FF",
+                    "dsphere": true
+                },
+                "membrane_gradient_strong": {
+                    "structure_id": "ST6GAL1",
+                    "label": "Membrane",
+                    "color": "#008000",
+                    "dsphere": true
+                }
+            }
+        }
+    }
+}

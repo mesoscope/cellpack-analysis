@@ -16,7 +16,17 @@ meta_df = get_variance_dataframe()
 structures_of_interest = ["SLC25A17", "RAB5A", "LAMP1", "RAB7A"]
 
 df_stats = pd.DataFrame(
-    columns=["count", "volume", "radius"],
+    columns=[
+        "count",
+        "volume",
+        "radius",
+        "cell_stage",
+        "cell_volume",
+        "nuc_volume",
+        "cell_height",
+        "nuc_height",
+        "sphericity",
+    ],
     index=meta_df.index,
 )
 
@@ -31,6 +41,14 @@ for gene, df_gene in meta_df.groupby("structure_name"):
     df_stats.loc[df_gene.index, "count"] = counts
     df_stats.loc[df_gene.index, "volume"] = volume_per_unit
     df_stats.loc[df_gene.index, "radius"] = unit_radius
+    df_stats.loc[df_gene.index, "cell_stage"] = df_gene["cell_stage"].values
+    df_stats.loc[df_gene.index, "cell_volume"] = df_gene["MEM_shape_volume"].values
+    df_stats.loc[df_gene.index, "nuc_volume"] = df_gene["NUC_shape_volume"].values
+    df_stats.loc[df_gene.index, "cell_height"] = df_gene["MEM_position_depth"].values
+    df_stats.loc[df_gene.index, "nuc_height"] = df_gene["NUC_position_depth"].values
+    df_stats.loc[df_gene.index, "sphericity"] = df_gene[
+        "MEM_roundness_surface_area"
+    ].values ** 1.5 / (df_gene["MEM_shape_volume"].values)
 
     if gene in structures_of_interest:
         print(gene)

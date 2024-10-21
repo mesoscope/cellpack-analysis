@@ -11,6 +11,9 @@ import vtk
 from tqdm import tqdm
 from trimesh import proximity
 
+from cellpack_analysis.analysis.punctate_analysis.distance import (
+    calc_scaled_distance_to_nucleus_surface,
+)
 from cellpack_analysis.lib.get_cellid_list import get_cellid_list_for_structure
 
 log = logging.getLogger(__name__)
@@ -20,10 +23,12 @@ def round_away_from_zero(array):
     """
     Rounds the elements of the input array away from zero.
 
-    Parameters:
+    Parameters
+    ----------
         array (numpy.ndarray): Input array to be rounded.
 
-    Returns:
+    Returns
+    -------
         numpy.ndarray: Array with elements rounded away from zero.
     """
     return np.copysign(np.ceil(np.abs(array)), array)
@@ -33,11 +38,13 @@ def get_list_of_grid_points(bounding_box, spacing):
     """
     Generate a list of grid points within a given bounding box with a specified spacing.
 
-    Parameters:
+    Parameters
+    ----------
     bounding_box (numpy.ndarray): The bounding box defining the region of interest.
     spacing (float): The spacing between grid points.
 
-    Returns:
+    Returns
+    -------
     numpy.ndarray: A 2D array containing the list of grid points.
     """
 
@@ -56,7 +63,7 @@ def get_mesh_vertices(mesh_file_path):
     Given a mesh file path, returns the coordinates of the mesh vertices.
     """
     coordinates = []
-    with open(mesh_file_path, "r") as mesh_file:
+    with open(mesh_file_path) as mesh_file:
         for line in mesh_file:
             if line.startswith("v"):
                 coordinates.append([float(x) for x in line.split()[1:]])
@@ -88,14 +95,17 @@ def calculate_scaled_distances_from_mesh(positions, inner_mesh, outer_mesh):
     """
     Calculates the scaled distances between the inner mesh and outer mesh surfaces.
 
-    Parameters:
+    Parameters
+    ----------
         positions (numpy.ndarray): Array of positions.
         inner_mesh (trimesh.Trimesh): Inner mesh surface.
         outer_mesh (trimesh.Trimesh): Outer mesh surface.
 
-    Returns:
-        tuple: A tuple containing the scaled distances between the surfaces, the distances between the surfaces,
-               and the distances between the positions and the inner mesh surface.
+    Returns
+    -------
+        tuple: A tuple containing the scaled distances between the surfaces,
+            the distances between the surfaces, and the distances between
+            the positions and the inner mesh surface.
     """
     query = proximity.ProximityQuery(inner_mesh)
 
@@ -136,32 +146,51 @@ def get_average_shape_mesh_objects(mesh_folder: Path):
     return mesh_dict
 
 
-def get_bounding_box(mesh_path, expand=1.0):
+def expand_bounding_box(bounding_box, expand=1.2):
+    """
+    Expand the bounding box by a given factor.
+
+    Parameters
+    ----------
+        bounding_box (numpy.ndarray): The bounding box to expand.
+        expand (optional): Amount to expand the bounding box. Defaults to 0.
+
+    Returns
+    -------
+        numpy.ndarray: The expanded bounding box.
+    """
+    center = np.mean(bounding_box, axis=0)
+    sizes = np.abs(np.diff(bounding_box, axis=0).squeeze())
+    new_sizes = sizes * expand
+    new_bounding_box = np.array([center - new_sizes / 2, center + new_sizes / 2])
+    return new_bounding_box
+
+
+def get_bounding_box(mesh_path, expand=1.2):
     """
     Get the bounding box of a mesh.
 
-    Parameters:
+    Parameters
+    ----------
         mesh_path (Path): Path to the mesh file.
         expand (optional): Amount to expand the bounding box. Defaults to 0.
 
-    Returns:
+    Returns
+    -------
         numpy.ndarray: The bounding box of the mesh.
     """
     mesh = trimesh.load_mesh(mesh_path)
-    return mesh.bounds * expand
+    return expand_bounding_box(mesh.bounds, expand)
 
 
-def process_seed(seed, base_datadir, structure_id):
-    if seed == "mean":
-        nuc_mesh_path = base_datadir / "average_shape_meshes/nuc_mesh_mean.obj"
-        mem_mesh_path = base_datadir / "average_shape_meshes/mem_mesh_mean.obj"
-    else:
-        nuc_mesh_path = (
-            base_datadir / f"structure_data/{structure_id}/meshes/nuc_mesh_{seed}.obj"
-        )
-        mem_mesh_path = (
-            base_datadir / f"structure_data/{structure_id}/meshes/mem_mesh_{seed}.obj"
-        )
+def get_mesh_information_for_shape(seed, base_datadir, structure_id):
+    nuc_mesh_path = (
+        base_datadir / f"structure_data/{structure_id}/meshes/nuc_mesh_{seed}.obj"
+    )
+    mem_mesh_path = (
+        base_datadir / f"structure_data/{structure_id}/meshes/mem_mesh_{seed}.obj"
+    )
+
     nuc_grid_distance_path = (
         base_datadir
         / f"structure_data/{structure_id}/grid_distances/nuc_distances_{seed}.npy"
@@ -174,9 +203,15 @@ def process_seed(seed, base_datadir, structure_id):
         base_datadir
         / f"structure_data/{structure_id}/grid_distances/z_distances_{seed}.npy"
     )
+    scaled_nuc_grid_distance_path = (
+        base_datadir
+        / f"structure_data/{structure_id}/grid_distances/scaled_nuc_distances_{seed}.npy"
+    )
+
     nuc_grid_distances = np.load(nuc_grid_distance_path)
     mem_grid_distances = np.load(mem_grid_distance_path)
     z_grid_distances = np.load(z_grid_distance_path)
+    scaled_nuc_grid_distances = np.load(scaled_nuc_grid_distance_path)
 
     nuc_mesh = trimesh.load_mesh(str(nuc_mesh_path))
     mem_mesh = trimesh.load_mesh(str(mem_mesh_path))
@@ -200,37 +235,44 @@ def process_seed(seed, base_datadir, structure_id):
         "nuc_grid_distances": nuc_grid_distances,
         "mem_grid_distances": mem_grid_distances,
         "z_grid_distances": z_grid_distances,
+        "scaled_nuc_grid_distances": scaled_nuc_grid_distances,
     }
 
 
-def get_mesh_information_dict(
+def get_mesh_information_dict_for_structure(
     structure_id,
     base_datadir,
-    cellid_list=None,
     recalculate=False,
 ):
     """
     Retrieves or calculates mesh information dictionary.
 
     Args:
-        all_positions (dict): Dictionary containing positions of particles in different modes.
+    ----
+        all_positions (dict): Dictionary containing positions of particles
+            in different modes.
         structure_id (str): ID of the structure.
         base_datadir (str): Base directory path.
-        results_dir (str, optional): Directory path to save/load mesh information. Defaults to None.
-        recalculate (bool, optional): Flag to indicate whether to recalculate mesh information. Defaults to False.
+        results_dir (str, optional): Directory path to save/load mesh information.
+            Defaults to None.
+        recalculate (bool, optional): Flag to indicate whether to recalculate
+            mesh information. Defaults to False.
 
     Returns:
+    -------
         dict: Mesh information dictionary.
     """
     file_path = base_datadir / f"structure_data/{structure_id}/mesh_information.dat"
     if not recalculate and file_path.exists():
-        print("Loading mesh information")
+        log.info(f"Loading mesh information for {structure_id} from {file_path}")
         with open(file_path, "rb") as f:
             mesh_information_dict = pickle.load(f)
         return mesh_information_dict
 
-    print("Calculating mesh information")
-    if cellid_list is None:
+    log.info(f"Calculating mesh information for {structure_id}")
+    if structure_id == "mean":
+        cellid_list = ["mean"]
+    else:
         cellid_list = get_cellid_list_for_structure(
             structure_id=structure_id,
             dsphere=True,
@@ -243,7 +285,7 @@ def get_mesh_information_dict(
         results = list(
             tqdm(
                 executor.map(
-                    process_seed,
+                    get_mesh_information_for_shape,
                     cellid_list,
                     [base_datadir] * len(cellid_list),
                     [structure_id] * len(cellid_list),
@@ -272,6 +314,7 @@ def calculate_grid_distances(
     calc_nuc_distances=True,
     calc_mem_distances=True,
     calc_z_distances=True,
+    calc_scaled_nuc_distances=True,
     chunk_size=None,
 ):
     """
@@ -307,7 +350,7 @@ def calculate_grid_distances(
         Calculate z-coordinate
 
     Returns
-    ----------
+    -------
     nuc_distances: np.ndarray
         Array of distances to nucleus
 
@@ -316,6 +359,9 @@ def calculate_grid_distances(
 
     z_distances: np.ndarray
         Array of z-coordinates
+
+    scaled_nuc_distances: np.ndarray
+        Array of scaled distances to nucleus
 
     chunk_size: int
         Size of chunks to process points
@@ -340,6 +386,12 @@ def calculate_grid_distances(
             z_distances = np.load(z_file_name)
             log.info(f"Loaded z distances for {cellid}")
 
+        scaled_nuc_file_name = save_dir / f"scaled_nuc_distances_{cellid}.npy"
+        if scaled_nuc_file_name.exists():
+            calc_scaled_nuc_distances = False
+            scaled_nuc_distances = np.load(scaled_nuc_file_name)
+            log.info(f"Loaded scaled nuc distances for {cellid}")
+
     # load meshes
     nuc_mesh = trimesh.load_mesh(nuc_mesh_path)
     mem_mesh = trimesh.load_mesh(mem_mesh_path)
@@ -349,8 +401,11 @@ def calculate_grid_distances(
 
     # get grid points
     points = get_list_of_grid_points(bounding_box, spacing)
+    if save_dir is not None:
+        np.save(save_dir / f"grid_points_{cellid}.npy", points)
 
     if calc_mem_distances:
+        log.info(f"Calculating mem distances for {cellid}")
         if chunk_size is None:
             chunk_size = int(len(points) / 10)
 
@@ -372,6 +427,51 @@ def calculate_grid_distances(
             f"Took {(time.time() - start_time):0.2g}s to calculate mem distances for {cellid}"
         )
 
+    # calculate scaled distances
+    if calc_scaled_nuc_distances:
+        log.info(f"Calculating scaled distances for {cellid}")
+
+        start_time = time.time()
+
+        # only check points insde the membrane
+        points_to_check_indices = np.where(
+            (mem_distances > 0) & ~np.isinf(mem_distances)
+        )[0]
+
+        nuc_distances = np.full(len(points_to_check_indices), np.inf)
+        scaled_nuc_distances = np.full(len(points_to_check_indices), np.inf)
+
+        if chunk_size is None:
+            chunk_size = int(len(points_to_check_indices) / 10)
+
+        for i in tqdm(
+            range(0, len(points_to_check_indices), chunk_size),
+            desc=f"Scaled distance chunks for {cellid}",
+        ):
+            chunk_indices = points_to_check_indices[i : (i + chunk_size)]
+            chunk_points = points[chunk_indices]
+            (
+                nuc_distances[i : (i + chunk_size)],
+                scaled_nuc_distances[i : (i + chunk_size)],
+                _,
+            ) = calc_scaled_distance_to_nucleus_surface(
+                chunk_points, nuc_mesh, mem_mesh
+            )
+
+        log.info(
+            f"Took {(time.time() - start_time):0.2g}s to calculate scaled distances for {cellid}"
+        )
+
+        if save_dir is not None:
+            np.save(
+                save_dir / f"scaled_nuc_distances_{cellid}.npy", scaled_nuc_distances
+            )
+
+        if calc_nuc_distances:
+            if save_dir is not None:
+                np.save(save_dir / f"nuc_distances_{cellid}.npy", nuc_distances)
+            calc_nuc_distances = False
+
     # get distances to nuc_mesh
     if calc_nuc_distances:
         log.info(f"Calculating nuc distances for {cellid}")
@@ -392,9 +492,9 @@ def calculate_grid_distances(
             range(0, len(points_to_check_indices), chunk_size),
             desc=f"Nucleus distance chunks for {cellid}",
         ):
-            chunk_indices = points_to_check_indices[i : i + chunk_size]
+            chunk_indices = points_to_check_indices[i : (i + chunk_size)]
             chunk_points = points[chunk_indices]
-            nuc_distances[i : i + chunk_size] = -trimesh.proximity.signed_distance(
+            nuc_distances[i : (i + chunk_size)] = -trimesh.proximity.signed_distance(
                 nuc_mesh, chunk_points
             )
 
@@ -427,4 +527,4 @@ def calculate_grid_distances(
     del points
     gc.collect()
 
-    return nuc_distances, mem_distances, z_distances
+    return nuc_distances, mem_distances, z_distances, scaled_nuc_distances

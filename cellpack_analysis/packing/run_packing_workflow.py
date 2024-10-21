@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 
 from cellpack_analysis.lib import default_values
+from cellpack_analysis.lib.io import format_time
 from cellpack_analysis.packing.generate_cellpack_input_files import (
     generate_configs,
     generate_recipes,
@@ -26,14 +27,13 @@ def _run_packing_workflow(workflow_config_path: Path):
     Run the packing workflow.
 
     Args:
+    ----
         workflow_config_path (Path): The path to the packing configuration file.
 
     Returns:
+    -------
         None
     """
-    if workflow_config_path is None:
-        workflow_config_path = Path(__file__).parent / "configs/peroxisome.json"
-
     workflow_config = WorkflowConfig(config_file_path=workflow_config_path)
 
     # ## Generate cellPACK input files if needed
@@ -69,3 +69,5 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     _run_packing_workflow(workflow_config_path=Path(args.workflow_config_path))
+
+    log.info(f"Total time: {format_time(time.time() - start)}")

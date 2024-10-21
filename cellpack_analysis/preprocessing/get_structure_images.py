@@ -31,11 +31,15 @@ print(meta_df.structure_name.unique())
 # - `SLC25A17` is peroxisomes
 # - `RAB5A` is early endosomes
 # - `LAMP1` is lysosomes
-STRUCTURE_ID = "RAB5A"
+# - `SEC61B` is ER
+# - `ATP2A2` is smooth ER
+# - `TOMM20` is mitochondria
+# - `ST6GAL1` is Golgi
+STRUCTURE_ID = "mean"
 
 # %% [markdown]
 # ### Get cellID list for structure
-dsphere = False
+dsphere = True
 cellid_list = get_cellid_list_for_structure(STRUCTURE_ID, dsphere=dsphere)
 print(f"Found {len(cellid_list)} cell IDs for {STRUCTURE_ID}")
 # %% [markdown]
@@ -78,4 +82,5 @@ meta_df_struct.progress_apply(
     lambda row: download_image(row, col_name, save_path, pkg), axis=1
 )
 print("Done")
+
 # %%

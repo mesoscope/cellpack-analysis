@@ -38,7 +38,7 @@ def create_recipe_files(
     shape_ids=IDS,
 ):
     # read json
-    with open(recipe_template_path, "r") as j:
+    with open(recipe_template_path) as j:
         contents = json.load(j)
     base_version = contents["version"]
     contents["objects"]["mean_nucleus"]["representations"]["mesh"]["path"] = MESH_PATH
@@ -98,11 +98,11 @@ with open("input_files_to_use.txt", "w") as f:
 
 def copy_grid_file(recipe_path, config_path, max_num_clust=MAX_NUM_CLUSTERS):
     # get recipe version
-    with open(recipe_path, "r") as j:
+    with open(recipe_path) as j:
         contents = json.load(j)
         recipe_name = contents["name"]
         recipe_version = contents["version"]
-    with open(config_path, "r") as j:
+    with open(config_path) as j:
         contents = json.load(j)
         config_name = contents["name"]
         out_path = Path(contents["out"])

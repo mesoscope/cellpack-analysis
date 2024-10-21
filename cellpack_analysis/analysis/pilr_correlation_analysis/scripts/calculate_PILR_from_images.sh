@@ -1,10 +1,15 @@
 #!/bin/bash
-STRUCTURE_ID=$1
-STRUCTURE_NAME=$2
-FOLDER_ID=$3
-python $home/cellpack-analysis/cellpack_analysis/scripts/calculate_PILR_from_images.py \
---raw_image_path $home/cellpack-analysis/data/structure_data/$STRUCTURE_ID/sample_8d/raw_imgs_for_PILR \
---raw_image_channel $STRUCTURE_ID \
---simulated_image_path $home/cellpack-analysis/data/packing_outputs/$FOLDER_ID/$STRUCTURE_NAME/spheresSST/figures/ \
---save_dir $home/cellpack-analysis/results/$STRUCTURE_ID/$FOLDER_ID \
---num_cores 64 \
+
+STRUCTURE_ID="$1"
+STRUCTURE_NAME="$2"
+FOLDER_ID="$3"
+CHANNEL_NAMES="$4"
+
+python "$cellpack_analysis/cellpack_analysis/analysis/pilr_correlation_analysis/workflows/calculate_PILR_from_images.py" \
+  --raw_image_path "$cellpack_analysis/data/structure_data/$STRUCTURE_ID/sample_8d/segmented" \
+  --simulated_image_path "$cellpack_analysis/data/packing_outputs/8d_sphere_data/$FOLDER_ID/{rule}/$STRUCTURE_NAME/spheresSST/figures/" \
+  --save_dir "$cellpack_analysis/data/PILR/$STRUCTURE_NAME/$FOLDER_ID" \
+  --raw_image_channel "$STRUCTURE_ID" \
+  --channel_names $CHANNEL_NAMES \
+  --num_cores 64
+

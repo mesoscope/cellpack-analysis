@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 
 from cellpack_analysis.lib.file_io import read_json
 from cellpack_analysis.lib.get_cellid_list import get_cellid_list_for_structure
+from cellpack_analysis.lib.io import format_time
 
 log = logging.getLogger(__name__)
 
@@ -22,9 +23,9 @@ if CELLPACK_PATH is None:
     spec = importlib.util.find_spec("cellpack")
     if spec is None:
         raise Exception("cellPACK not found")
-    CELLPACK_PATH = spec.origin
+    CELLPACK_PATH = spec.submodule_search_locations[0]  # type: ignore
 
-PACK_PATH: str = CELLPACK_PATH + "/cellpack/bin/pack.py"  # type: ignore
+PACK_PATH: str = CELLPACK_PATH + "/bin/pack.py"  # type: ignore
 assert os.path.exists(PACK_PATH), f"PACK path {PACK_PATH} does not exist"
 log.debug(f"Using cellPACK at {PACK_PATH}")
 
@@ -69,10 +70,8 @@ def check_recipe_completed(recipe_path, config_data, workflow_config):
     else:
         result_file_list = list(
             folder_to_check.glob(
-                (
-                    f"{prefix}_{recipe_data['name']}_{config_data['name']}_"
-                    f"{recipe_data['version']}_seed_*.{suffix}"
-                )
+                f"{prefix}_{recipe_data['name']}_{config_data['name']}_"
+                f"{recipe_data['version']}_seed_*.{suffix}"
             )
         )
     num_existing_files = sum([result_file.exists() for result_file in result_file_list])
@@ -80,35 +79,38 @@ def check_recipe_completed(recipe_path, config_data, workflow_config):
     return num_existing_files == number_of_packings
 
 
-def log_update(count, skipped_count, failed_count, start, num_files):
+def log_update(count, skipped_count, failed_count, start, num_files, rule_start):
     """
     Logs the update of the packing process.
 
     Args:
+    ----
         count (int): The number of completed runs.
         skipped_count (int): The number of skipped runs.
         failed_count (int): The number of failed runs.
         start (float): The start time of the packing process.
         num_files (int): The total number of files to process.
+        rule_start (float): The start time of the current rule.
     """
     done = count + skipped_count
     remaining = num_files - done - failed_count
     log.info(
-        (
-            f"Completed: {count}, Failed: {failed_count}, Skipped: {skipped_count}, "
-            f"Total: {num_files}, Done: {done}, Remaining: {remaining}"
-        )
+        f"Completed: {count}, Failed: {failed_count}, Skipped: {skipped_count}, "
+        f"Total: {num_files}, Done: {done}, Remaining: {remaining}"
     )
-    t = time.time() - start
+    rule_time = time.time() - rule_start
+    total_time = time.time() - start
     per_count = np.inf
     time_left = np.inf
     if count > 0:
-        per_count = t / count
+        per_count = rule_time / count
         time_left = per_count * remaining
+
     log.info(
         (
-            f"Total time: {t:.2f}s, Time per run: {per_count:.2f}s, "
-            f"Estimated time left: {time_left:.2f}s"
+            f"Total time: {format_time(total_time)}, Rule time: {format_time(rule_time)}, "
+            f"Time per run: {format_time(per_count)}, "
+            f"Estimated time left for rule: {format_time(time_left)}"
         ),
     )
 
@@ -152,9 +154,11 @@ def get_input_file_dictionary(workflow_config):
     Get the input file dictionary containing the configuration path and recipe paths for each rule.
 
     Args:
+    ----
         workflow_config: The workflow configuration object.
 
     Returns:
+    -------
         input_file_dict:
             The dictionary containing the configuration path and recipe paths for each rule.
     """
@@ -220,13 +224,14 @@ def pack_recipes(workflow_config):
     workflow_config: type
         workflow configuration
     """
-    start = time.time()
     input_file_dict = get_input_file_dictionary(workflow_config)
+    start = time.time()
 
     log_folder = workflow_config.output_path / "logs"
     log_folder.mkdir(parents=True, exist_ok=True)
-
+    total_count = total_failed_count = 0
     for rule, input_files in input_file_dict.items():
+        rule_start = time.time()
         skipped_count = count = failed_count = 0
         log.info(f"Packing rule: {rule}")
 
@@ -245,10 +250,8 @@ def pack_recipes(workflow_config):
                 ):
                     skipped_count += 1
                     log.debug(
-                        (
-                            f"Skipping packing for completed recipe {recipe_path}. "
-                            f"{skipped_count} skipped"
-                        )
+                        f"Skipping packing for completed recipe {recipe_path}. "
+                        f"{skipped_count} skipped"
                     )
                     continue
 
@@ -276,5 +279,10 @@ def pack_recipes(workflow_config):
                     failed_count,
                     start,
                     num_files,
+                    rule_start,
                 )
                 gc.collect()
+        total_count += count
+        total_failed_count += failed_count
+    log.info(f"Packing complete. Total time: {format_time(time.time() - start)}")
+    log.info(f"Total count: {total_count}, Total failed: {total_failed_count}")

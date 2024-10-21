@@ -4,7 +4,6 @@ import json
 import multiprocessing
 import os
 import subprocess
-import sys
 from pathlib import Path
 from time import time
 
@@ -95,7 +94,7 @@ def create_recipe_files(
     shape_ids=IDS,
 ):
     # read json
-    with open(recipe_template_path, "r") as j:
+    with open(recipe_template_path) as j:
         contents = json.load(j)
     contents["objects"]["mean_nucleus"]["representations"]["mesh"]["path"] = MESH_PATH
 

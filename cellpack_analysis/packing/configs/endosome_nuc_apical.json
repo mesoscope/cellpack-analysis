@@ -1,0 +1,28 @@
+{
+    "structure_name": "endosome",
+    "structure_id": "RAB5A",
+    "condition": "rules_shape",
+    "generate_recipes": true,
+    "generate_configs": true,
+    "use_mean_cell": false,
+    "use_cells_in_8d_sphere": true,
+    "get_counts_from_data": true,
+    "get_size_from_data": true,
+    "get_bounding_box_from_mesh": true,
+    "num_processes": 16,
+    "skip_completed": false,
+    "dry_run": false,
+    "recipe_data": {
+        "nuc_apical_gradient": {
+            "gradients": [
+                "nucleus_gradient",
+                "apical_gradient"
+            ]
+        }
+    },
+    "packings_to_run": {
+        "rules": [
+            "nuc_apical_gradient"
+        ]
+    }
+}

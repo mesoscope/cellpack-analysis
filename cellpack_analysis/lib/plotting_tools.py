@@ -1,13 +1,17 @@
+import matplotlib.cm as cm
+import matplotlib.colors as colors
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
 from aicsimageio.aics_image import AICSImage
 
+from cellpack_analysis.lib.PILR_tools import add_contour_to_axis
+
 
 def plot_PILR(
     avg_gfp,
     ch_name=None,
-    save_dir="./results",
+    save_dir=None,
     label=None,
     suffix="",
     aspect=20,
@@ -26,8 +30,8 @@ def plot_PILR(
     if label is None:
         label = f"avg_PILR_{ch_name}"
 
-    # plot_values = avg_gfp / np.max(avg_gfp)
-    plot_values = avg_gfp
+    plot_values = avg_gfp / np.max(avg_gfp)
+    # plot_values = avg_gfp
 
     min_pct = kwargs.get("min_pct", 0)
     max_pct = kwargs.get("max_pct", 90)
@@ -56,6 +60,12 @@ def plot_PILR(
     return fig, ax
 
 
+def get_center_slice(morph, dim=1):
+    # Get the center slice of a morphological stack
+    center_slice = np.take(morph, morph.shape[dim] // 2, axis=dim)
+    return center_slice
+
+
 def plot_and_save_center_slice(
     morph,
     structure,
@@ -66,6 +76,8 @@ def plot_and_save_center_slice(
     title=None,
     xlabel=None,
     ylabel=None,
+    add_contour=False,
+    **kwargs,
 ):
     # Plot the center slice of a morphological stack
     if ax is None:
@@ -73,36 +85,47 @@ def plot_and_save_center_slice(
     else:
         fig = ax.get_figure()
 
-    if dim == 0:
-        center_slice = morph[morph.shape[0] // 2, :, :]
-    elif dim == 1:
-        center_slice = morph[:, morph.shape[1] // 2, :]
-    elif dim == 2:
-        center_slice = morph[:, :, morph.shape[2] // 2]
-    else:
-        raise ValueError("Invalid dimension")
+    center_slice = get_center_slice(morph, dim=dim)
 
-    # vmin = 0
-    # vmax = np.percentile(center_slice, 90)
+    pct_min = kwargs.get("pct_min", 0)
+    pct_max = kwargs.get("pct_max", 99)
 
+    vmin = kwargs.get("vmin", np.percentile(center_slice, pct_min))
+    vmax = kwargs.get("vmax", np.percentile(center_slice, pct_max))
+
+    cmap = cm.get_cmap(kwargs.get("cmap", "inferno"))
+    norm = colors.Normalize(vmin=vmin, vmax=vmax)
+    rgba = cmap(norm(center_slice))
+    rgba[center_slice == 0] = (0, 0, 0, 0)
     ax.imshow(
-        center_slice,
-        cmap="inferno",
+        rgba,
+        # cmap=cmap,
         # vmin=vmin,
         # vmax=vmax,
         origin="lower",
     )
-    if title is None:
-        title = f"{structure}, dim: {dim}"
-    ax.set_title(title, color="white")
+    if add_contour:
+        ax = add_contour_to_axis(
+            ax,
+            "center",
+            dim,
+            kwargs["domain_nuc"],
+            kwargs["domain_mem"],
+            lw=kwargs.get("lw"),
+        )
+    if title is not None:
+        ax.set_title(title, color=kwargs.get("fontcolor", "white"))
     if xlabel is not None:
-        ax.set_xlabel(xlabel, color="white")
+        ax.set_xlabel(xlabel, color=kwargs.get("fontcolor", "white"))
     if ylabel is not None:
-        ax.set_ylabel(ylabel, color="white")
+        ax.set_ylabel(ylabel, color=kwargs.get("fontcolor", "white"))
     ax.axis("off")
-    fig.set_facecolor("black")
+    fig.set_facecolor((0, 0, 0, 0))
+    ax.set_facecolor((0, 0, 0, 0))
+    fig.set_facecolor("white")
+    # fig.subplots_adjust(left=0, right=1, bottom=0, top=1)
+    fig.tight_layout()
     if showfig:
-        plt.tight_layout()
         plt.show()
     if output_dir is not None:
         fig.savefig(str(output_dir / f"{structure}_center_slice_{dim}.png"))

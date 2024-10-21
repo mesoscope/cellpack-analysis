@@ -18,7 +18,7 @@ class WorkflowConfig:
         self._setup()
 
     def _read_config_file(self):
-        with open(self.config_file_path, "r") as f:
+        with open(self.config_file_path) as f:
             config = json.load(f)
         return config
 
@@ -61,6 +61,12 @@ class WorkflowConfig:
         )
         self.use_cells_in_8d_sphere = self.data.get(
             "use_cells_in_8d_sphere", default_values.USE_CELLS_IN_8D_SPHERE
+        )
+        self.use_additional_struct = self.data.get(
+            "use_additional_struct", default_values.USE_ADDITIONAL_STRUCT
+        )
+        self.gradient_structure_name = self.data.get(
+            "gradient_structure_name", default_values.GRADIENT_STRUCTURE_NAME
         )
 
         # number of processes
