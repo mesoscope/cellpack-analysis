@@ -7,63 +7,122 @@ authors = [
 license = {text = "Allen Institute Software License"}
 version = "0.1.0"
 readme = "README.md"
-requires-python = "==3.9.*"
+requires-python = "~=3.11"
 dependencies = [
     "aicsimageio>=4.14.0",
-    "matplotlib>=3.9.0",
-    "numpy>=1.26.4",
-    "pacmap>=0.7.2",
-    "pandas>=2.2.2",
-    "pathlib>=1.0.1",
-    "scikit-image>=0.22.0",
-    "scikit-learn>=1.5.0",
-    "scipy>=1.13.1",
-    "seaborn>=0.13.2",
-    "tqdm>=4.66.4",
-    "trimesh>=4.4.0",
-    "ipykernel>=6.29.4",
-    "aicsshparam>=0.1.10",
-    "pyarrow>=16.1.0",
-    "quilt3>=5.4.0",
-    "rtree>=1.2.0",
-    "python-dotenv>=1.0.1",
-    "cellpack @ git+https://github.com/mesoscope/cellpack.git@cellpack-analysis",
+    "aicsshparam==0.1.10",
+    "cellpack",
+    "fire",
+    "ipykernel",
+    "ipywidgets",
+    "matplotlib",
+    "numpy<2",
+    "pandas",
+    "pathlib",
+    "pyarrow==19.0",
+    "python-dotenv",
+    "quilt3",
+    "rtree",
+    "scikit-image",
+    "scikit-learn",
+    "scipy",
+    "seaborn",
+    "tqdm",
+    "trimesh",
+    "vtk",
+]
+
+[dependency-groups]
+dev = [
+    "check-manifest",
+    "pre-commit",
+    "isort",
+]
+lint = [
+    "black",
+    "isort",
+    "ruff",
+    "mypy",
+]
+test = [
+    "pytest",
+    "pytest-cov",
+    "pytest-raises",
+    "coverage",
+]
+debug = [
+    "ipdb",
+]
+docs = [
+    "sphinx",
+    "furo",
+    "myst-parser",
+    "sphinx-copybutton",
+]
+
+[project.optional-dependencies]
+pilr = [
     "aicscytoparam==0.1.10",
-    "umap-learn>=0.5.6",
-    "hydra-core>=1.3.2",
-    "ipywidgets>=8.1.3",
+]
+fms = [
+    "aicsfiles",
 ]
 
 [build-system]
-requires = ["pdm-backend"]
-build-backend = "pdm.backend"
+requires = ["uv_build>=0.8.14,<0.9.0"]
+build-backend = "uv_build"
 
-[tool.pdm.dev-dependencies]
-dev = [
-    "check-manifest>=0.49",
-    "pre-commit>=3.7.1",
+[tool.uv]
+default-groups = ["dev", "lint", "test", "debug", "docs"]
+cache-dir = ".cache/uv"
+package = true
+
+[tool.uv.build-backend]
+module-root = ""
+source-include = [
+    "cellpack_analysis",
+    "docs",
+    "tests",
+    "__init__.py",
+    ".gitignore",
+    "pre-commit-config.yaml",
+    ".python-version",
+    "LICENSE",
+    "logging.conf",
+    "Makefile",
+    "pyproject.toml",
+    "README.md",
+    "uv.lock"
 ]
-lint = [
-    "black>=24.4.2",
-    "isort>=5.13.2",
-    "ruff>=0.4.6",
-    "mypy>=1.10.0",
+source-exclude = [
+    ".env",
+    ".git",
+    ".github",
+    ".ipynb_checkments",
+    ".mypy_cache",
+    "__pycache__",
+    ".cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".tox",
+    ".venv",
+    ".vscode",
+    "data",
+    "results",
 ]
-test = [
-    "pytest>=8.2.2",
-    "pytest-cov>=5.0.0",
-    "pytest-raises>=0.11",
-    "coverage>=7.5.3",
-]
-debug = [
-    "ipdb>=0.13.13",
-]
-docs = [
-    "sphinx>=7.3.7",
-    "furo>=2024.5.6",
-    "myst-parser>=3.0.1",
-    "sphinx-copybutton>=0.5.2",
-]
+
+[tool.uv.sources]
+aicscytoparam = {index = "aics"}
+aicsimageio = {index = "aics"}
+aicsshparam = {index = "aics"}
+aicsfiles = {index = "aics"}
+cellpack = {git = "https://github.com/mesoscope/cellpack.git", branch = "cellpack-analysis-3.11"}
+
+
+[[tool.uv.index]]
+name = "aics"
+url = "https://artifactory.corp.alleninstitute.org/artifactory/api/pypi/pypi-virtual/simple"
+explicit = true
 
 [tool.black]
 line-length = 88
@@ -72,10 +131,9 @@ line-length = 88
 line_length = 88
 profile = "black"
 
-# https://github.com/charliermarsh/ruff
 [tool.ruff]
 line-length = 88
-target-version = "py38"
+target-version = "py311"
 
 [tool.ruff.lint]
 extend-select = [

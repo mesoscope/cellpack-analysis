@@ -102,10 +102,10 @@ for struct, df_struct in df_plot.groupby("structure_2"):
         else "medium" if cohens_d_value < 0.5 else "large"
     )
     log.info(
-        (
+        
             f"Statistical test for {struct}: t-statistic={t_stat:.3f}, p-value={p_value:.3e}\n"
             f"Cohen's d={cohens_d_value:.3f} (effect size: {effect_size})"
-        )
+        
     )
 
 # %% [markdown]

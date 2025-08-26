@@ -15,8 +15,8 @@ import time
 
 import matplotlib.pyplot as plt
 
-from cellpack_analysis.analysis.punctate_analysis import distance
-from cellpack_analysis.analysis.punctate_analysis.stats_functions import (
+from cellpack_analysis.analysis.punctate_analysis.lib import distance, visualization
+from cellpack_analysis.analysis.punctate_analysis.lib.stats_functions import (
     normalize_distances,
 )
 from cellpack_analysis.lib.file_io import get_project_root
@@ -26,7 +26,7 @@ from cellpack_analysis.lib.mesh_tools import get_mesh_information_dict_for_struc
 
 log = logging.getLogger(__name__)
 
-plt.rcParams.update({"font.size": 16})
+plt.rcParams.update({"font.size": 14})
 start_time = time.time()
 # %% [markdown]
 # ## Set up parameters
@@ -125,7 +125,7 @@ all_distance_dict = distance.get_distance_dictionary(
     recalculate=False,
 )
 
-all_distance_dict = distance.filter_nans_from_distance_distribution_dict(
+all_distance_dict = distance.filter_invalids_from_distance_distribution_dict(
     distance_distribution_dict=all_distance_dict,
 )
 
@@ -142,8 +142,7 @@ distance_figures_dir = figures_dir / "distance_distributions"
 distance_figures_dir.mkdir(exist_ok=True, parents=True)
 # %% [markdown]
 # ### plot distance distributions as vertical kde
-plt.rcParams.update({"font.size": 10})
-fig_list, ax_list = distance.plot_distance_distributions_kde_vertical(
+fig_list, ax_list = visualization.plot_distance_distributions_kde_vertical(
     distance_measures=distance_measures,
     packing_modes=packing_modes,
     all_distance_dict=all_distance_dict,
@@ -171,7 +170,15 @@ all_pairwise_emd = distance.get_distance_distribution_emd_dictionary(
     recalculate=False,
     suffix=suffix,
 )
-
+# %%
+visualization.plot_emd_kdeplots(
+    distance_measures=distance_measures,
+    all_pairwise_emd=all_pairwise_emd,
+    baseline_mode=baseline_mode,
+    suffix=suffix,
+    emd_figures_dir=emd_figures_dir,
+    save_format=save_format,
+)
 # %% [markdown]
 # ### get average emd correlation dataframe
 corr_df_dict = distance.get_average_emd_correlation(
@@ -181,7 +188,7 @@ corr_df_dict = distance.get_average_emd_correlation(
 )
 # %% [markdown]
 # ### plot EMD correlation circles
-distance.plot_emd_correlation_circles(
+visualization.plot_emd_correlation_circles(
     distance_measures=distance_measures,
     corr_df_dict=corr_df_dict,
     suffix=suffix,
@@ -190,7 +197,7 @@ distance.plot_emd_correlation_circles(
 )
 # %% [markdown]
 # ### plot EMD barplots
-distance.plot_emd_barplots(
+visualization.plot_emd_barplots(
     distance_measures=distance_measures,
     all_pairwise_emd=all_pairwise_emd,
     baseline_mode=baseline_mode,
@@ -200,7 +207,7 @@ distance.plot_emd_barplots(
 )
 # %% [markdown]
 # ### plot EMD violinplots
-distance.plot_emd_violinplots(
+visualization.plot_emd_violinplots(
     distance_measures=distance_measures,
     all_pairwise_emd=all_pairwise_emd,
     baseline_mode=baseline_mode,
@@ -236,7 +243,7 @@ df_melt = distance.melt_df_for_plotting(df_plot)
 
 # %% [markdown]
 # ### Plot KS observed results
-fig, ax = distance.plot_ks_observed_barplots(
+fig, ax = visualization.plot_ks_observed_barplots(
     df_melt=df_melt,
     figures_dir=ks_figures_dir,
     suffix=suffix,
@@ -258,12 +265,10 @@ all_ripleyK, mean_ripleyK, ci_ripleyK, r_values = distance.calculate_ripley_k(
 )
 # %% [markdown]
 # ## plot ripleyK distributions
-distance.plot_ripley_k(
+visualization.plot_ripley_k(
     mean_ripleyK=mean_ripleyK,
     ci_ripleyK=ci_ripleyK,
     r_values=r_values,
     figures_dir=ripley_figures_dir,
     save_format=save_format,
 )
-
-# %%

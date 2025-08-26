@@ -145,12 +145,12 @@ else:
                         f" and {channel_2} with rule {rule_2}"
                     )
                     for cellid1, pilr1 in tqdm(
-                        zip(cellid_list_1, pilr_list_1), total=len(cellid_list_1)
+                        zip(cellid_list_1, pilr_list_1, strict=False), total=len(cellid_list_1)
                     ):
                         masked_pilr1 = pilr1[
-                            (pilr1.shape[0] // 2) :, :  # noqa
+                            (pilr1.shape[0] // 2) :, :
                         ].flatten()
-                        for cellid2, pilr2 in zip(cellid_list_2, pilr_list_2):
+                        for cellid2, pilr2 in zip(cellid_list_2, pilr_list_2, strict=False):
                             # only calculate if not already calculated
                             if pd.isna(
                                 df_corr.loc[
@@ -173,7 +173,7 @@ else:
                                     ] = 1
                                 else:
                                     masked_pilr2 = pilr2[
-                                        (pilr2.shape[0] // 2) :, :  # noqa
+                                        (pilr2.shape[0] // 2) :, :
                                     ].flatten()
                                     corr_val = pearsonr(
                                         masked_pilr1, masked_pilr2

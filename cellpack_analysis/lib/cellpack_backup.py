@@ -30,7 +30,7 @@ from tqdm import tqdm
 
 def get_xyz_dict_from_all_pos_dict(all_pos_dict):
     """
-    returns array of x, y, and z positions for each seed for runs
+    Returns array of x, y, and z positions for each seed for runs
     in all_pos_dict
     """
     all_objs = {}
@@ -88,7 +88,7 @@ def getPositionsFromObject(self, parents):
 
 def getDistanceFrom(self, target, parents=None, **options):
     """
-    target : name or host object target or target position
+    Target : name or host object target or target position
     parent : name of host parent object for the list of object to measure distance from
     objects : list of object or list of points
     """
@@ -820,7 +820,7 @@ def plot_and_save_similarity_heatmaps(self, similarity_df, ingredient_key):
         packing_ids = similarity_df["packing_id"].iloc[:, 0]
     else:
         packing_ids = similarity_df["packing_id"]
-    lut = dict(zip(packing_ids.unique(), sns.color_palette()))
+    lut = dict(zip(packing_ids.unique(), sns.color_palette(), strict=False))
     row_colors = packing_ids.map(lut)
     row_colors.rename("Packing ID", inplace=True)
     figdir = self.figures_path / "clustering"
@@ -935,7 +935,7 @@ def calc_and_save_correlations(
                         f"{pc1}_{sc1}", f"{pc2}_{sc2}"
                     ]
     df_packing = corr_df.pop("packing_id")
-    lut = dict(zip(df_packing.unique(), sns.color_palette()))
+    lut = dict(zip(df_packing.unique(), sns.color_palette(), strict=False))
     row_colors = df_packing.map(lut)
     corr_df.fillna(0, inplace=True)
     g = sns.clustermap(
@@ -1007,7 +1007,7 @@ def get_parametrized_representation(
         os.makedirs(save_dir, exist_ok=True)
 
     for pc, (packing_id, packing_dict) in enumerate(
-        zip(self.packing_id_dict.values(), all_pos_list)
+        zip(self.packing_id_dict.values(), all_pos_list, strict=False)
     ):
         num_saved_plots = 0
         for sc, (_, pos_dict) in enumerate(packing_dict.items()):

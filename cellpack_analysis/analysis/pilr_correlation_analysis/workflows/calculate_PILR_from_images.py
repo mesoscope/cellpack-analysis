@@ -63,11 +63,13 @@ def PILR_calculation_workflow(
         Mapping of raw image channel indices to labeled structures.
     simulated_channel_map : dict
         Mapping of simulated image channel indices to labeled structures.
+
     Returns
     -------
     None
         This function does not return anything. It saves the results to the
         specified directory.
+
     Notes
     -----
     - The function supports both single-threaded and multi-threaded processing
@@ -76,6 +78,7 @@ def PILR_calculation_workflow(
       dimensional averages saved as images and NumPy arrays.
     - The function uses the `OmeTiffWriter` for saving TIFF files and `numpy`
       for saving arrays.
+
     Examples
     --------
     >>> PILR_calculation_workflow(
@@ -149,7 +152,7 @@ def PILR_calculation_workflow(
                             [ch_name] * num_files,
                             [raw_image_channel] * num_files,
                             [channel_map] * num_files,
-                        ),
+                        ), strict=False,
                     ),
                     desc=f"Processing {ch_name} files",
                     total=num_files,

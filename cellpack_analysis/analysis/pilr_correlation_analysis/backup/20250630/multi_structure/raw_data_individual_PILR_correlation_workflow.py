@@ -82,10 +82,10 @@ else:
             cellid_list_2 = df_corr.loc[struct_2].index
             log.info(f"Calculating correlation between {struct_1} and {struct_2}")
             for cellid1, pilr1 in tqdm(
-                zip(cellid_list_1, pilr_list_1), total=len(cellid_list_1)
+                zip(cellid_list_1, pilr_list_1, strict=False), total=len(cellid_list_1)
             ):
                 masked_pilr1 = pilr1[(pilr1.shape[0] // 2) :, :].flatten()
-                for cellid2, pilr2 in zip(cellid_list_2, pilr_list_2):
+                for cellid2, pilr2 in zip(cellid_list_2, pilr_list_2, strict=False):
                     # only calculate if not already calculated
                     if df_corr.loc[(struct_1, cellid1), (struct_2, cellid2)] is np.nan:
                         if (struct_1 == struct_2) and (cellid1 == cellid2):

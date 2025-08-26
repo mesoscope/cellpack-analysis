@@ -118,7 +118,7 @@ def transform_and_save_dict_for_rule(
     output_dict["version"] = f"{rule}_{cellID}"
     grid_file_path = grid_path / f"{cellID}_grid.dat"
     output_dict["grid_file_path"] = f"{grid_file_path}"
-    for obj, short_name in zip(["nucleus_mesh", "membrane_mesh"], ["nuc", "mem"]):
+    for obj, short_name in zip(["nucleus_mesh", "membrane_mesh"], ["nuc", "mem"], strict=False):
         output_dict["objects"][obj]["representations"]["mesh"][
             "path"
         ] = f"{mesh_base_path}"

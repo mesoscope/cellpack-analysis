@@ -93,10 +93,10 @@ else:
             cellid_list_2 = df_corr.loc[channel_2].index
             log.info(f"Calculating correlation between {channel_1} and {channel_2}")
             for cellid1, pilr1 in tqdm(
-                zip(cellid_list_1, pilr_list_1), total=len(cellid_list_1)
+                zip(cellid_list_1, pilr_list_1, strict=False), total=len(cellid_list_1)
             ):
-                masked_pilr1 = pilr1[(pilr1.shape[0] // 2) :, :].flatten()  # noqa
-                for cellid2, pilr2 in zip(cellid_list_2, pilr_list_2):
+                masked_pilr1 = pilr1[(pilr1.shape[0] // 2) :, :].flatten()
+                for cellid2, pilr2 in zip(cellid_list_2, pilr_list_2, strict=False):
                     # only calculate if not already calculated
                     if pd.isna(df_corr.loc[(channel_1, cellid1), (channel_2, cellid2)]):
                         if (channel_1 == channel_2) and (cellid1 == cellid2):
@@ -104,7 +104,7 @@ else:
                             df_corr.loc[(channel_2, cellid2), (channel_1, cellid1)] = 1
                         else:
                             masked_pilr2 = pilr2[
-                                (pilr2.shape[0] // 2) :, :  # noqa
+                                (pilr2.shape[0] // 2) :, :
                             ].flatten()
                             corr_val = pearsonr(masked_pilr1, masked_pilr2).correlation
                             df_corr.loc[(channel_1, cellid1), (channel_2, cellid2)] = (

@@ -19,7 +19,7 @@ log = logging.getLogger(__name__)
 
 def set_gradient_mode_center(mode_settings, bounding_box):
     """
-    get gradient mode center
+    Get gradient mode center
 
     Parameters
     ----------
@@ -217,7 +217,7 @@ def update_and_save_recipe(
     updated_recipe["grid_file_path"] = f"{grid_path}/{cellid}_grid.dat"
 
     # update mesh paths
-    for obj, short_name in zip(["nucleus_mesh", "membrane_mesh"], ["nuc", "mem"]):
+    for obj, short_name in zip(["nucleus_mesh", "membrane_mesh"], ["nuc", "mem"], strict=False):
         updated_recipe["objects"][obj]["representations"]["mesh"][
             "path"
         ] = f"{mesh_path}"

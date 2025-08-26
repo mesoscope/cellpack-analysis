@@ -201,7 +201,7 @@ class Projector:
         for alias, img in self.data.items():
             shape = img.shape
             pad = [int(0.5 * (self.box_size - s)) for s in shape]
-            pad = [(p, int(self.box_size - s - p)) for (s, p) in zip(shape, pad)]
+            pad = [(p, int(self.box_size - s - p)) for (s, p) in zip(shape, pad, strict=False)]
             if np.min([np.min([i, j]) for i, j in pad]) < 0:
                 raise ValueError(
                     f"Box of size {self.box_size} invalid for image of size: {shape}."
@@ -232,7 +232,7 @@ class Projector:
         ax.imshow(
             proj, cmap="inferno", origin="lower", vmin=self.gfp_vmin, vmax=self.gfp_vmax
         )
-        for alias_cont, alias_color in zip(["nuc", "mem"], ["cyan", "magenta"]):
+        for alias_cont, alias_color in zip(["nuc", "mem"], ["cyan", "magenta"], strict=False):
             [
                 ax.plot(c[:, 1], c[:, 0], lw=0.5, color=alias_color)
                 for c in contour[alias_cont]

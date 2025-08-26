@@ -4,6 +4,7 @@ import logging
 import pickle
 import time
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import trimesh
@@ -11,12 +12,13 @@ import vtk
 from tqdm import tqdm
 from trimesh import proximity
 
-from cellpack_analysis.analysis.punctate_analysis.distance import (
+from cellpack_analysis.analysis.punctate_analysis.lib.distance import (
     calc_scaled_distance_to_nucleus_surface,
 )
 from cellpack_analysis.lib.get_cellid_list import get_cellid_list_for_structure
 
 log = logging.getLogger(__name__)
+
 
 
 def round_away_from_zero(array):
@@ -240,10 +242,10 @@ def get_mesh_information_for_shape(seed, base_datadir, structure_id):
 
 
 def get_mesh_information_dict_for_structure(
-    structure_id,
-    base_datadir,
-    recalculate=False,
-):
+    structure_id: str,
+    base_datadir: Path,
+    recalculate: bool = False,
+) -> dict[str, dict[str, Any]]:
     """
     Retrieves or calculates mesh information dictionary.
 
@@ -294,7 +296,7 @@ def get_mesh_information_dict_for_structure(
             )
         )
 
-    for seed, result in zip(cellid_list, results):
+    for seed, result in zip(cellid_list, results, strict=False):
         mesh_information_dict[str(seed)] = result
 
     # save mesh information dictionary
@@ -366,6 +368,12 @@ def calculate_grid_distances(
     chunk_size: int
         Size of chunks to process points
     """
+    # Initialize variables
+    mem_distances = None
+    nuc_distances = None
+    z_distances = None
+    scaled_nuc_distances = None
+
     # check if distances already calculated
     if not recalculate and save_dir is not None:
         mem_file_name = save_dir / f"mem_distances_{cellid}.npy"
@@ -427,28 +435,27 @@ def calculate_grid_distances(
             f"Took {(time.time() - start_time):0.2g}s to calculate mem distances for {cellid}"
         )
 
+    if mem_distances is None:
+        raise ValueError("Membrane distances must be calculated or loaded first")
+
+    inside_mem_inds = np.where((mem_distances > 0) & ~np.isinf(mem_distances))[0]
     # calculate scaled distances
     if calc_scaled_nuc_distances:
         log.info(f"Calculating scaled distances for {cellid}")
 
         start_time = time.time()
 
-        # only check points insde the membrane
-        points_to_check_indices = np.where(
-            (mem_distances > 0) & ~np.isinf(mem_distances)
-        )[0]
-
-        nuc_distances = np.full(len(points_to_check_indices), np.inf)
-        scaled_nuc_distances = np.full(len(points_to_check_indices), np.inf)
+        nuc_distances = np.full(len(inside_mem_inds), np.inf)
+        scaled_nuc_distances = np.full(len(inside_mem_inds), np.inf)
 
         if chunk_size is None:
-            chunk_size = int(len(points_to_check_indices) / 10)
+            chunk_size = int(len(inside_mem_inds) / 10)
 
         for i in tqdm(
-            range(0, len(points_to_check_indices), chunk_size),
+            range(0, len(inside_mem_inds), chunk_size),
             desc=f"Scaled distance chunks for {cellid}",
         ):
-            chunk_indices = points_to_check_indices[i : (i + chunk_size)]
+            chunk_indices = inside_mem_inds[i : (i + chunk_size)]
             chunk_points = points[chunk_indices]
             (
                 nuc_distances[i : (i + chunk_size)],
@@ -478,21 +485,16 @@ def calculate_grid_distances(
 
         start_time = time.time()
 
-        # only check points insde the membrane
-        points_to_check_indices = np.where(
-            (mem_distances > 0) & ~np.isinf(mem_distances)
-        )[0]
-
-        nuc_distances = np.full(len(points_to_check_indices), np.inf)
+        nuc_distances = np.full(len(inside_mem_inds), np.inf)
 
         if chunk_size is None:
-            chunk_size = int(len(points_to_check_indices) / 10)
+            chunk_size = int(len(inside_mem_inds) / 10)
 
         for i in tqdm(
-            range(0, len(points_to_check_indices), chunk_size),
+            range(0, len(inside_mem_inds), chunk_size),
             desc=f"Nucleus distance chunks for {cellid}",
         ):
-            chunk_indices = points_to_check_indices[i : (i + chunk_size)]
+            chunk_indices = inside_mem_inds[i : (i + chunk_size)]
             chunk_points = points[chunk_indices]
             nuc_distances[i : (i + chunk_size)] = -trimesh.proximity.signed_distance(
                 nuc_mesh, chunk_points
@@ -506,13 +508,13 @@ def calculate_grid_distances(
             np.save(save_dir / f"nuc_distances_{cellid}.npy", nuc_distances)
 
     # get z-coordinates
-    if calc_z_distances:
+    if calc_z_distances and mem_distances is not None:
         log.info(f"Calculating z distances for {cellid}")
 
         start_time = time.time()
 
         # only check points insde the membrane
-        inside_mem_points = points[(mem_distances > 0) & ~np.isinf(mem_distances)]
+        inside_mem_points = points[inside_mem_inds]
 
         z_coords = inside_mem_points[:, 2]
         min_z = np.min(z_coords)

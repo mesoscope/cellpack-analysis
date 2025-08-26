@@ -1,4 +1,3 @@
-from typing import Optional
 
 import pandas as pd
 
@@ -6,7 +5,7 @@ from cellpack_analysis.lib import default_values
 
 
 def get_cellid_df(
-    load_local: Optional[bool] = False, save_local: Optional[bool] = False
+    load_local: bool | None = False, save_local: bool | None = False
 ) -> pd.DataFrame:
     """
     Retrieves the cell ID DataFrame from the specified parquet file.
@@ -34,10 +33,10 @@ def get_cellid_df(
 
 def get_cellid_list_for_structure(
     structure_id: str,
-    df_cellID: Optional[pd.DataFrame] = None,
-    dsphere: Optional[bool] = False,
-    load_local: Optional[bool] = False,
-    save_local: Optional[bool] = False,
+    df_cellID: pd.DataFrame | None = None,
+    dsphere: bool | None = False,
+    load_local: bool | None = False,
+    save_local: bool | None = False,
 ) -> list:
     """
     Get a list of cell IDs for a given structure ID.

@@ -235,7 +235,7 @@ if parallel:
         for _, (cellid, positions, nuc_centroid, mem_centroid, _, _) in tqdm(
             zip(
                 file_path_list,
-                executor.map(get_positions_from_single_image, file_path_list),
+                executor.map(get_positions_from_single_image, file_path_list), strict=False,
             ),
             total=len(file_path_list),
         ):

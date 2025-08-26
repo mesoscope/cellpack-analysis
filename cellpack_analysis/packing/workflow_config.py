@@ -1,6 +1,5 @@
 import json
 from pathlib import Path
-from typing import Optional
 
 from cellpack_analysis.lib import default_values
 
@@ -8,7 +7,7 @@ from cellpack_analysis.lib import default_values
 class WorkflowConfig:
     """Class to hold the configuration of the packing workflow."""
 
-    def __init__(self, config_file_path: Optional[Path] = None):
+    def __init__(self, config_file_path: Path | None = None):
 
         if config_file_path is None:
             config_file_path = Path(__file__).parent / "configs/peroxisome.json"

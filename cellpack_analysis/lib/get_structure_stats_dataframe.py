@@ -1,19 +1,18 @@
 from pathlib import Path
-from typing import Optional
 
 import pandas as pd
 
 from cellpack_analysis.lib.file_io import get_datadir_path
 
 
-def get_local_stats_dataframe_path(datadir: Optional[Path] = None) -> Path:
+def get_local_stats_dataframe_path(datadir: Path | None = None) -> Path:
     if datadir is None:
         datadir = get_datadir_path()
     return datadir / "structure_stats.parquet"
 
 
 def get_structure_stats_dataframe(
-    datadir: Optional[Path] = None, structure_id: Optional[str] = None
+    datadir: Path | None = None, structure_id: str | None = None
 ) -> pd.DataFrame:
     if datadir is None:
         datadir = get_datadir_path()
@@ -28,7 +27,7 @@ def get_structure_stats_dataframe(
     raise FileNotFoundError(f"Local file {df_path} not found.")
 
 
-def get_structure_radius(structure_id: str, datadir: Optional[Path] = None) -> float:
+def get_structure_radius(structure_id: str, datadir: Path | None = None) -> float:
     df_struct_stats = get_structure_stats_dataframe(
         structure_id=structure_id, datadir=datadir
     )

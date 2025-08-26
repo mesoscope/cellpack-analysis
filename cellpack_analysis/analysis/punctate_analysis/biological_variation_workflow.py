@@ -16,8 +16,8 @@ import time
 
 import matplotlib.pyplot as plt
 
-from cellpack_analysis.analysis.punctate_analysis import distance
-from cellpack_analysis.analysis.punctate_analysis.stats_functions import (
+from cellpack_analysis.analysis.punctate_analysis.lib import distance, visualization
+from cellpack_analysis.analysis.punctate_analysis.lib.stats_functions import (
     normalize_distances,
 )
 from cellpack_analysis.lib.file_io import get_project_root
@@ -119,7 +119,7 @@ all_distance_dict = distance.get_distance_dictionary(
     recalculate=False,
 )
 
-all_distance_dict = distance.filter_nans_from_distance_distribution_dict(
+all_distance_dict = distance.filter_invalids_from_distance_distribution_dict(
     distance_distribution_dict=all_distance_dict,
 )
 
@@ -136,8 +136,7 @@ distance_figures_dir = figures_dir / "distance_distributions"
 distance_figures_dir.mkdir(exist_ok=True, parents=True)
 # %% [markdown]
 # ### plot distance distributions as vertical kde
-plt.rcParams.update({"font.size": 10})
-fig_list, ax_list = distance.plot_distance_distributions_kde_vertical(
+fig_list, ax_list = visualization.plot_distance_distributions_kde_vertical(
     distance_measures=distance_measures,
     packing_modes=packing_modes,
     all_distance_dict=all_distance_dict,
@@ -166,24 +165,14 @@ all_pairwise_emd = distance.get_distance_distribution_emd_dictionary(
     suffix=suffix,
 )
 # %%
-for distance_measure, distance_measure_dict in all_pairwise_emd.items():
-    baseline_dict = distance_measure_dict[baseline_mode]
-    fig, axs = plt.subplots(ncols=4, figsize=(16, 4), dpi=300, sharex=True, sharey=True)
-    fig.suptitle(f"Distance measure: {distance_measure}")
-    for ct, (variable, emd_dict) in enumerate(baseline_dict.items()):
-        ax = axs[ct]
-        log.info(f"Distance measure: {distance_measure}, Variable: {variable}, ")
-        variable_emd_values = list(emd_dict.values())
-        ax.hist(variable_emd_values)
-        ax.set_title(
-            f"Variable: {variable}\n"
-            f"Mean: {sum(variable_emd_values) / len(variable_emd_values):.2f}"
-        )
-        ax.set_xlabel("EMD")
-        ax.set_ylabel("Frequency")
-    plt.tight_layout()
-    plt.show()
-
+visualization.plot_emd_kdeplots(
+    distance_measures=distance_measures,
+    all_pairwise_emd=all_pairwise_emd,
+    baseline_mode=baseline_mode,
+    suffix=suffix,
+    emd_figures_dir=emd_figures_dir,
+    save_format=save_format,
+)
 # %% [markdown]
 # ### get average emd correlation dataframe
 corr_df_dict = distance.get_average_emd_correlation(
@@ -193,9 +182,29 @@ corr_df_dict = distance.get_average_emd_correlation(
 )
 # %% [markdown]
 # ### plot EMD correlation circles
-distance.plot_emd_correlation_circles(
+visualization.plot_emd_correlation_circles(
     distance_measures=distance_measures,
     corr_df_dict=corr_df_dict,
+    suffix=suffix,
+    figures_dir=emd_figures_dir,
+    save_format=save_format,
+)
+# %% [markdown]
+# ### plot EMD barplots
+visualization.plot_emd_barplots(
+    distance_measures=distance_measures,
+    all_pairwise_emd=all_pairwise_emd,
+    baseline_mode=baseline_mode,
+    suffix=suffix,
+    figures_dir=emd_figures_dir,
+    save_format=save_format,
+)
+# %% [markdown]
+# ### plot EMD violinplots
+visualization.plot_emd_violinplots(
+    distance_measures=distance_measures,
+    all_pairwise_emd=all_pairwise_emd,
+    baseline_mode=baseline_mode,
     suffix=suffix,
     figures_dir=emd_figures_dir,
     save_format=save_format,

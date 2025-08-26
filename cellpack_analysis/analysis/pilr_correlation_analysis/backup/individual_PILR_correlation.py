@@ -32,7 +32,7 @@ def save_individual_PILR_images(individual_PILR_dict, cellid_list, base_folder):
     writer = OmeTiffWriter()
     for ch, pilr_list in individual_PILR_dict.items():
         print(f"Saving individual pilr images for {ch}")
-        for cellid, pilr in tqdm(zip(cellid_list, pilr_list), total=len(cellid_list)):
+        for cellid, pilr in tqdm(zip(cellid_list, pilr_list, strict=False), total=len(cellid_list)):
             cellid = str(cellid)
             # save pilr as ome.tiff
             writer.save(
@@ -100,10 +100,10 @@ def calculate_cross_correlations(individual_PILR_dict, cellid_list, base_folder)
         for ch2, pilr_list2 in individual_PILR_dict.items():
             print(f"Processing {ch1}, {ch2}")
             for cellid1, pilr1 in tqdm(
-                zip(cellid_list_str, pilr_list1), total=len(cellid_list_str)
+                zip(cellid_list_str, pilr_list1, strict=False), total=len(cellid_list_str)
             ):
                 masked_pilr1 = pilr1[(pilr1.shape[0] // 2) :, :].flatten()
-                for cellid2, pilr2 in zip(cellid_list_str, pilr_list2):
+                for cellid2, pilr2 in zip(cellid_list_str, pilr_list2, strict=False):
                     if df.loc[(ch1, cellid1), (ch2, cellid2)] is np.nan:
                         if (ch1 == ch2) and (cellid1 == cellid2):
                             df.loc[(ch1, cellid1), (ch2, cellid2)] = 1

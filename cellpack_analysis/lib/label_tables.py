@@ -94,7 +94,7 @@ NORMALIZATION_LABELS = {
 # }
 DISTANCE_LIMITS = {
     "pairwise": (0, 25),
-    "nucleus": (0, 8),
+    "nucleus": (0, 6),
     "nearest": (0, 5),
     "z": (0, 12),
     "scaled_nucleus": (0.0, 1.0),

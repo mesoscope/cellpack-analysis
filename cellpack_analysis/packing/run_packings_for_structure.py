@@ -116,7 +116,7 @@ def transform_and_save_dict_for_rule(
     base_output_path.mkdir(parents=True, exist_ok=True)
     if use_cellid_as_seed:
         output_dict["randomness_seed"] = [cellID]
-    for obj, short_name in zip(["nucleus_mesh", "membrane_mesh"], ["nuc", "mem"]):
+    for obj, short_name in zip(["nucleus_mesh", "membrane_mesh"], ["nuc", "mem"], strict=False):
         output_dict["objects"][obj]["representations"]["mesh"][
             "path"
         ] = f"{mesh_base_path}"

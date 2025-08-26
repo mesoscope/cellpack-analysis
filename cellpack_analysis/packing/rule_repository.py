@@ -31,6 +31,13 @@ GRADIENTS = {
         "weight_mode": "exponential",
         "weight_mode_settings": {"decay_length": 0.01},
     },
+    "struct_gradient_weak": {
+        "description": "gradient based on distance from the surface of the struct mesh",
+        "mode": "surface",
+        "mode_settings": {"object": "struct", "scale_to_next_surface": False},
+        "weight_mode": "exponential",
+        "weight_mode_settings": {"decay_length": 0.1},
+    },
     "nucleus_gradient_tuned": {
         "description": (
             "gradient based on distance from the surface of the nucleus mesh"

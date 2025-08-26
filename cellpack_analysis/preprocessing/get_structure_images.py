@@ -1,5 +1,6 @@
 # %% [markdown]
 # # Get raw images for a structure
+import logging
 from pathlib import Path
 
 import pandas as pd
@@ -8,6 +9,8 @@ from tqdm import tqdm
 
 from cellpack_analysis.lib.get_cellid_list import get_cellid_list_for_structure
 from cellpack_analysis.lib.get_variance_dataset import get_variance_dataframe
+
+log = logging.getLogger(__name__)
 
 tqdm.pandas()
 # %% [markdown]
@@ -24,7 +27,8 @@ pkg = quilt3.Package.browse(
 # ### Load variance dataset
 redownload = False
 meta_df = get_variance_dataframe(datadir, redownload, pkg)
-print(meta_df.structure_name.unique())
+meta_df.index = meta_df.index.astype(str)
+log.info(meta_df.structure_name.unique())
 
 # %% [markdown]
 # ### Set structure of interest
@@ -35,13 +39,13 @@ print(meta_df.structure_name.unique())
 # - `ATP2A2` is smooth ER
 # - `TOMM20` is mitochondria
 # - `ST6GAL1` is Golgi
-STRUCTURE_ID = "mean"
+STRUCTURE_ID = "SLC25A17"
 
 # %% [markdown]
 # ### Get cellID list for structure
 dsphere = True
 cellid_list = get_cellid_list_for_structure(STRUCTURE_ID, dsphere=dsphere)
-print(f"Found {len(cellid_list)} cell IDs for {STRUCTURE_ID}")
+log.info(f"Found {len(cellid_list)} cell IDs for {STRUCTURE_ID}")
 # %% [markdown]
 # ### Create dataframe for structure metadata
 meta_df_struct = meta_df.loc[cellid_list].reset_index()
@@ -55,7 +59,7 @@ save_path = Path(
     datadir / f"structure_data/{STRUCTURE_ID}/{subfolder_name}/{folder_name}"
 )
 save_path.mkdir(exist_ok=True, parents=True)
-print(f"Images will be saved to {save_path}")
+log.info(f"Images will be saved to {save_path}")
 
 
 # %% [markdown]
@@ -68,19 +72,17 @@ def download_image(row: pd.DataFrame, col_name: str, save_path: Path, pkg) -> Pa
         / f"{row.structure_name}_{row.CellId}_ch_{row.ChannelNumberStruct}_{col_name}_original.tiff"
     )
     if not local_filename.exists():
-        # print(f"Downloading {local_filename.name}")
+        # log.info(f"Downloading {local_filename.name}")
         pkg[subdir_name][file_name].fetch(local_filename)
     else:
-        print(f"{local_filename.name} already exists. Skipping download.")
+        log.info(f"{local_filename.name} already exists. Skipping download.")
     return local_filename
 
 
 # %% [markdown]
 # ### Start download
 col_name = "crop_raw" if download_raw else "crop_seg"
-meta_df_struct.progress_apply(
-    lambda row: download_image(row, col_name, save_path, pkg), axis=1
-)
-print("Done")
+meta_df_struct.apply(lambda row: download_image(row, col_name, save_path, pkg), axis=1)
+log.info("Done")
 
 # %%

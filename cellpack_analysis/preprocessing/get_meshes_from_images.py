@@ -1,19 +1,23 @@
 # %%
 import concurrent.futures
-from pathlib import Path
+import logging
 
 import vtk
 from aicsimageio.aics_image import AICSImage
 from aicsshparam import shtools
 from tqdm import tqdm
 
+from cellpack_analysis.lib.file_io import get_project_root
+
+log = logging.getLogger(__name__)
+
 # NOTE: Raw images should be downloaded prior to running this script using `get_structure_images.py`
 # Run this script using: `python get_meshes_from_images.py`
 # %%
-STRUCTURE_ID = "ST6GAL1"
+STRUCTURE_ID = "SLC25A17"
 RECALCULATE = False
 
-datadir = Path(__file__).parents[2] / f"data/structure_data/{STRUCTURE_ID}"
+datadir = get_project_root() / f"data/structure_data/{STRUCTURE_ID}"
 image_path = datadir / "sample_8d/segmented/"
 
 save_folder = datadir / "meshes/"
@@ -50,11 +54,11 @@ def get_meshes_for_file(
     data = reader.get_image_data("CZYX", S=0, T=0)
     writer = vtk.vtkOBJWriter()
     for name, channel in zip(
-        ["nuc", "mem", "struct"], [nuc_channel, mem_channel, struct_channel]
+        ["nuc", "mem", "struct"], [nuc_channel, mem_channel, struct_channel], strict=False
     ):
         save_path = save_folder / f"{name}_mesh_{cellid}.obj"
         if save_path.exists() and not recalculate:
-            print(f"Mesh for {file.stem} already exists. Skipping.")
+            log.info(f"Mesh for {file.stem} already exists. Skipping.")
             return
         mesh = shtools.get_mesh_from_image(data[channel], translate_to_origin=False)
         if subsample:
@@ -72,13 +76,13 @@ subsample = True
 input_files = []
 for file in files_to_use:
     if (STRUCTURE_ID not in file.stem) or (".tiff" not in file.suffix):
-        print(f"Skipping {file.stem}")
+        log.info(f"Skipping {file.stem}")
         continue
     input_files.append(file)
 
-print(f"Processing {len(input_files)} files")
+log.info(f"Processing {len(input_files)} files")
 
-num_cores = 64
+num_cores = 16
 if len(input_files):
     with concurrent.futures.ProcessPoolExecutor(max_workers=num_cores) as executor:
         futures = []
@@ -104,6 +108,6 @@ if len(input_files):
         ):
             pass
 else:
-    print("No files to process")
+    log.info("No files to process")
 
 # %%

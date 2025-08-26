@@ -1,11 +1,10 @@
 from pathlib import Path
-from typing import Optional
 
 import pandas as pd
 import quilt3
 
 
-def get_local_variance_dataframe_path(datadir: Optional[Path] = None) -> Path:
+def get_local_variance_dataframe_path(datadir: Path | None = None) -> Path:
     if datadir is None:
         datadir = get_datadir_path()
     return datadir / "variance_dataset.parquet"
@@ -17,7 +16,7 @@ def get_datadir_path() -> Path:
     return datadir
 
 
-def get_variance_dataframe(datadir: Optional[Path] = None, redownload=False, pkg=None):
+def get_variance_dataframe(datadir: Path | None = None, redownload=False, pkg=None):
     df_path = get_local_variance_dataframe_path(datadir)
     if not df_path.exists() or redownload:
         if pkg is None:

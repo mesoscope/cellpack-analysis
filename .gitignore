@@ -127,6 +127,7 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+**venv**
 
 # Spyder project settings
 .spyderproject
@@ -172,3 +173,9 @@ results/
 
 # VSCode
 .vscode
+
+# pyrightconfig
+pyrightconfig.json
+
+# cache for ruff
+.ruff_cache
