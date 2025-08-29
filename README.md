@@ -1,41 +1,100 @@
 # cellpack-analysis
-Analysis pipeline for cellPACK generated synthetic data.
+Analysis pipeline for cellPACK
 
-**This repository is a work in progress and is not yet ready for public use.**
+> [!WARNING]
+> This repository is a work in progress and is not yet ready for public use.
 
 This repository contains tools that analyze cellPACK generated synthetic data and compare it to experimental data. 
 
-## Pre-requisites and installation
-This code is intended to run using a python installation with some other libraries. Using a conda environment is recommended. The following instructions assume that you have conda installed. If you do not, you can install it by following the instructions at https://docs.conda.io/projects/conda/en/latest/user-guide/install/
+## Installation
+This project requires Python 3.11. The installation is managed using [uv](https://docs.astral.sh/uv/).
 
-1. Create a conda environment: `conda create -n cellpack-analysis python=3.9`
-2. Activate the conda environment: `conda activate cellpack-analysis`
-3. Install packages: `pip install -e .`
-4. Install cellPACK in this environment by following instructions at https://github.com/mesoscope/cellpack
-5. Install `pyshtools`: `pip install pyshtools==4.10`
-6. Clone the `decoupling` branch of `cvapipe_analysis` repository here: https://github.com/AllenCell/cvapipe_analysis/tree/decoupling
-7. Navigate to the cloned directory and install `cvapipe_analysis`: `pip install -e .`
+Dependencies are listed in the `pyproject.toml` file and locked in the `uv.lock` file.
 
-Note: The libraries BLAS and LAPACK are required for some functionality
+**1. Navigate to where you want to clone this repository**
+
+```bash
+cd /path/to/directory/
+```
+
+**2. Clone the repo from GitHub**
+
+```bash
+git clone git@github.com:mesoscope/cellpack-analysis.git
+cd cellpack-analysis
+```
+
+**3. Install the dependencies using uv**
+
+For basic installation with just the core dependencies:
+
+```bash
+uv sync --no-dev
+```
+
+If you plan to develop code, you should also install the development dependencies:
+
+```bash
+uv sync
+```
+
+To install extra dependencies:
+
+```bash
+uv sync --all-extras
+```
+
+**4. Activate the virtual environment**
+
+Activate the virtual environment in the terminal:
+
+For Windows:
+
+```powershell
+\path\to\venv\Scripts\activate
+```
+
+For Linux/Mac:
+
+```bash
+source /path/to/venv/bin/activate
+```
+
+You can deactivate the virtual environment using:
+
+```
+deactivate
+```
+
+### Alternative installation using `pip`
+
+This project also includes a `requirements.txt` generated from the `uv.lock` file, which can be used to install requirements using `pip`.
+
+> [!NOTE]
+> This installation method will only install core dependencies.
+> We recommend using uv to handle more complex installations of development and optional dependencies.
+
+After cloning the repository, follow these steps:
+
+**1. Create and activate a new virtual environment**
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+```
+
+**2. Install the dependencies using pip**
+
+```bash
+pip install -r requirements.txt
+```
+
+**3. Install the package**
+
+```bash
+pip install -e .
+```
 
 ## Usage
 
-The analysis pipeline contains multiple steps that can be run independently. 
-
-### 1. Download experimental data
-The experimental data also contains multi-channel segmented images with the channels corresponding to the cell membrane, nucleus, and the structure being analyzed. The experimental data can be downloaded using the notebook `cellpack_analysis/notebooks/get_raw_images.ipynb`
-
-### 2. Generate synthetic data
-To generate synthetic data, it is recommended to use a local copy of the development branch of cellPACK. 
-Creating synthetic data will require the conversion of the raw images into 3D meshes which can be done using the script `cellpack_analysis/scripts/get_meshes_from_raw_images.py`. 
-The meshes can then be used to generate synthetic data using cellPACK.
-The intended output of this step is a set of multi-channel segmented images with the channels corresponding to the cell membrane, nucleus, and the structure being analyzed.
-
-### 3. Calculate parameterized representations for the synthetic and experimental data
-The parameterized representations are calculated using the script `cellpack_analysis/scripts/calculate_PILR_from_images.sh`. This script takes as input the structure information, the path to the experimental data, and the path to the synthetic data. The output is a set of parameterized representations for the synthetic and experimental data.
-
-### 4. Calculate the similarity between the synthetic and experimental data
-To calculate correlations between individual parameterized representations, use the script `cellpack_analysis/scripts/calculate_individual_PILR_correlations.sh`. This script takes as input the path to the parameterized representations for the synthetic and experimental data. The output is a set of correlation matrices for the synthetic and experimental data saved as dataframes.
-
-### 5. Visualize and create plots
-To visualize the correlations between individual parameterized representations, use the notebook `cellpack_analysis/notebooks/individual_PILR_heatmap.ipynb`
+Coming soon!
