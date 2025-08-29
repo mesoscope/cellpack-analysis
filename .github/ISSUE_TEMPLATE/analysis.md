@@ -8,12 +8,12 @@ assignees: ''
 ---
 
 # Description
-*Brief description of the analysis, along with hypothesis*
+<!--Brief description of the analysis, along with hypothesis-->
 
 # Deliverable
-*What is the desired outcome of this analysis*
+<!--What is the desired outcome of this analysis-->
 
 # Acceptance criteria
-*What constitutes the analysis as DONE*
+<!--What constitutes the analysis as DONE-->
 
 # Tasks

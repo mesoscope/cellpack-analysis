@@ -14,17 +14,15 @@ jobs:
     - name: Checkout the repo
       uses: actions/checkout@v4
 
-    - name: Set up Python 3.9
+    - name: Set up Python 3.11
       uses: actions/setup-python@v5
       with:
-        python-version: "3.9"
+        python-version: "3.11"
 
-    - name: Set up PDM
-      uses: pdm-project/setup-pdm@v4
+    - name: Set up uv
+      uses: astral-sh/setup-uv@v3
       with:
-        python-version: "3.9"
-        version: 2.16.1
-        cache: true
+        version: "latest"
 
     - name: Cache environment
       id: cached-dependencies
@@ -33,18 +31,18 @@ jobs:
         CACHE_NUMBER: 0 # Increment this number if you wish to hard-refresh the cache.
       with:
         path: .venv
-        key: ${{ runner.os }}-${{ hashFiles('**/pdm.lock') }}-${{ env.CACHE_NUMBER }}
+        key: ${{ runner.os }}-${{ hashFiles('**/uv.lock') }}-${{ env.CACHE_NUMBER }}
 
     - name: Install dependencies
       if: steps.cached-dependencies.outputs.cache-hit != 'true'
       shell: bash -l {0}
       run: |
-        pdm sync
+        uv sync
 
     - name: Generate documentation with Sphinx
       shell: bash -l {0}
       run: |
-        pdm run make docs
+        uv run make docs
         touch docs/_build/html/.nojekyll
 
     - name: Publish docs
