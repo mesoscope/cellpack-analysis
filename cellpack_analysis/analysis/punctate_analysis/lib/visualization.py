@@ -255,7 +255,7 @@ def plot_distance_distributions_kde_vertical(
         fig, axs = plt.subplots(
             num_rows,
             1,
-            figsize=(5.5, num_rows * 1.5),
+            figsize=(6, num_rows * 1.5),
             dpi=300,
             sharex="col",
             sharey="col",
@@ -565,7 +565,7 @@ def plot_distance_distributions_overlay(
 
     for distance_measure in distance_measures:
         distance_dict = all_distance_dict[distance_measure]
-        fig, ax = plt.subplots(dpi=300, figsize=(7, 7))
+        fig, ax = plt.subplots(dpi=300, figsize=(6, 6))
         cmap = plt.get_cmap("tab10")
         for j, mode in enumerate(packing_modes):
             mode_dict = distance_dict[mode]
@@ -726,7 +726,7 @@ def plot_ks_observed_barplots(
     :
         Tuple containing figure and axis objects
     """
-    fig, ax = plt.subplots(figsize=(7, 7), dpi=300)
+    fig, ax = plt.subplots(figsize=(6, 6), dpi=300)
     sns.barplot(
         data=df_melt,
         x="packing_mode",
@@ -782,7 +782,7 @@ def plot_emd_heatmaps(
     log.info("Plotting pairwise EMD heatmaps")
     for distance_measure in distance_measures:
         emd_dict = all_pairwise_emd[distance_measure]
-        fig, axs = plt.subplots(len(emd_dict), len(emd_dict), figsize=(10, 10), dpi=300)
+        fig, axs = plt.subplots(len(emd_dict), len(emd_dict), figsize=(6, 6), dpi=300)
         for rt, (mode_1, mode_1_dict) in enumerate(emd_dict.items()):
             mode_1_label = MODE_LABELS[mode_1]
             for ct, (mode_2, emd) in enumerate(mode_1_dict.items()):
@@ -905,7 +905,10 @@ def plot_emd_correlation_circles(
         fig, ax = plt.subplots(dpi=300)
 
         R = stdev / stdev.max() / 2.5
-        circles = [Circle((j, i), radius=r) for r, j, i in zip(R.flat, x.flat, y.flat, strict=False)]
+        circles = [
+            Circle((j, i), radius=r)
+            for r, j, i in zip(R.flat, x.flat, y.flat, strict=False)
+        ]
         col = PatchCollection(
             circles,
             array=corr.flatten(),
@@ -990,7 +993,7 @@ def plot_emd_boxplots(
             k: v for k, v in emd_dict.items() if k != baseline_mode
         }  # exclude baseline mode for self comparison
         emd_df = pd.DataFrame.from_dict(emd_dict)
-        fig, ax = plt.subplots(dpi=300, figsize=(7, 7))
+        fig, ax = plt.subplots(dpi=300, figsize=(6, 6))
         sns.boxplot(data=emd_df, ax=ax)  # type:ignore
         ax.set_ylabel("Earth mover's distance (EMD)")
         ax.set_title(DISTANCE_MEASURE_LABELS[distance_measure])
@@ -1036,7 +1039,7 @@ def plot_emd_barplots(
             k: v for k, v in emd_dict.items() if k != baseline_mode
         }  # exclude baseline mode for self comparison
         emd_df = pd.DataFrame.from_dict(emd_dict)
-        fig, ax = plt.subplots(dpi=300, figsize=(7, 7))
+        fig, ax = plt.subplots(dpi=300, figsize=(6, 6))
         sns.barplot(data=emd_df, ax=ax)  # type:ignore
         ax.set_ylabel("EMD")
         ax.set_title(DISTANCE_MEASURE_LABELS[distance_measure])
@@ -1083,7 +1086,7 @@ def plot_emd_violinplots(
             k: v for k, v in emd_dict.items() if k != baseline_mode
         }  # exclude baseline mode for self comparison
         emd_df = pd.DataFrame.from_dict(emd_dict)
-        fig, ax = plt.subplots(dpi=300, figsize=(7, 7))
+        fig, ax = plt.subplots(dpi=300, figsize=(6, 6))
         sns.violinplot(
             data=emd_df,
             orient="h",
@@ -1138,7 +1141,7 @@ def plot_emd_histograms(
         emd_df = pd.DataFrame.from_dict(emd_dict)
         ncol = len(emd_df.columns)
         fig, axs = plt.subplots(
-            1, ncol, dpi=300, sharey=True, sharex=True, figsize=(ncol * 5, 5)
+            1, ncol, dpi=300, sharey=True, sharex=True, figsize=(ncol * 6, 6)
         )
         for ct, col in enumerate(emd_df.columns):
             axs[ct].hist(emd_df[col], bins=50, density=True)
@@ -1191,7 +1194,7 @@ def plot_emd_kdeplots(
     for distance_measure in distance_measures:
         emd_dict = all_pairwise_emd[distance_measure][baseline_mode]
         emd_df = pd.DataFrame.from_dict(emd_dict)
-        fig, ax = plt.subplots(dpi=300, figsize=(7, 7))
+        fig, ax = plt.subplots(dpi=300, figsize=(6, 6))
         for col in emd_df.columns:
             sns.kdeplot(
                 x=emd_df[col],
@@ -1239,7 +1242,7 @@ def plot_ripley_k(
         Format to save the figures in
     """
     log.info("Plotting Ripley K")
-    fig, ax = plt.subplots(dpi=300, figsize=(7, 7))
+    fig, ax = plt.subplots(dpi=300, figsize=(6, 6))
     for mode, mode_values in mean_ripleyK.items():
         mode_values = mode_values - np.pi * r_values**2
         err_values = ci_ripleyK[mode] - np.pi * r_values**2
@@ -1304,7 +1307,7 @@ def plot_occupancy_illustration(
     """
     log.info("Plotting occupancy illustration")
 
-    fig, axs = plt.subplots(nrows=3, ncols=1, dpi=300, figsize=(7, 7))
+    fig, axs = plt.subplots(nrows=3, ncols=1, dpi=300, figsize=(6, 6))
     mode_dict = distance_dict[baseline_mode]
     all_cellids = list(mode_dict.keys())
     if seed_index is not None:
@@ -1755,7 +1758,7 @@ def plot_binned_occupancy_ratio(
     :
         Tuple containing figure and axis objects
     """
-    fig, ax = plt.subplots(dpi=300, figsize=(7, 7))
+    fig, ax = plt.subplots(dpi=300, figsize=(6, 6))
 
     for mode in packing_modes:
         log.info(f"Calculating binned occupancy ratio for: {mode}")
@@ -1854,6 +1857,8 @@ def plot_binned_occupancy_ratio(
     if ylim is not None:
         ax.set_ylim((0, ylim))
 
+    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+    ax.yaxis.set_major_locator(MaxNLocator(integer=True))
     xlabel = DISTANCE_MEASURE_LABELS[distance_measure]
     if normalization is not None:
         xlabel = f"{xlabel} / {NORMALIZATION_LABELS[normalization]}"
@@ -1937,6 +1942,7 @@ def plot_combined_occupancy_ratio(
 
         kde_mode_dict = combined_kde_dict[mode]
         mode_distances = kde_mode_dict["mode_distances"]
+        mode_distances = filter_invalid_distances(mode_distances)
 
         kde_distance = kde_mode_dict["kde_distance"]
         kde_available_space = kde_mode_dict["kde_available_space"]
@@ -2032,7 +2038,7 @@ def plot_occupancy_emd_kdeplot(
     save_format
         Format to save the figures in
     """
-    fig, ax = plt.subplots(dpi=300, figsize=(7, 7))
+    fig, ax = plt.subplots(dpi=300, figsize=(6, 6))
     cmap = plt.get_cmap("tab10")
     for ct, mode in enumerate(packing_modes):
         emd_values = list(emd_occupancy_dict[mode].values())
@@ -2088,7 +2094,7 @@ def plot_occupancy_emd_boxplot(
     Returns
     -------
     """
-    fig, ax = plt.subplots(dpi=300, figsize=(7, 7))
+    fig, ax = plt.subplots(dpi=300, figsize=(6, 6))
     emd_df = pd.DataFrame(emd_occupancy_dict)
     sns.boxplot(data=emd_df, ax=ax)
     xticks = ax.get_xticks()
@@ -2132,7 +2138,7 @@ def plot_occupancy_ks_test(
     save_format
         Format to save the figures in
     """
-    fig, ax = plt.subplots(dpi=300, figsize=(7, 7))
+    fig, ax = plt.subplots(dpi=300, figsize=(6, 6))
     ks_df = pd.DataFrame(ks_occupancy_dict)
     ks_df_test = ks_df < significance_level
     ax = sns.barplot(data=ks_df_test, ax=ax)
