@@ -35,8 +35,7 @@ CHANNEL_IDS = {
 # %% [markdown]
 # ## Set up folders
 base_folder = (
-    Path(__file__).parents[4]
-    / f"results/PILR_correlation_analysis/{STRUCTURE_NAME}/{EXPERIMENT}/"
+    Path(__file__).parents[4] / f"results/PILR_correlation_analysis/{STRUCTURE_NAME}/{EXPERIMENT}/"
 )
 
 fig_folder = base_folder / "figures"
@@ -75,27 +74,25 @@ if not recalculate and df_plot_path.exists():
 else:
     df_plot = pd.DataFrame(
         index=np.arange(df_clean.shape[0] * df_clean.shape[1]),
-        columns=["cellid1", "cellid2", "structure1", "structure2", "correlation"],
+        columns=["cell_id1", "cell_id2", "structure1", "structure2", "correlation"],
     )
     ct = 0
-    for struct1, struct2 in itertools.combinations_with_replacement(
-        CHANNEL_IDS.keys(), 2
-    ):
+    for struct1, struct2 in itertools.combinations_with_replacement(CHANNEL_IDS.keys(), 2):
         log.info(f"Processing {struct1} vs {struct2}")
         df_struct = df_clean.loc[[struct1], [struct2]]
-        cellids1 = df_struct.index
-        cellids2 = df_struct.columns
-        for cellid1, cellid2 in tqdm(
-            itertools.product(cellids1, cellids2),
-            total=len(cellids1) * len(cellids2),
+        cell_ids1 = df_struct.index
+        cell_ids2 = df_struct.columns
+        for cell_id1, cell_id2 in tqdm(
+            itertools.product(cell_ids1, cell_ids2),
+            total=len(cell_ids1) * len(cell_ids2),
             desc=f"Processing {struct1} vs {struct2}",
         ):
             row = {
-                "cellid1": cellid1,
-                "cellid2": cellid2,
+                "cell_id1": cell_id1,
+                "cell_id2": cell_id2,
                 "structure1": CHANNEL_IDS[struct1],
                 "structure2": CHANNEL_IDS[struct2],
-                "correlation": df_struct.loc[cellid1, cellid2],
+                "correlation": df_struct.loc[cell_id1, cell_id2],
             }
             df_plot.loc[ct] = pd.Series(row)
             ct += 1

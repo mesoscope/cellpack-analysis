@@ -3,7 +3,7 @@ import logging
 import shutil
 from pathlib import Path
 
-from cellpack_analysis.lib.get_cellid_list import get_cellid_list_for_structure
+from cellpack_analysis.lib.get_cell_id_list import get_cell_id_list_for_structure
 
 log = logging.getLogger(__name__)
 
@@ -37,13 +37,13 @@ log.info(f"mesh_folder: {mesh_folder}")
 
 # %% [markdown]
 # ## Copy meshes to packing output folder
-cellid_list = get_cellid_list_for_structure(structure_id=structure_id, dsphere=True)
+cell_id_list = get_cell_id_list_for_structure(structure_id=structure_id, dsphere=True)
 num_cells = 3
-cellids = cellid_list[:num_cells]
-print(cellids)
+cell_ids = cell_id_list[:num_cells]
+print(cell_ids)
 
 # %%
-cellids = ["mean"]
+cell_ids = ["mean"]
 mesh_folder = base_datadir / "average_shape_meshes"
 packing_output_folder = (
     base_datadir
@@ -57,21 +57,19 @@ packing_output_folder = (
 # %%
 # prefixes = ["mem", "nuc", "struct"]
 prefixes = ["mem", "nuc"]
-for cellid in cellids:
+for cell_id in cell_ids:
     for prefix in prefixes:
-        mesh_file = mesh_folder / f"{prefix}_mesh_{cellid}.obj"
-        new_mesh_file = packing_output_folder / f"{prefix}_mesh_{cellid}.obj"
+        mesh_file = mesh_folder / f"{prefix}_mesh_{cell_id}.obj"
+        new_mesh_file = packing_output_folder / f"{prefix}_mesh_{cell_id}.obj"
         shutil.copy(mesh_file, new_mesh_file)
 log.info(f"{num_cells} meshes copied to packing output folder")
 
 # %% [markdown]
 # ## Invert mesh faces for mem
 invert_prefix = "mem"
-for cellid in cellids:
-    mesh_file_path = packing_output_folder / f"{invert_prefix}_mesh_{cellid}.obj"
-    orig_mesh_file_path = (
-        packing_output_folder / f"{invert_prefix}_mesh_{cellid}_orig.obj"
-    )
+for cell_id in cell_ids:
+    mesh_file_path = packing_output_folder / f"{invert_prefix}_mesh_{cell_id}.obj"
+    orig_mesh_file_path = packing_output_folder / f"{invert_prefix}_mesh_{cell_id}_orig.obj"
     # save copy with orig prefix
     shutil.copy(
         mesh_file_path,

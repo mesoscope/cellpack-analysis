@@ -14,9 +14,7 @@ plt.rcParams.update({"font.size": 14})
 # %% [markdown]
 # ## Set up folders
 project_root = get_project_root()
-config_folder = (
-    project_root / "cellpack_analysis/analysis/pilr_correlation_analysis/configs"
-)
+config_folder = project_root / "cellpack_analysis/analysis/pilr_correlation_analysis/configs"
 config_file = "golgi_endosome_exclusion.json"
 base_structure = "Endosome"
 config = read_json(config_folder / config_file)
@@ -65,9 +63,7 @@ df_plot = df.loc[
     & (df["correlation"] < 0.99),
     ["structure_2", "rule_2", "correlation"],
 ]
-log.info(
-    f"Plotting {len(df_plot)} correlations for {base_structure} vs other structures."
-)
+log.info(f"Plotting {len(df_plot)} correlations for {base_structure} vs other structures.")
 # %% [markdown]
 # ## Get raw correlation values
 log.info(

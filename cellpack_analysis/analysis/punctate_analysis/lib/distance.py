@@ -15,9 +15,7 @@ from trimesh import proximity
 from cellpack_analysis.analysis.punctate_analysis.lib.stats_functions import ripley_k
 from cellpack_analysis.lib.default_values import PIX_SIZE
 from cellpack_analysis.lib.file_io import get_project_root
-from cellpack_analysis.lib.get_structure_stats_dataframe import (
-    get_structure_stats_dataframe,
-)
+from cellpack_analysis.lib.get_structure_stats_dataframe import get_structure_stats_dataframe
 from cellpack_analysis.lib.label_tables import (
     DISTANCE_MEASURE_LABELS,
     GRID_DISTANCE_LABELS,
@@ -117,13 +115,9 @@ def calc_scaled_distance_to_nucleus_surface(
         mem_surface_positions - nuc_surface_positions, axis=1
     )
     with np.errstate(divide="ignore", invalid="ignore"):
-        scaled_nuc_distances = np.divide(
-            nuc_surface_distances, distance_between_surfaces
-        )
+        scaled_nuc_distances = np.divide(nuc_surface_distances, distance_between_surfaces)
     scaled_nuc_distances[failed_inds] = np.nan
-    scaled_nuc_distances[(scaled_nuc_distances < 0) | (scaled_nuc_distances > 1)] = (
-        np.nan
-    )
+    scaled_nuc_distances[(scaled_nuc_distances < 0) | (scaled_nuc_distances > 1)] = np.nan
 
     return nuc_surface_distances, scaled_nuc_distances, distance_between_surfaces
 
@@ -157,9 +151,7 @@ def filter_invalids_from_distance_distribution_dict(
                 )
                 num_valid = len(mode_dict[seed])
                 if num_valid == 0:
-                    log.warning(
-                        f"All distances are invalid for {distance_measure}, {mode}, {seed}"
-                    )
+                    log.warning(f"All distances are invalid for {distance_measure}, {mode}, {seed}")
                     del mode_dict[seed]
                 else:
                     log.debug(
@@ -169,9 +161,7 @@ def filter_invalids_from_distance_distribution_dict(
     return distance_distribution_dict
 
 
-def filter_invalid_distances(
-    distances: np.ndarray, filter_negatives: bool = True
-) -> np.ndarray:
+def filter_invalid_distances(distances: np.ndarray, filter_negatives: bool = True) -> np.ndarray:
     """
     Remove nan, inf and negative distances.
 
@@ -271,7 +261,7 @@ def get_distance_dictionary(
 
             # Distance from the nucleus surface
             if shape_key not in mode_mesh_dict:
-                raise ValueError(f"Mesh information not found for cellid: {shape_key}")
+                raise ValueError(f"Mesh information not found for cell_id: {shape_key}")
 
             nuc_mesh = mode_mesh_dict[shape_key]["nuc_mesh"]
             mem_mesh = mode_mesh_dict[shape_key]["mem_mesh"]
@@ -285,9 +275,7 @@ def get_distance_dictionary(
                 )
             )
             good_inds = (nuc_surface_distances > 0) & (mem_distances > 0)
-            log.debug(
-                f"Fraction bad inds: {1 - np.sum(good_inds) / len(good_inds):.2f}"
-            )
+            log.debug(f"Fraction bad inds: {1 - np.sum(good_inds) / len(good_inds):.2f}")
             all_nuc_distances[mode][seed_to_use] = filter_invalid_distances(
                 nuc_surface_distances[good_inds]
             )
@@ -299,18 +287,12 @@ def get_distance_dictionary(
             )
 
             # Nearest neighbor distance
-            nearest_distances = np.min(
-                all_distances + np.eye(len(positions)) * 1e6, axis=1
-            )
-            all_nearest_distances[mode][seed_to_use] = filter_invalid_distances(
-                nearest_distances
-            )
+            nearest_distances = np.min(all_distances + np.eye(len(positions)) * 1e6, axis=1)
+            all_nearest_distances[mode][seed_to_use] = filter_invalid_distances(nearest_distances)
 
             # Pairwise distance
             pairwise_distances = squareform(all_distances)
-            all_pairwise_distances[mode][seed_to_use] = filter_invalid_distances(
-                pairwise_distances
-            )
+            all_pairwise_distances[mode][seed_to_use] = filter_invalid_distances(pairwise_distances)
 
             # Z distance
             z_min = mode_mesh_dict[shape_key]["cell_bounds"][:, 2].min()
@@ -328,7 +310,8 @@ def get_distance_dictionary(
                 all_z_distances,
                 all_membrane_distances,
             ],
-            ["pairwise", "nucleus", "scaled_nucleus", "nearest", "z", "membrane"], strict=False,
+            ["pairwise", "nucleus", "scaled_nucleus", "nearest", "z", "membrane"],
+            strict=False,
         ):
             file_path = results_dir / f"{distance_measure}_distances.dat"
             with open(file_path, "wb") as f:
@@ -378,7 +361,7 @@ def get_ks_observed_combined_df(
     Returns
     -------
     :
-        DataFrame containing the KS observed results, with columns for cellid, distance_measure,
+        DataFrame containing the KS observed results, with columns for cell_id, distance_measure,
         packing_mode, and ks_observed
     """
     file_name = "ks_observed_combined_df.parquet"
@@ -394,9 +377,7 @@ def get_ks_observed_combined_df(
         for mode in packing_modes:
             if mode == baseline_mode:
                 continue
-            log.info(
-                f"KS test between {baseline_mode} and {mode}, distance: {distance_measure}"
-            )
+            log.info(f"KS test between {baseline_mode} and {mode}, distance: {distance_measure}")
             mode_dict = distance_dict[mode]
             ks_observed[mode] = {}
             for seed, distances in tqdm(mode_dict.items(), total=len(mode_dict)):
@@ -409,9 +390,7 @@ def get_ks_observed_combined_df(
         ks_observed_df = pd.DataFrame(ks_observed)
         ks_observed_df = ks_observed_df >= significance_level
         ks_observed_df["distance_measure"] = distance_measure
-        ks_observed_df = ks_observed_df.reset_index().rename(
-            columns={"index": "cellid"}
-        )
+        ks_observed_df = ks_observed_df.reset_index().rename(columns={"index": "cell_id"})
         df_list.append(ks_observed_df)
     ks_observed_combined_df = pd.concat(df_list, ignore_index=True)
 
@@ -430,16 +409,16 @@ def melt_df_for_plotting(df_plot: pd.DataFrame) -> pd.DataFrame:
     Parameters
     ----------
     df_plot
-        DataFrame containing the KS observed results with columns for cellid, distance_measure,
+        DataFrame containing the KS observed results with columns for cell_id, distance_measure,
         and packing modes
 
     Returns
     -------
     :
-        Melted DataFrame with columns for cellid, distance_measure, packing_mode, and ks_observed
+        Melted DataFrame with columns for cell_id, distance_measure, packing_mode, and ks_observed
     """
     df_melt = df_plot.melt(
-        id_vars=["cellid", "distance_measure"],
+        id_vars=["cell_id", "distance_measure"],
         var_name="packing_mode",
         value_name="ks_observed",
     )
@@ -448,9 +427,7 @@ def melt_df_for_plotting(df_plot: pd.DataFrame) -> pd.DataFrame:
         df_melt["packing_mode"].map(MODE_LABELS).fillna(df_melt["packing_mode"])
     )
     df_melt["distance_measure"] = (
-        df_melt["distance_measure"]
-        .map(DISTANCE_MEASURE_LABELS)
-        .fillna(df_melt["distance_measure"])
+        df_melt["distance_measure"].map(DISTANCE_MEASURE_LABELS).fillna(df_melt["distance_measure"])
     )
     return df_melt
 
@@ -551,9 +528,7 @@ def get_distance_distribution_emd_df(
                 index_tuple = (distance_measure, mode, seed)
                 if index_tuple not in index_tuples:
                     index_tuples.append(index_tuple)
-    index = pd.MultiIndex.from_tuples(
-        index_tuples, names=["distance_measure", "mode", "cellid"]
-    )
+    index = pd.MultiIndex.from_tuples(index_tuples, names=["distance_measure", "mode", "cell_id"])
     df_emd = pd.DataFrame(index=index, columns=index, dtype=float)
     df_emd.sort_index(axis=0, inplace=True)
     df_emd.sort_index(axis=1, inplace=True)
@@ -652,9 +627,7 @@ def get_distance_distribution_emd_dictionary(
     distance_distribution_emd = {}
     for distance_measure in distance_measures:
         distribution_dict = all_distance_dict[distance_measure]
-        log.info(
-            f"Calculating distance distribution EMD for distance measure: {distance_measure}"
-        )
+        log.info(f"Calculating distance distribution EMD for distance measure: {distance_measure}")
         measure_emd = {}
         for mode_1 in packing_modes:
             if baseline_mode is not None and mode_1 != baseline_mode:
@@ -787,9 +760,7 @@ def calculate_ripley_k(
         for seed, positions in tqdm(position_dict.items()):
             radius = mesh_information_dict[seed]["cell_diameter"] / 2
             volume = 4 / 3 * np.pi * radius**3
-            mean_k_values, _ = ripley_k(
-                positions, volume, r_values, norm_factor=(radius * 2)
-            )
+            mean_k_values, _ = ripley_k(positions, volume, r_values, norm_factor=(radius * 2))
             all_ripleyK[mode][seed] = mean_k_values
         mean_ripleyK[mode] = np.mean(
             np.array([np.array(v) for v in all_ripleyK[mode].values()]), axis=0
@@ -806,7 +777,7 @@ def calculate_ripley_k(
 def get_normalization_factor(
     normalization: str | None,
     mesh_information_dict: dict[str, dict[str, Any]],
-    cellid: str,
+    cell_id: str,
     distances: np.ndarray | None = None,
     distance_measure: str = "nucleus",
     pix_size: float = 0.108,
@@ -821,8 +792,8 @@ def get_normalization_factor(
         "max_distance", or None
     mesh_information_dict
         Dictionary containing mesh information for each seed
-    cellid
-        Seed/cellid for which to get the normalization factor
+    cell_id
+        Seed/cell_id for which to get the normalization factor
     distances
         Array of distances for max_distance normalization
     distance_measure
@@ -836,14 +807,14 @@ def get_normalization_factor(
         Normalization factor for the distances
     """
     if normalization == "intracellular_radius":
-        normalization_factor = mesh_information_dict[cellid]["intracellular_radius"]
+        normalization_factor = mesh_information_dict[cell_id]["intracellular_radius"]
     elif normalization == "cell_diameter":
-        normalization_factor = mesh_information_dict[cellid]["cell_diameter"]
+        normalization_factor = mesh_information_dict[cell_id]["cell_diameter"]
     elif normalization == "max_distance" and distances is not None:
         # Get the maximum distance for the given distances
         if len(distances) == 0:
             raise ValueError(
-                f"No valid distances found for seed {cellid} and normalization {normalization}"
+                f"No valid distances found for seed {cell_id} and normalization {normalization}"
             )
         normalization_factor = np.nanmax(distances)
     elif "scaled" in distance_measure:
@@ -853,7 +824,7 @@ def get_normalization_factor(
 
     if normalization_factor == 0 or np.isnan(normalization_factor):
         raise ValueError(
-            f"Invalid normalization factor for seed {cellid} and normalization {normalization}"
+            f"Invalid normalization factor for seed {cell_id} and normalization {normalization}"
         )
     return normalization_factor
 
@@ -945,10 +916,8 @@ def get_distance_distribution_kde(
         mode_mesh_dict = mesh_information_dict.get(channel_map.get(mode, mode), {})
         mode_distances_dict = distance_dict[mode]
 
-        for seed, distances in tqdm(
-            mode_distances_dict.items(), total=len(mode_distances_dict)
-        ):
-            # Get the distances for a seed/cellid
+        for seed, distances in tqdm(mode_distances_dict.items(), total=len(mode_distances_dict)):
+            # Get the distances for a seed/cell_id
             # These are already normalized
             distances = filter_invalid_distances(distances)
             if len(distances) == 0:
@@ -966,15 +935,13 @@ def get_distance_distribution_kde(
                 normalization_factor = get_normalization_factor(
                     normalization=normalization,
                     mesh_information_dict=mode_mesh_dict,
-                    cellid=seed,
+                    cell_id=seed,
                     distance_measure=distance_measure,
                     distances=available_distances,
                 )
                 available_distances /= normalization_factor
 
-                kde_available_space = gaussian_kde(
-                    available_distances, bw_method=bandwidth
-                )
+                kde_available_space = gaussian_kde(available_distances, bw_method=bandwidth)
                 kde_dict[seed]["available_distance"] = {
                     "distances": available_distances,
                     "kde": kde_available_space,

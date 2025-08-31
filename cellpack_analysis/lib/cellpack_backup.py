@@ -1,5 +1,5 @@
 """
-Created on Mon May  6 22:58:44 2013
+Created on Mon May  6 22:58:44 2013.
 
 @author: ludo
 """
@@ -31,7 +31,7 @@ from tqdm import tqdm
 def get_xyz_dict_from_all_pos_dict(all_pos_dict):
     """
     Returns array of x, y, and z positions for each seed for runs
-    in all_pos_dict
+    in all_pos_dict.
     """
     all_objs = {}
     for seed, object_dict in all_pos_dict.items():
@@ -90,13 +90,13 @@ def getDistanceFrom(self, target, parents=None, **options):
     """
     Target : name or host object target or target position
     parent : name of host parent object for the list of object to measure distance from
-    objects : list of object or list of points
+    objects : list of object or list of points.
     """
     # get distance from object to the target.
     # all object are in env.packed_objects
     # get options
 
-    if isinstance(target, (list, tuple)):
+    if isinstance(target, list | tuple):
         targetPos = target
     elif isinstance(target, str):
         o = self.helper.getObject(target)
@@ -151,11 +151,15 @@ def getClosestDistance(self, parents=None, **options):
 
 def displayDistance(
     self,
-    ramp_color1=[1, 0, 0],
-    ramp_color2=[0, 0, 1],
+    ramp_color1=None,
+    ramp_color2=None,
     ramp_color3=None,
     cutoff=60.0,
 ):
+    if ramp_color2 is None:
+        ramp_color2 = [0, 0, 1]
+    if ramp_color1 is None:
+        ramp_color1 = [1, 0, 0]
     distances = np.array(self.env.grid.distToClosestSurf[:])
     mask = distances > cutoff
     ind = np.nonzero(mask)[0]
@@ -175,11 +179,15 @@ def displayDistance(
 
 def displayDistanceCube(
     self,
-    ramp_color1=[1, 0, 0],
-    ramp_color2=[0, 0, 1],
+    ramp_color1=None,
+    ramp_color2=None,
     ramp_color3=None,
     cutoff=60.0,
 ):
+    if ramp_color2 is None:
+        ramp_color2 = [0, 0, 1]
+    if ramp_color1 is None:
+        ramp_color1 = [1, 0, 0]
     distances = np.array(self.env.grid.distToClosestSurf[:])
     mask = distances > cutoff
     ind = np.nonzero(mask)[0]
@@ -204,12 +212,16 @@ def displayDistanceCube(
 
 def displayDistancePlane(
     self,
-    ramp_color1=[1, 0, 0],
-    ramp_color2=[0, 0, 1],
+    ramp_color1=None,
+    ramp_color2=None,
     ramp_color3=None,
     cutoff=60.0,
 ):
     # which axis ?
+    if ramp_color2 is None:
+        ramp_color2 = [0, 0, 1]
+    if ramp_color1 is None:
+        ramp_color1 = [1, 0, 0]
     distances = np.array(self.env.grid.distToClosestSurf[:])
 
     ramp = col.getRamp([ramp_color1, ramp_color2], size=255)  # color
@@ -235,9 +247,7 @@ def displayDistancePlane(
         parent=p,
     )
     self.helper.rotateObj(p, [0, 0, -math.pi / 2.0])
-    filename = (
-        autopack.cache_results + os.sep + self.env.name + "distances_plane_texture.png"
-    )
+    filename = autopack.cache_results + os.sep + self.env.name + "distances_plane_texture.png"
     c = colors.reshape(
         (
             self.env.grid.nbGridPoints[0],
@@ -247,9 +257,7 @@ def displayDistancePlane(
         )
     )
 
-    im = Image.fromstring(
-        "RGB", (c.shape[0], c.shape[1]), np.uint8(c * 255.0).tostring()
-    )
+    im = Image.fromstring("RGB", (c.shape[0], c.shape[1]), np.uint8(c * 255.0).tostring())
     im.save(str(filename))
     mat = self.helper.createTexturedMaterial(self.env.name + "planeMat", str(filename))
     # assign the material to the plane
@@ -336,9 +344,7 @@ def rectangle_circle_area(self, bbox, center, radius):
     # [[0.,0,0],[1000,1000,1]]
     # top,bottom, right, left
     #        rect=Rectangle(bbox[0][0],bbox[1][0],bbox[0][1],bbox[1][1])#top,bottom, right, left
-    rect = Rectangle(
-        bbox[1][1], bbox[0][1], bbox[1][0], bbox[0][0]
-    )  # top,bottom, right, left
+    rect = Rectangle(bbox[1][1], bbox[0][1], bbox[1][0], bbox[0][0])  # top,bottom, right, left
     m = [center[0], center[1]]
     r = radius
     area = math.pi * r**2
@@ -388,9 +394,7 @@ def rdf_3d(self, ingr):
     # b=int(distances.max()/self.largest)
     b = 100
     # bin_edges = np.arange(0, min(box_size) / 2, bin_width)
-    new_rdf, edges = np.histogramdd(
-        distances, bins=b, range=[(distances.min(), distances.max())]
-    )
+    new_rdf, edges = np.histogramdd(distances, bins=b, range=[(distances.min(), distances.max())])
     radii = edges[0]
     # from http://isaacs.sourceforge.net/phys/rdfs.html
     dnr = new_rdf
@@ -512,11 +516,7 @@ def rdf_2d(self, ingr):
     # from http://isaacs.sourceforge.net/phys/rdfs.html
     dnr = new_rdf[:]
     N = len(distances)
-    V = (
-        self.env.grid.nbGridPoints[0]
-        * self.env.grid.nbGridPoints[1]
-        * self.env.grid.gridSpacing**2
-    )
+    V = self.env.grid.nbGridPoints[0] * self.env.grid.nbGridPoints[1] * self.env.grid.gridSpacing**2
     Vshell = np.array(self.getAreaShell(self.bbox, radii, self.center))
     #        print Vshell
     #        Vshell1 = np.pi*density*(np.power(radii[1:],2)-np.power(radii[:-1], 2))
@@ -552,7 +552,7 @@ def PairCorrelationFunction_3D(self, data, S, rMax, dr):
     function finds reference particles such that a sphere of radius rMax drawn
     around the particle will fit entirely within the cube, eliminating the need
     to compensate for edge effects. If no such particles exist, an error is
-    returned. Try a smaller rMax...or write some code to handle edge effects! ;)
+    returned. Try a smaller rMax...or write some code to handle edge effects! ;).
 
     Arguments:
     ---------
@@ -588,9 +588,8 @@ def PairCorrelationFunction_3D(self, data, S, rMax, dr):
 
     if num_interior_particles < 1:
         raise RuntimeError(
-            "No particles found for which a sphere of radius rMax\
-will lie entirely within a cube of side length S. Decrease rMax\
-or increase the size of the cube."
+            "No particles found for which a sphere of radius rMaxwill lie entirely within a cube of"
+            " side length S. Decrease rMaxor increase the size of the cube."
         )
 
     edges = np.arange(0.0, rMax + 1.1 * dr, dr)
@@ -614,9 +613,7 @@ or increase the size of the cube."
         radii[i] = (edges[i] + edges[i + 1]) / 2.0
         rOuter = edges[i + 1]
         rInner = edges[i]
-        g_average[i] = np.average(g[:, i]) / (
-            4.0 / 3.0 * np.pi * (rOuter**3 - rInner**3)
-        )
+        g_average[i] = np.average(g[:, i]) / (4.0 / 3.0 * np.pi * (rOuter**3 - rInner**3))
 
     return (
         g_average,
@@ -636,7 +633,7 @@ def PairCorrelationFunction_2D(self, x, y, S, rMax, dr):
     reference particles such that a circle of radius rMax drawn around the
     particle will fit entirely within the square, eliminating the need to
     compensate for edge effects.  If no such particles exist, an error is
-    returned. Try a smaller rMax...or write some code to handle edge effects! ;)
+    returned. Try a smaller rMax...or write some code to handle edge effects! ;).
 
     Arguments:
     ---------
@@ -666,9 +663,9 @@ def PairCorrelationFunction_2D(self, x, y, S, rMax, dr):
 
     if num_interior_particles < 1:
         raise RuntimeError(
-            "No particles found for which a circle of radius rMax\
-                will lie entirely within a square of side length S.  Decrease rMax\
-                or increase the size of the square."
+            "No particles found for which a circle of radius rMax                will lie entirely"
+            " within a square of side length S.  Decrease rMax                or increase the size"
+            " of the square."
         )
 
     edges = np.arange(0.0, rMax + 1.1 * dr, dr)
@@ -699,15 +696,11 @@ def PairCorrelationFunction_2D(self, x, y, S, rMax, dr):
 
 
 def normalize_similarity_df(self, similarity_df):
-    """
-    Normalizes the similarity dataframe
-    """
-    dims_to_normalize = self.get_list_of_dims() + ["pairwise_distance"]
+    """Normalizes the similarity dataframe."""
+    dims_to_normalize = [*self.get_list_of_dims(), "pairwise_distance"]
     for dim in dims_to_normalize:
         values = similarity_df.loc[:, dim].values
-        normalized_values = (values - np.min(values)) / (
-            np.max(values) - np.min(values)
-        )
+        normalized_values = (values - np.min(values)) / (np.max(values) - np.min(values))
         normalized_values[np.isnan(normalized_values)] = 0
         similarity_df.loc[:, dim] = normalized_values
     return similarity_df
@@ -727,17 +720,13 @@ def calc_avg_similarity_values_for_dim(self, similarity_vals_for_dim):
                 packing_inds[p1_id], packing_inds[p1_id + 1]
             )  # indices corresponding to packing p1_id
             p2_inds = np.arange(packing_inds[p2_id], packing_inds[p2_id + 1])
-            avg_similarity_values[p1_id, p2_id] = np.mean(
-                similarity_vals_for_dim[p1_inds, p2_inds]
-            )
+            avg_similarity_values[p1_id, p2_id] = np.mean(similarity_vals_for_dim[p1_inds, p2_inds])
             avg_similarity_values[p2_id, p1_id] = avg_similarity_values[p1_id, p2_id]
     return avg_similarity_values
 
 
 def calc_similarity_df(self, all_objs, ingredient_key, save_path=None):
-    """
-    Calculates a dataframe of similarity values between packings
-    """
+    """Calculates a dataframe of similarity values between packings."""
     key_list = list(all_objs[ingredient_key].keys())
     similarity_df = pd.DataFrame(
         index=key_list,
@@ -745,7 +734,7 @@ def calc_similarity_df(self, all_objs, ingredient_key, save_path=None):
         dtype=float,
     )
     similarity_df["packing_id"] = 0
-    dims_to_calc = self.get_list_of_dims() + ["pairwise_distance"]
+    dims_to_calc = [*self.get_list_of_dims(), "pairwise_distance"]
     for seed1, pos_dict1 in tqdm(all_objs[ingredient_key].items()):
         similarity_df.loc[seed1, "packing_id"] = seed1.split("_")[-1]
         for seed2, pos_dict2 in all_objs[ingredient_key].items():
@@ -771,9 +760,7 @@ def calc_similarity_df(self, all_objs, ingredient_key, save_path=None):
                     # if there is only one unique value, compare the value
                     if len(np.unique(arr1)) == 1 and len(np.unique(arr2)) == 1:
                         # both packings have only one unique value, compare the value
-                        similarity_score = (
-                            1 if np.unique(arr1) == np.unique(arr2) else 0
-                        )
+                        similarity_score = 1 if np.unique(arr1) == np.unique(arr2) else 0
                     else:
                         # one of the packings has more than one unique value, cannot compare
                         similarity_score = 0
@@ -812,9 +799,7 @@ def calc_similarity_df(self, all_objs, ingredient_key, save_path=None):
 
 
 def plot_and_save_similarity_heatmaps(self, similarity_df, ingredient_key):
-    """
-    Plots heatmaps with hierarchical clustering using similarity scores
-    """
+    """Plots heatmaps with hierarchical clustering using similarity scores."""
     # accounting for changes when reading from csv
     if similarity_df["packing_id"].ndim > 1:
         packing_ids = similarity_df["packing_id"].iloc[:, 0]
@@ -826,11 +811,9 @@ def plot_and_save_similarity_heatmaps(self, similarity_df, ingredient_key):
     figdir = self.figures_path / "clustering"
     figdir.mkdir(parents=True, exist_ok=True)
 
-    dims_to_calc = self.get_list_of_dims() + ["pairwise_distance"]
+    dims_to_calc = [*self.get_list_of_dims(), "pairwise_distance"]
     for dim in dims_to_calc:
-        avg_similarity_values = self.calc_avg_similarity_values_for_dim(
-            similarity_df[dim].values
-        )
+        avg_similarity_values = self.calc_avg_similarity_values_for_dim(similarity_df[dim].values)
         np.savetxt(
             figdir / f"avg_similarity_{ingredient_key}_{dim}.txt",
             avg_similarity_values,
@@ -871,9 +854,7 @@ def run_similarity_analysis(
     save_heatmaps=False,
     recalculate=False,
 ):
-    """
-    TODO: add docs
-    """
+    """TODO: add docs."""
     print("Running similarity analysis...")
 
     if ingredient_key not in all_objs:
@@ -970,18 +951,18 @@ def get_parametrized_representation(
     self,
     all_pos_list,
     ingredient_key=None,
-    mesh_paths={},
+    mesh_paths=None,
     num_angular_points=64,
     save_plots=False,
     max_plots_to_save=1,
     get_correlations=False,
 ):
+    if mesh_paths is None:
+        mesh_paths = {}
     print("creating parametrized representations...")
 
     if "inner" not in mesh_paths or "outer" not in mesh_paths:
-        raise ValueError(
-            "Missing mesh paths required to generate parametrized representations"
-        )
+        raise ValueError("Missing mesh paths required to generate parametrized representations")
 
     inner_mesh = trimesh.load_mesh(mesh_paths.get("inner"))
     outer_mesh = trimesh.load_mesh(mesh_paths.get("outer"))
@@ -1018,9 +999,7 @@ def get_parametrized_representation(
                 scaled_rad,
                 distance_between_surfaces,
                 inner_surface_distances,
-            ) = MeshStore.calc_scaled_distances_for_positions(
-                pos_list, inner_mesh, outer_mesh
-            )
+            ) = MeshStore.calc_scaled_distances_for_positions(pos_list, inner_mesh, outer_mesh)
 
             trial_spilr = {}
             for scaled_val in ["raw", "scaled"]:
@@ -1030,9 +1009,7 @@ def get_parametrized_representation(
                     else rad_vals
                 )
 
-                trial_spilr[scaled_val] = np.zeros(
-                    (len(rad_array), len(theta_vals), len(phi_vals))
-                )
+                trial_spilr[scaled_val] = np.zeros((len(rad_array), len(theta_vals), len(phi_vals)))
 
                 max_rad = distance_between_surfaces.max() if scaled_val == "raw" else 1
 
@@ -1053,12 +1030,9 @@ def get_parametrized_representation(
                 if save_plots and (num_saved_plots <= max_plots_to_save):
                     label_str = f"Distance from Nuclear Surface, {packing_id}_{sc}, {scaled_val}"
                     file_path = (
-                        save_dir
-                        / f"heatmap_{scaled_val}_{packing_id}_{sc}_{ingredient_key}"
+                        save_dir / f"heatmap_{scaled_val}_{packing_id}_{sc}_{ingredient_key}"
                     )
-                    self.save_spilr_heatmap(
-                        all_spilr[scaled_val][pc, sc], file_path, label_str
-                    )
+                    self.save_spilr_heatmap(all_spilr[scaled_val][pc, sc], file_path, label_str)
                     num_saved_plots += 1
 
     if get_correlations:
@@ -1072,12 +1046,8 @@ def get_parametrized_representation(
         for scaled_val in ["raw", "scaled"]:
             average_spilr = np.nanmean(all_spilr[scaled_val], axis=1)
             for pc, packing_id in enumerate(self.packing_id_dict.values()):
-                label_str = (
-                    f"Distance from Nuclear Surface, avg {packing_id}, {scaled_val}"
-                )
-                file_path = (
-                    save_dir / f"avg_heatmap_{scaled_val}_{packing_id}_{ingredient_key}"
-                )
+                label_str = f"Distance from Nuclear Surface, avg {packing_id}, {scaled_val}"
+                file_path = save_dir / f"avg_heatmap_{scaled_val}_{packing_id}_{ingredient_key}"
                 self.save_spilr_heatmap(average_spilr[pc], file_path, label_str)
 
     return all_spilr
@@ -1116,7 +1086,9 @@ def merge(self, d1, d2, merge=lambda x, y: y):
     return result
 
 
-def plotNResult2D(self, n, bbox=[[0.0, 0, 0.0], [1000.0, 1000.0, 1000.0]]):
+def plotNResult2D(self, n, bbox=None):
+    if bbox is None:
+        bbox = [[0.0, 0, 0.0], [1000.0, 1000.0, 1000.0]]
     for i in range(n):
         f = "results_seed_" + str(i) + ".json"
         self.plot_one_result_2d(filename=f, bbox=bbox)
@@ -1126,8 +1098,10 @@ def plot_one_result_2d(
     self,
     data=None,
     filename=None,
-    bbox=[[0.0, 0, 0.0], [1000.0, 1000.0, 1000.0]],
+    bbox=None,
 ):
+    if bbox is None:
+        bbox = [[0.0, 0, 0.0], [1000.0, 1000.0, 1000.0]]
     if data is None and filename is None:
         return
     elif data is None and filename is not None:
@@ -1148,7 +1122,7 @@ def plot_one_result_2d(
                 ingrrot[ingrname].append(data[recipe][ingrname]["results"][k][1])
                 ingrpos[ingrname].append(data[recipe][ingrname]["results"][k][0])
     for ingr in ingrpos:
-        for i, p in enumerate(ingrpos[ingr]):
+        for _i, p in enumerate(ingrpos[ingr]):
             ax.add_patch(
                 Circle(
                     (p[0], p[1]),

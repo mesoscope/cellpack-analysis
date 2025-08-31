@@ -28,9 +28,7 @@ def get_structure_stats_dataframe(
 
 
 def get_structure_radius(structure_id: str, datadir: Path | None = None) -> float:
-    df_struct_stats = get_structure_stats_dataframe(
-        structure_id=structure_id, datadir=datadir
-    )
+    df_struct_stats = get_structure_stats_dataframe(structure_id=structure_id, datadir=datadir)
     mean_radius, std_radius = df_struct_stats["radius"].agg(["mean", "std"])
 
     return mean_radius, std_radius  # type: ignore

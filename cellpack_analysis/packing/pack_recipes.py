@@ -11,7 +11,7 @@ import numpy as np
 from dotenv import load_dotenv
 
 from cellpack_analysis.lib.file_io import read_json
-from cellpack_analysis.lib.get_cellid_list import get_cellid_list_for_structure
+from cellpack_analysis.lib.get_cell_id_list import get_cell_id_list_for_structure
 from cellpack_analysis.lib.io import format_time
 
 log = logging.getLogger(__name__)
@@ -41,9 +41,7 @@ def check_recipe_completed(recipe_path, config_data, workflow_config):
     if isinstance(seed_vals, int):
         seed_vals = [seed_vals]
 
-    base_folder = (
-        Path(config_data["out"]) / f"{workflow_config.structure_name}/spheresSST"
-    )
+    base_folder = Path(config_data["out"]) / f"{workflow_config.structure_name}/spheresSST"
 
     if workflow_config.result_type == "image":
         folder_to_check = base_folder / "figures"
@@ -61,10 +59,7 @@ def check_recipe_completed(recipe_path, config_data, workflow_config):
         # check whether all files exist explicitly
         result_file_list = [
             folder_to_check
-            / (
-                f"{prefix}_{recipe_data['name']}_{config_data['name']}_"
-                f"{recipe_data['version']}_seed_{seed_val}.{suffix}"
-            )
+            / f"{prefix}_{recipe_data['name']}_{config_data['name']}_{recipe_data['version']}_seed_{seed_val}.{suffix}"
             for seed_val in seed_vals
         ]
     else:
@@ -107,17 +102,15 @@ def log_update(count, skipped_count, failed_count, start, num_files, rule_start)
         time_left = per_count * remaining
 
     log.info(
-        (
-            f"Total time: {format_time(total_time)}, Rule time: {format_time(rule_time)}, "
-            f"Time per run: {format_time(per_count)}, "
-            f"Estimated time left for rule: {format_time(time_left)}"
-        ),
+        f"Total time: {format_time(total_time)}, Rule time: {format_time(rule_time)}, "
+        f"Time per run: {format_time(per_count)}, "
+        f"Estimated time left for rule: {format_time(time_left)}",
     )
 
 
-def get_cellids_to_pack(workflow_config):
+def get_cell_ids_to_pack(workflow_config):
     """
-    Get list of cell IDs to pack for a structure
+    Get list of cell IDs to pack for a structure.
 
     Parameters
     ----------
@@ -127,10 +120,10 @@ def get_cellids_to_pack(workflow_config):
     if workflow_config.use_mean_cell:
         return ["mean"]
     else:
-        # get list of all cellids
-        all_cellids = get_cellid_list_for_structure(
+        # get list of all cell_ids
+        all_cell_ids = get_cell_id_list_for_structure(
             structure_id=workflow_config.structure_id,
-            df_cellID=None,
+            df_cell_id=None,
             dsphere=workflow_config.use_cells_in_8d_sphere,
             load_local=True,
         )
@@ -138,15 +131,15 @@ def get_cellids_to_pack(workflow_config):
         # get packing information from config
         packing_info = workflow_config.data.get("packings_to_run", {})
 
-        # check if cellids to run are specified
-        cellids = packing_info.get("cellids", all_cellids)
+        # check if cell_ids to run are specified
+        cell_ids = packing_info.get("cell_ids", all_cell_ids)
 
         # check if number of packings is specified
         number_of_packings = packing_info.get("number_of_packings")
         if number_of_packings:
-            cellids = cellids[:number_of_packings]
+            cell_ids = cell_ids[:number_of_packings]
 
-        return cellids
+        return cell_ids
 
 
 def get_input_file_dictionary(workflow_config):
@@ -165,7 +158,7 @@ def get_input_file_dictionary(workflow_config):
     packing_info = workflow_config.data.get("packings_to_run", {})
     rule_list = packing_info.get("rules", [])
 
-    cellids_to_pack = get_cellids_to_pack(workflow_config)
+    cell_ids_to_pack = get_cell_ids_to_pack(workflow_config)
 
     input_file_dict = {}
     for rule in rule_list:
@@ -179,13 +172,12 @@ def get_input_file_dictionary(workflow_config):
         rule_recipe_folder = Path(f"{workflow_config.generated_recipe_path}/{rule}")
 
         rule_recipe_list = []
-        for cellid in cellids_to_pack:
-            cellid_recipe_path = (
-                rule_recipe_folder
-                / f"{workflow_config.structure_name}_{rule}_{cellid}.json"
+        for cell_id in cell_ids_to_pack:
+            cell_id_recipe_path = (
+                rule_recipe_folder / f"{workflow_config.structure_name}_{rule}_{cell_id}.json"
             )
-            if cellid_recipe_path.exists():
-                rule_recipe_list.append(cellid_recipe_path)
+            if cell_id_recipe_path.exists():
+                rule_recipe_list.append(cell_id_recipe_path)
         log.info(f"Found {len(rule_recipe_list)} recipes for rule {rule}")
         input_file_dict[rule]["recipe_paths"] = rule_recipe_list
 
@@ -217,7 +209,7 @@ def run_single_packing(
 
 def pack_recipes(workflow_config):
     """
-    Pack recipes using cellPACK
+    Pack recipes using cellPACK.
 
     Parameters
     ----------
@@ -264,9 +256,7 @@ def pack_recipes(workflow_config):
                 )
                 log.debug(f"Submitted packing for {recipe_path}")
 
-            log.info(
-                f"Submitted {len(futures)} packings for rule {rule}. {skipped_count} skipped"
-            )
+            log.info(f"Submitted {len(futures)} packings for rule {rule}. {skipped_count} skipped")
             for future in as_completed(futures):
                 if future.result():
                     count += 1

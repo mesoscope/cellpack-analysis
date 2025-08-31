@@ -20,7 +20,7 @@ from cellpack_analysis.analysis.punctate_analysis.lib.distance import (
 from cellpack_analysis.analysis.punctate_analysis.lib.stats_functions import (
     create_padded_numpy_array,
     get_pdf_ratio,
-    sample_cellids_from_distance_dict,
+    sample_cell_ids_from_distance_dict,
 )
 from cellpack_analysis.lib.default_values import PIX_SIZE
 from cellpack_analysis.lib.label_tables import (
@@ -49,12 +49,11 @@ def plot_cell_diameter_distribution(
         A dictionary containing mesh information with cell_diameter and nuc_diameter keys
     """
     cell_diameters = [
-        cellid_dict["cell_diameter"] * PIX_SIZE
-        for _, cellid_dict in mesh_information_dict.items()
+        cell_id_dict["cell_diameter"] * PIX_SIZE
+        for _, cell_id_dict in mesh_information_dict.items()
     ]
     nuc_diameters = [
-        cellid_dict["nuc_diameter"] * PIX_SIZE
-        for _, cellid_dict in mesh_information_dict.items()
+        cell_id_dict["nuc_diameter"] * PIX_SIZE for _, cell_id_dict in mesh_information_dict.items()
     ]
     fig, ax = plt.subplots(dpi=300)
     ax.hist(cell_diameters, bins=20, alpha=0.5, label="cell")
@@ -123,15 +122,11 @@ def plot_distance_distributions_kde(
         )
         for mode_index, mode in enumerate(packing_modes):
             mode_dict = distance_dict[mode]
-            log.info(
-                f"Plotting distance histogram for: {distance_measure}, Mode: {mode}"
-            )
+            log.info(f"Plotting distance histogram for: {distance_measure}, Mode: {mode}")
 
             ax = axs[mode_index]
             # plot individual kde plots of distance distributions
-            for k, (_, distances) in tqdm(
-                enumerate(mode_dict.items()), total=len(mode_dict)
-            ):
+            for _k, (_, distances) in tqdm(enumerate(mode_dict.items()), total=len(mode_dict)):
                 sns.kdeplot(
                     distances,
                     ax=ax,
@@ -163,9 +158,7 @@ def plot_distance_distributions_kde(
                 unit = "\u03bcm"
             else:
                 unit = ""
-            ax.set_title(
-                f"{MODE_LABELS.get(mode, mode)}\nMean: {mean_distance:.2f}{unit}"
-            )
+            ax.set_title(f"{MODE_LABELS.get(mode, mode)}\nMean: {mean_distance:.2f}{unit}")
             if distance_limits is not None:
                 ax.set_xlim(distance_limits.get(distance_measure, (0, 1)))
             else:
@@ -271,9 +264,7 @@ def plot_distance_distributions_kde_vertical(
             ax = axs[row]
             # plot individual kde plots of distance distributions
             color_inds = np.random.permutation(len(mode_dict))
-            for k, (_, distances) in tqdm(
-                enumerate(mode_dict.items()), total=len(mode_dict)
-            ):
+            for k, (_, distances) in tqdm(enumerate(mode_dict.items()), total=len(mode_dict)):
                 color = cmap(color_inds[k])
 
                 sns.kdeplot(
@@ -332,9 +323,7 @@ def plot_distance_distributions_kde_vertical(
                 elif "scaled" in distance_measure:
                     distance_label = DISTANCE_MEASURE_LABELS[distance_measure]
                 else:
-                    distance_label = (
-                        f"{DISTANCE_MEASURE_LABELS[distance_measure]} (\u03bcm)"
-                    )
+                    distance_label = f"{DISTANCE_MEASURE_LABELS[distance_measure]} (\u03bcm)"
                 ax.set_xlabel(distance_label)
 
         # fig.suptitle(f"{DISTANCE_MEASURE_LABELS[distance_measure]}")
@@ -423,9 +412,7 @@ def plot_ks_test_distance_distributions_kde(
             # get significant and non-significant seeds
             all_seeds = list(mode_dict.keys())
             significant_seeds = [
-                seed
-                for seed, p_value in ks_mode_dict.items()
-                if p_value < significance_level
+                seed for seed, p_value in ks_mode_dict.items() if p_value < significance_level
             ]
             ns_seeds = [seed for seed in all_seeds if seed not in significant_seeds]
 
@@ -444,11 +431,7 @@ def plot_ks_test_distance_distributions_kde(
             # plot combined kde plot of distance distributions
             if len(significant_seeds) > 0:
                 combined_sig_distances = np.concatenate(
-                    [
-                        distance
-                        for seed, distance in mode_dict.items()
-                        if seed in significant_seeds
-                    ]
+                    [distance for seed, distance in mode_dict.items() if seed in significant_seeds]
                 )
                 sns.kdeplot(
                     combined_sig_distances,
@@ -460,9 +443,7 @@ def plot_ks_test_distance_distributions_kde(
                 )
                 # plot mean distance and add title
                 mean_distance = combined_sig_distances.mean()
-                title_str = (
-                    f"Mean: {mean_distance:.2f}\nKS p-value < {significance_level}"
-                )
+                title_str = f"Mean: {mean_distance:.2f}\nKS p-value < {significance_level}"
                 sig_ax.axvline(mean_distance, color="k", linestyle="--")
             else:
                 title_str = "No significant obs."
@@ -486,11 +467,7 @@ def plot_ks_test_distance_distributions_kde(
             # plot combined kde plot of distance distributions
             if len(ns_seeds) > 0:
                 combined_ns_distances = np.concatenate(
-                    [
-                        distance
-                        for seed, distance in mode_dict.items()
-                        if seed in ns_seeds
-                    ]
+                    [distance for seed, distance in mode_dict.items() if seed in ns_seeds]
                 )
                 sns.kdeplot(
                     combined_ns_distances,
@@ -502,9 +479,7 @@ def plot_ks_test_distance_distributions_kde(
                 )
                 # plot mean distance and add title
                 mean_distance = combined_ns_distances.mean()
-                title_str = (
-                    f"Mean: {mean_distance:.2f}\nKS p-value >= {significance_level}"
-                )
+                title_str = f"Mean: {mean_distance:.2f}\nKS p-value >= {significance_level}"
                 ns_ax.axvline(mean_distance, color="k", linestyle="--")
             else:
                 title_str = "No non-significant obs."
@@ -600,8 +575,7 @@ def plot_distance_distributions_overlay(
 
         if figures_dir is not None:
             fig.savefig(
-                figures_dir
-                / f"distance_distributions_{distance_measure}{suffix}.{save_format}",
+                figures_dir / f"distance_distributions_{distance_measure}{suffix}.{save_format}",
                 dpi=300,
             )
 
@@ -639,7 +613,7 @@ def plot_distance_distributions_histogram(
     """
     num_cols = len(packing_modes)
 
-    for i, distance_measure in enumerate(distance_measures):
+    for _i, distance_measure in enumerate(distance_measures):
         fig, axs = plt.subplots(
             1,
             num_cols,
@@ -740,9 +714,7 @@ def plot_ks_observed_barplots(
     # xticklabels = [label.get_text() for label in ax.get_xticklabels()]
     # ax.set_xticklabels(xticklabels, rotation=45)
     ax.set_xlabel("Packing Mode")
-    ax.set_ylabel(
-        f"Statistically indistinguishable fraction\n(p-value >= {significance_level})"
-    )
+    ax.set_ylabel(f"Statistically indistinguishable fraction\n(p-value >= {significance_level})")
     ax.legend(
         title="Distance Measure",
     )
@@ -822,9 +794,7 @@ def plot_emd_heatmaps(
         fig.tight_layout()
 
         if figures_dir is not None:
-            fig.savefig(
-                figures_dir / f"{distance_measure}_emd{suffix}.{save_format}", dpi=300
-            )
+            fig.savefig(figures_dir / f"{distance_measure}_emd{suffix}.{save_format}", dpi=300)
 
         plt.show()
 
@@ -906,8 +876,7 @@ def plot_emd_correlation_circles(
 
         R = stdev / stdev.max() / 2.5
         circles = [
-            Circle((j, i), radius=r)
-            for r, j, i in zip(R.flat, x.flat, y.flat, strict=False)
+            Circle((j, i), radius=r) for r, j, i in zip(R.flat, x.flat, y.flat, strict=False)
         ]
         col = PatchCollection(
             circles,
@@ -952,8 +921,7 @@ def plot_emd_correlation_circles(
 
         if figures_dir is not None:
             fig.savefig(
-                figures_dir
-                / f"{distance_measure}_emd_heatmap_circ{suffix}.{save_format}",
+                figures_dir / f"{distance_measure}_emd_heatmap_circ{suffix}.{save_format}",
                 dpi=300,
             )
         plt.show()
@@ -1102,8 +1070,7 @@ def plot_emd_violinplots(
         ax.set_yticklabels([MODE_LABELS[m] for m in emd_df.columns])
         if figures_dir is not None:
             fig.savefig(
-                figures_dir
-                / f"{distance_measure}_emd_violinplot{suffix}.{save_format}",
+                figures_dir / f"{distance_measure}_emd_violinplot{suffix}.{save_format}",
                 dpi=300,
             )
 
@@ -1140,22 +1107,17 @@ def plot_emd_histograms(
         emd_dict = all_pairwise_emd[distance_measure][baseline_mode]
         emd_df = pd.DataFrame.from_dict(emd_dict)
         ncol = len(emd_df.columns)
-        fig, axs = plt.subplots(
-            1, ncol, dpi=300, sharey=True, sharex=True, figsize=(ncol * 6, 6)
-        )
+        fig, axs = plt.subplots(1, ncol, dpi=300, sharey=True, sharex=True, figsize=(ncol * 6, 6))
         for ct, col in enumerate(emd_df.columns):
             axs[ct].hist(emd_df[col], bins=50, density=True)
-            axs[ct].set_title(
-                f"{MODE_LABELS[col]}\nn={np.count_nonzero(~np.isnan(emd_df[col]))}"
-            )
+            axs[ct].set_title(f"{MODE_LABELS[col]}\nn={np.count_nonzero(~np.isnan(emd_df[col]))}")
         fig.supxlabel(f"{distance_measure} EMD")
         fig.supylabel("Density")
         plt.tight_layout()
 
         if emd_figures_dir is not None:
             fig.savefig(
-                emd_figures_dir
-                / f"{distance_measure}_emd_boxplot{suffix}.{save_format}",
+                emd_figures_dir / f"{distance_measure}_emd_boxplot{suffix}.{save_format}",
                 dpi=300,
             )
 
@@ -1209,8 +1171,7 @@ def plot_emd_kdeplots(
 
         if emd_figures_dir is not None:
             fig.savefig(
-                emd_figures_dir
-                / f"{distance_measure}_emd_kdeplot{suffix}.{save_format}",
+                emd_figures_dir / f"{distance_measure}_emd_kdeplot{suffix}.{save_format}",
                 dpi=300,
             )
 
@@ -1309,11 +1270,11 @@ def plot_occupancy_illustration(
 
     fig, axs = plt.subplots(nrows=3, ncols=1, dpi=300, figsize=(6, 6))
     mode_dict = distance_dict[baseline_mode]
-    all_cellids = list(mode_dict.keys())
+    all_cell_ids = list(mode_dict.keys())
     if seed_index is not None:
-        seed = all_cellids[seed_index]
+        seed = all_cell_ids[seed_index]
     else:
-        seed = all_cellids[0]
+        seed = all_cell_ids[0]
     distances = mode_dict[seed]
     distances = filter_invalid_distances(distances)
 
@@ -1325,8 +1286,8 @@ def plot_occupancy_illustration(
     kde_distance_values = kde_distance(xvals)
     kde_available_space_values = kde_available_space(xvals)
 
-    yvals, kde_distance_values_normalized, kde_available_space_values_normalized = (
-        get_pdf_ratio(xvals, kde_distance_values, kde_available_space_values, method)
+    yvals, kde_distance_values_normalized, kde_available_space_values_normalized = get_pdf_ratio(
+        xvals, kde_distance_values, kde_available_space_values, method
     )
 
     # plot occupied distance values
@@ -1340,9 +1301,7 @@ def plot_occupancy_illustration(
 
     # plot available space values
     ax = axs[1]
-    ax.plot(
-        xvals, kde_available_space_values_normalized, label="available space", c="b"
-    )
+    ax.plot(xvals, kde_available_space_values_normalized, label="available space", c="b")
     ax.set_xlim([0, xlim])
     ax.set_ylabel("Probability Density")
     ax.set_title("Available Space")
@@ -1490,18 +1449,16 @@ def plot_individual_occupancy_ratio(
         )
         log.info(f"Calculating occupancy for {mode}")
         mode_dict = distance_dict[mode]
-        cellids_to_use = sample_cellids_from_distance_dict(mode_dict, sample_size)
+        cell_ids_to_use = sample_cell_ids_from_distance_dict(mode_dict, sample_size)
 
-        for cellid in tqdm(cellids_to_use):
-            distances = mode_dict[cellid]
+        for cell_id in tqdm(cell_ids_to_use):
+            distances = mode_dict[cell_id]
             distances = filter_invalid_distances(distances)
             if len(distances) == 0:
-                log.warning(
-                    f"No valid distances found for cellid {cellid} and mode {mode}"
-                )
+                log.warning(f"No valid distances found for cell_id {cell_id} and mode {mode}")
                 continue
-            kde_distance = kde_dict[cellid][mode]["kde"]
-            kde_available_space = kde_dict[cellid]["available_distance"]["kde"]
+            kde_distance = kde_dict[cell_id][mode]["kde"]
+            kde_available_space = kde_dict[cell_id]["available_distance"]["kde"]
             min_distance = np.nanmin(distances)
             max_distance = np.nanmax(distances)
             xvals = np.linspace(min_distance, max_distance, 100)
@@ -1537,10 +1494,7 @@ def plot_individual_occupancy_ratio(
         if figures_dir is not None:
             fig.savefig(
                 figures_dir
-                / (
-                    f"{distance_measure}_{mode}_individual_{method}_occupancy_ratio"
-                    f"{suffix}.{save_format}"
-                ),
+                / f"{distance_measure}_{mode}_individual_{method}_occupancy_ratio{suffix}.{save_format}",
                 dpi=300,
             )
 
@@ -1621,9 +1575,7 @@ def plot_mean_and_std_occupancy_ratio_kde(
         mode_yvals = np.full((len(mode_dict), len(all_xvals)), np.nan)
         seeds_to_use = mode_dict.keys()
         if sample_size is not None:
-            seeds_to_use = np.random.choice(
-                list(mode_dict.keys()), sample_size, replace=False
-            )
+            seeds_to_use = np.random.choice(list(mode_dict.keys()), sample_size, replace=False)
         for rt, seed in tqdm(enumerate(seeds_to_use), total=len(seeds_to_use)):
             distances = mode_dict[seed]
 
@@ -1764,25 +1716,25 @@ def plot_binned_occupancy_ratio(
         log.info(f"Calculating binned occupancy ratio for: {mode}")
 
         mode_dict = distance_dict[mode]
-        cellids_to_use = sample_cellids_from_distance_dict(mode_dict, sample_size)
+        cell_ids_to_use = sample_cell_ids_from_distance_dict(mode_dict, sample_size)
         mode_mesh_dict = mesh_information_dict.get(channel_map.get(mode, mode), {})
 
         # get max and min distances for this mode
         combined_available_distance_dict = {}
-        for cellid in cellids_to_use:
-            available_distances = mode_mesh_dict[cellid][
+        for cell_id in cell_ids_to_use:
+            available_distances = mode_mesh_dict[cell_id][
                 GRID_DISTANCE_LABELS[distance_measure]
             ].flatten()
             available_distances = filter_invalid_distances(available_distances)
             normalization_factor = get_normalization_factor(
                 normalization=normalization,
                 mesh_information_dict=mesh_information_dict,
-                cellid=cellid,
+                cell_id=cell_id,
                 distance_measure=distance_measure,
                 distances=available_distances,
             )
             available_distances /= normalization_factor
-            combined_available_distance_dict[cellid] = available_distances
+            combined_available_distance_dict[cell_id] = available_distances
 
         combined_available_distances = np.concatenate(
             list(combined_available_distance_dict.values())
@@ -1796,18 +1748,16 @@ def plot_binned_occupancy_ratio(
 
         available_space_counts = {}
         occupied_space_counts = {}
-        for cellid in tqdm(cellids_to_use):
-            distances = mode_dict[cellid]
+        for cell_id in tqdm(cell_ids_to_use):
+            distances = mode_dict[cell_id]
             distances = filter_invalid_distances(distances)
-            if cellid not in mode_mesh_dict:
+            if cell_id not in mode_mesh_dict:
                 continue
-            available_distances = combined_available_distance_dict[cellid]
-            available_space_counts[cellid] = np.histogram(
+            available_distances = combined_available_distance_dict[cell_id]
+            available_space_counts[cell_id] = np.histogram(
                 available_distances, bins=bins, density=False
             )[0]
-            occupied_space_counts[cellid] = np.histogram(
-                distances, bins=bins, density=False
-            )[0]
+            occupied_space_counts[cell_id] = np.histogram(distances, bins=bins, density=False)[0]
         occupied_space_counts = np.vstack(list(occupied_space_counts.values()))
         occupied_space_counts = occupied_space_counts + 1e-16
 
@@ -1820,12 +1770,9 @@ def plot_binned_occupancy_ratio(
             occupied_space_counts / np.sum(occupied_space_counts, axis=1)[:, np.newaxis]
         )
         normalized_available_space_counts = (
-            available_space_counts
-            / np.sum(available_space_counts, axis=1)[:, np.newaxis]
+            available_space_counts / np.sum(available_space_counts, axis=1)[:, np.newaxis]
         )
-        occupancy_ratio = (
-            normalized_occupied_space_counts / normalized_available_space_counts
-        )
+        occupancy_ratio = normalized_occupied_space_counts / normalized_available_space_counts
         mean_occupancy_ratio = np.nanmean(occupancy_ratio, axis=0)
         std_occupancy_ratio = np.nanstd(occupancy_ratio, axis=0)
 
@@ -1872,8 +1819,7 @@ def plot_binned_occupancy_ratio(
 
     if figures_dir is not None:
         fig.savefig(
-            figures_dir
-            / f"{distance_measure}_binned_occupancy_ratio{suffix}.{save_format}",
+            figures_dir / f"{distance_measure}_binned_occupancy_ratio{suffix}.{save_format}",
             dpi=300,
         )
 
@@ -1954,9 +1900,7 @@ def plot_combined_occupancy_ratio(
         kde_distance_values = kde_distance(xvals)
         kde_available_space_values = kde_available_space(xvals)
 
-        yvals, _, _ = get_pdf_ratio(
-            xvals, kde_distance_values, kde_available_space_values, method
-        )
+        yvals, _, _ = get_pdf_ratio(xvals, kde_distance_values, kde_available_space_values, method)
 
         ax.plot(xvals, yvals, label=MODE_LABELS.get(mode, mode))
 
@@ -1988,10 +1932,7 @@ def plot_combined_occupancy_ratio(
             used_suffix = f"{suffix}_{ct}"
             fig.savefig(
                 figures_dir
-                / (
-                    f"{distance_measure}_combined_{method}_occupancy_ratio"
-                    f"{used_suffix}.{save_format}"
-                ),
+                / f"{distance_measure}_combined_{method}_occupancy_ratio{used_suffix}.{save_format}",
                 dpi=300,
             )
     if aspect is not None:
@@ -2105,8 +2046,7 @@ def plot_occupancy_emd_boxplot(
     fig.tight_layout()
     if figures_dir is not None:
         fig.savefig(
-            figures_dir
-            / f"{distance_measure}_occupancy_emd_boxplot{suffix}.{save_format}",
+            figures_dir / f"{distance_measure}_occupancy_emd_boxplot{suffix}.{save_format}",
             dpi=300,
         )
     plt.show()
@@ -2144,9 +2084,7 @@ def plot_occupancy_ks_test(
     ax = sns.barplot(data=ks_df_test, ax=ax)
     xticklabels = [MODE_LABELS[mode.get_text()] for mode in ax.get_xticklabels()]
     ax.set_xticklabels(xticklabels, rotation=45)
-    ax.set_ylabel(
-        f"Fraction with non space-filling occupancy\n(p < {significance_level})"
-    )
+    ax.set_ylabel(f"Fraction with non space-filling occupancy\n(p < {significance_level})")
     plt.tight_layout()
     if figures_dir is not None:
         fig.savefig(

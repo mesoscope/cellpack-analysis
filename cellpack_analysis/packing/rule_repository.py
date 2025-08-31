@@ -1,17 +1,13 @@
 GRADIENTS = {
     "nucleus_gradient": {
-        "description": (
-            "gradient based on distance from the surface of the nucleus mesh"
-        ),
+        "description": "gradient based on distance from the surface of the nucleus mesh",
         "mode": "surface",
         "mode_settings": {"object": "nucleus", "scale_to_next_surface": False},
         "weight_mode": "exponential",
         "weight_mode_settings": {"decay_length": 0.1},
     },
     "membrane_gradient": {
-        "description": (
-            "gradient based on distance from the surface of the membrane mesh"
-        ),
+        "description": "gradient based on distance from the surface of the membrane mesh",
         "mode": "surface",
         "mode_settings": {"object": "membrane", "scale_to_next_surface": False},
         "weight_mode": "exponential",
@@ -39,72 +35,56 @@ GRADIENTS = {
         "weight_mode_settings": {"decay_length": 0.1},
     },
     "nucleus_gradient_tuned": {
-        "description": (
-            "gradient based on distance from the surface of the nucleus mesh"
-        ),
+        "description": "gradient based on distance from the surface of the nucleus mesh",
         "mode": "surface",
         "mode_settings": {"object": "nucleus", "scale_to_next_surface": False},
         "weight_mode": "exponential",
         "weight_mode_settings": {"decay_length": 0.3},
     },
     "nucleus_gradient_0pt4": {
-        "description": (
-            "gradient based on distance from the surface of the nucleus mesh"
-        ),
+        "description": "gradient based on distance from the surface of the nucleus mesh",
         "mode": "surface",
         "mode_settings": {"object": "nucleus", "scale_to_next_surface": False},
         "weight_mode": "exponential",
         "weight_mode_settings": {"decay_length": 0.4},
     },
     "nucleus_gradient_0pt6": {
-        "description": (
-            "gradient based on distance from the surface of the nucleus mesh"
-        ),
+        "description": "gradient based on distance from the surface of the nucleus mesh",
         "mode": "surface",
         "mode_settings": {"object": "nucleus", "scale_to_next_surface": False},
         "weight_mode": "exponential",
         "weight_mode_settings": {"decay_length": 0.6},
     },
     "nucleus_gradient_0pt8": {
-        "description": (
-            "gradient based on distance from the surface of the nucleus mesh"
-        ),
+        "description": "gradient based on distance from the surface of the nucleus mesh",
         "mode": "surface",
         "mode_settings": {"object": "nucleus", "scale_to_next_surface": False},
         "weight_mode": "exponential",
         "weight_mode_settings": {"decay_length": 0.8},
     },
     "nucleus_gradient_1": {
-        "description": (
-            "gradient based on distance from the surface of the nucleus mesh"
-        ),
+        "description": "gradient based on distance from the surface of the nucleus mesh",
         "mode": "surface",
         "mode_settings": {"object": "nucleus", "scale_to_next_surface": False},
         "weight_mode": "exponential",
         "weight_mode_settings": {"decay_length": 1},
     },
     "nucleus_gradient_1pt2": {
-        "description": (
-            "gradient based on distance from the surface of the nucleus mesh"
-        ),
+        "description": "gradient based on distance from the surface of the nucleus mesh",
         "mode": "surface",
         "mode_settings": {"object": "nucleus", "scale_to_next_surface": False},
         "weight_mode": "exponential",
         "weight_mode_settings": {"decay_length": 1.2},
     },
     "nucleus_gradient_1pt4": {
-        "description": (
-            "gradient based on distance from the surface of the nucleus mesh"
-        ),
+        "description": "gradient based on distance from the surface of the nucleus mesh",
         "mode": "surface",
         "mode_settings": {"object": "nucleus", "scale_to_next_surface": False},
         "weight_mode": "exponential",
         "weight_mode_settings": {"decay_length": 1.4},
     },
     "nucleus_gradient_1pt6": {
-        "description": (
-            "gradient based on distance from the surface of the nucleus mesh"
-        ),
+        "description": "gradient based on distance from the surface of the nucleus mesh",
         "mode": "surface",
         "mode_settings": {"object": "nucleus", "scale_to_next_surface": False},
         "weight_mode": "exponential",

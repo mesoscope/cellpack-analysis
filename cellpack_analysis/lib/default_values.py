@@ -44,7 +44,7 @@ GRADIENT_STRUCTURE_NAME = None
 MULTIPLE_REPLICATES = False
 """
 Flag indicating whether a single recipe packs multiple replicates.
-If this flag is true, the random seed is not assigned based on cellid and instead
+If this flag is true, the random seed is not assigned based on cell_id and instead
 calculated from the cellPACK algorithm.
 """
 NUM_PROCESSES = 1

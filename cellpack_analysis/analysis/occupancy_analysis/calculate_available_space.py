@@ -1,12 +1,12 @@
 # %% [markdown]
 """
-# Calculate available space for a structure
+# Calculate available space for a structure.
 
 This script calculates the available space for intracellular structures by discretizing
 the space into a grid and calculating the distance of each grid point to the
 nearest nucleus and membrane.
 The distance is calculated using the signed distance function from the trimesh library and the
-distances are saved in a grid directory for each cellid.
+distances are saved in a grid directory for each cell_id.
 Distances are normalized by the cell diameter and saved in the grid directory.
 """
 import logging
@@ -27,26 +27,26 @@ SPACING = 2
 base_datadir = get_project_root() / "data"
 log.info(f"Data directory: {base_datadir}")
 
-# %% select cellids to use
+# %% select cell_ids to use
 use_mean_shape = True
 if use_mean_shape:
-    cellids_to_use = ["mean"]
+    cell_ids_to_use = ["mean"]
 else:
-    df_cellid = pd.read_csv("s3://cellpack-analysis-data/all_cellids.csv")
-    df_struct = df_cellid.loc[df_cellid["structure_name"] == STRUCTURE_ID]
-    cellids_to_use = df_struct.loc[df_struct["8dsphere"], "CellId"].tolist()
+    df_cell_id = pd.read_csv("s3://cellpack-analysis-data/all_cell_ids.csv")
+    df_struct = df_cell_id.loc[df_cell_id["structure_name"] == STRUCTURE_ID]
+    cell_ids_to_use = df_struct.loc[df_struct["8dsphere"], "CellId"].tolist()
 mesh_folder = base_datadir / f"structure_data/{STRUCTURE_ID}/meshes/"
-log.info(f"Using {len(cellids_to_use)} cellids")
-# %% get meshes for cellids used
-# cellids_to_use = [cellids_to_use[0]]
-cellid_list = []
+log.info(f"Using {len(cell_ids_to_use)} cell_ids")
+# %% get meshes for cell_ids used
+# cell_ids_to_use = [cell_ids_to_use[0]]
+cell_id_list = []
 nuc_meshes_to_use = []
 mem_meshes_to_use = []
-for cellid in cellids_to_use:
-    nuc_mesh_path = mesh_folder / f"nuc_mesh_{cellid}.obj"
-    mem_mesh_path = mesh_folder / f"mem_mesh_{cellid}.obj"
+for cell_id in cell_ids_to_use:
+    nuc_mesh_path = mesh_folder / f"nuc_mesh_{cell_id}.obj"
+    mem_mesh_path = mesh_folder / f"mem_mesh_{cell_id}.obj"
     if nuc_mesh_path.exists() and mem_mesh_path.exists():
-        cellid_list.append(cellid)
+        cell_id_list.append(cell_id)
         nuc_meshes_to_use.append(nuc_mesh_path)
         mem_meshes_to_use.append(mem_mesh_path)
 log.info(f"Found {len(nuc_meshes_to_use)} meshes")
@@ -72,7 +72,7 @@ if PARALLEL:
                     calculate_grid_distances,
                     nuc_meshes_to_use[i],
                     mem_meshes_to_use[i],
-                    cellid_list[i],
+                    cell_id_list[i],
                     SPACING,
                     grid_dir,
                     recalculate,
@@ -95,7 +95,7 @@ else:
             calculate_grid_distances(
                 nuc_mesh_path=nuc_meshes_to_use[i],
                 mem_mesh_path=mem_meshes_to_use[i],
-                cellid=cellid_list[i],
+                cell_id=cell_id_list[i],
                 spacing=SPACING,
                 save_dir=grid_dir,
                 recalculate=recalculate,

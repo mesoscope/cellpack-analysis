@@ -140,9 +140,7 @@ def PILR_calculation_workflow(
                     num_files,
                 ]
             )
-            with concurrent.futures.ProcessPoolExecutor(
-                max_workers=num_processes
-            ) as executor:
+            with concurrent.futures.ProcessPoolExecutor(max_workers=num_processes) as executor:
                 for file, gfp_representation in tqdm(
                     zip(
                         file_list,
@@ -152,7 +150,8 @@ def PILR_calculation_workflow(
                             [ch_name] * num_files,
                             [raw_image_channel] * num_files,
                             [channel_map] * num_files,
-                        ), strict=False,
+                        ),
+                        strict=False,
                     ),
                     desc=f"Processing {ch_name} files",
                     total=num_files,
@@ -171,9 +170,7 @@ def PILR_calculation_workflow(
 
         else:
             for file in tqdm(file_list, total=num_files):
-                img_pilr = get_pilr_for_single_image(
-                    file, ch_name, raw_image_channel, channel_map
-                )
+                img_pilr = get_pilr_for_single_image(file, ch_name, raw_image_channel, channel_map)
                 gfp_representations.append(img_pilr)
                 save_PILR_as_tiff(
                     img_pilr,

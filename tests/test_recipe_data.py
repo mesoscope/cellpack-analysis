@@ -1,15 +1,13 @@
 from pathlib import Path
 
-from cellpack_analysis.packing.generate_cellpack_input_files import (
-    update_and_save_recipe,
-)
+from cellpack_analysis.packing.generate_cellpack_input_files import update_and_save_recipe
 
 
 def test_update_and_save_recipe():
     # Define the inputs
-    cellid = 1
+    cell_id = 1
     structure_name = "test_structure"
-    recipe_template = {}  
+    recipe_template = {}
     rule_name = "test_rule"
     rule_dict = {}  # replace with actual rule_dict
     grid_path = Path("./grid_path")
@@ -22,7 +20,7 @@ def test_update_and_save_recipe():
 
     # Call the function
     result = update_and_save_recipe(
-        cellid,
+        cell_id,
         structure_name,
         recipe_template,
         rule_name,
@@ -38,6 +36,6 @@ def test_update_and_save_recipe():
 
     # Check the result
     assert isinstance(result, dict)
-    assert result["version"] == f"{rule_name}_{cellid}"
-    assert result["grid_file_path"] == f"{grid_path}/{cellid}_grid.dat"
+    assert result["version"] == f"{rule_name}_{cell_id}"
+    assert result["grid_file_path"] == f"{grid_path}/{cell_id}_grid.dat"
     # Add more assertions based on your expectations

@@ -13,7 +13,7 @@
             "structure_id": "SLC25A17", // Identifier for the structure used to create simulated data
             "label": "Observed peroxisomes", // Label for visualization
             "color": "#FF5733", // Hex color code for representation
-            "dsphere": true, // Indicates whether cellids are from dsphere
+            "dsphere": true, // Indicates whether cell_ids are from dsphere
         },
         "random": {
             "structure_id": "SLC25A17",

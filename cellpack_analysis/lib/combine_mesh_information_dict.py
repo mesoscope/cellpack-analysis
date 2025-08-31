@@ -8,9 +8,7 @@ from cellpack_analysis.lib.mesh_tools import get_mesh_information_dict_for_struc
 
 # %%
 base_datadir = Path(__file__).parents[2] / "data"
-save_path = (
-    base_datadir / "mesh_information_dicts" / "combined_mesh_information_dict.dat"
-)
+save_path = base_datadir / "mesh_information_dicts" / "combined_mesh_information_dict.dat"
 save_path.parent.mkdir(exist_ok=True, parents=True)
 # %%
 STRUCTURE_IDS = [

@@ -10,7 +10,7 @@ python /allen/aics/animated-cell/Saurabh/cellpack-analysis/cellpack_analysis/scr
 --num_processes 32 \
 --run_packings \
 --skip_completed \
---use_cellid_as_seed \
+--use_cell_id_as_seed \
 --generate_recipes \
 # --dry_run \
 # --num_packings 4 \

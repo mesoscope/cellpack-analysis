@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from cellpack_analysis.lib.file_io import read_json
-from cellpack_analysis.lib.get_cellid_list import get_cellid_list_for_structure
+from cellpack_analysis.lib.get_cell_id_list import get_cell_id_list_for_structure
 from cellpack_analysis.lib.mesh_tools import get_average_shape_mesh_objects
 from cellpack_analysis.lib.PILR_tools import (
     average_over_dimension,
@@ -14,10 +14,7 @@ from cellpack_analysis.lib.PILR_tools import (
     get_parametrized_coords_for_avg_shape,
     morph_PILRs_into_average_shape,
 )
-from cellpack_analysis.lib.plotting_tools import (
-    plot_and_save_center_slice,
-    plot_PILR,
-)
+from cellpack_analysis.lib.plotting_tools import plot_and_save_center_slice, plot_PILR
 
 # %% [markdown]
 # ### Read in individual PILRs
@@ -50,12 +47,12 @@ for key, value in individual_PILR_dict.items():
     print(key, individual_PILR_dict[key].shape)
 
 # %% [markdown]
-# ### Create index to cellid dictionary
+# ### Create index to cell_id dictionary
 struct_list = ["SLC25A17", "RAB5A"]
-cellid_dict = {}
+cell_id_dict = {}
 for struct in struct_list:
-    cellid_list = get_cellid_list_for_structure(struct)
-    cellid_dict[struct] = cellid_list
+    cell_id_list = get_cell_id_list_for_structure(struct)
+    cell_id_dict[struct] = cell_id_list
 
 # %% [markdown]
 # ## Plot pacmap/pca for individual channels
@@ -116,7 +113,7 @@ for ch, ch_dict in embedding_dict.items():
 
 fig, ax = plt.subplots(1, 1, figsize=(5, 5), dpi=300)
 prev_ind = 0
-for col_ind, (ch, ch_dict) in enumerate(embedding_dict.items()):
+for _col_ind, (ch, ch_dict) in enumerate(embedding_dict.items()):
     if "invert" in ch:
         continue
     embedding_type = ch_dict["embedding"]
@@ -204,9 +201,7 @@ print(generated_pts.shape)
 
 # %% [markdown]
 # ## Plot PILRs from latent walk
-fig, axs = plt.subplots(
-    generated_pts.shape[0], 1, figsize=(generated_pts.shape[0] * 2, 5), dpi=300
-)
+fig, axs = plt.subplots(generated_pts.shape[0], 1, figsize=(generated_pts.shape[0] * 2, 5), dpi=300)
 pilr_list = []
 for ct, generated_pt in enumerate(generated_pts):
     # plot the pilrs
@@ -266,7 +261,7 @@ for ct, morph in enumerate(morphed):
             structure=ch_name,
             dim=dim,
             ax=axs[dim][ct],
-            # title=f"CellId: {cellid_dict[ch_name][pilr_inds[ct]]}",
+            # title=f"CellId: {cell_id_dict[ch_name][pilr_inds[ct]]}",
             title=f"Walk point {ct}",
             ylabel=f"{dim_to_axis_map[dim]}" if ct == 0 else None,
             showfig=False,
@@ -287,7 +282,7 @@ ch_name = "RAB5A"
 walk_dim = 1
 
 # %%
-cellid_list = cellid_dict[ch_name]
+cell_id_list = cell_id_dict[ch_name]
 
 # %%
 input_data.shape
@@ -298,8 +293,8 @@ input_data.shape
 # %%
 sort_inds = np.argsort(input_data[:, walk_dim])
 walk_pts = input_data[sort_inds[-3:]]
-outlier_cellid = [cellid_list[ind] for ind in sort_inds[-2:]]
-print(walk_pts[:, walk_dim], outlier_cellid)
+outlier_cell_id = [cell_id_list[ind] for ind in sort_inds[-2:]]
+print(walk_pts[:, walk_dim], outlier_cell_id)
 
 # %% [markdown]
 # get outlier based on distance
@@ -308,8 +303,8 @@ print(walk_pts[:, walk_dim], outlier_cellid)
 pt = np.array([10, 20])
 distances = np.linalg.norm(input_data[:, :2] - pt, axis=1)
 min_ind = np.argmin(distances)
-outlier_cellid = cellid_list[min_ind]
-print(outlier_cellid)
+outlier_cell_id = cell_id_list[min_ind]
+print(outlier_cell_id)
 
 
 # %%

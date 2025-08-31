@@ -33,9 +33,9 @@ def normalize_distances(
             continue
         for mode, distance_dict in mode_distance_dict.items():
             mode_mesh_dict = mesh_information_dict.get(channel_map.get(mode, ""), {})
-            for cellid, distance in distance_dict.items():
+            for cell_id, distance in distance_dict.items():
                 mesh_info = mode_mesh_dict.get(
-                    cellid,
+                    cell_id,
                     mode_mesh_dict.get("mean", {"intracellular_radius": 1}),
                 )
 
@@ -48,7 +48,7 @@ def normalize_distances(
                 else:
                     normalization_factor = 1 / pix_size
 
-                distance_dict[cellid] = distance / normalization_factor
+                distance_dict[cell_id] = distance / normalization_factor
 
     return all_distance_dict
 
@@ -91,9 +91,7 @@ def ripley_k(positions, volume, r_values, norm_factor=1, edge_correction=True):
         pairs_within_r = np.sum(distances_upper <= r)
 
         # Basic Ripley's K formula: K(r) = V * (number of pairs within distance r) / (n * (n-1) / 2)
-        ripley_k_values[i] = (
-            volume * pairs_within_r / (num_positions * (num_positions - 1) / 2)
-        )
+        ripley_k_values[i] = volume * pairs_within_r / (num_positions * (num_positions - 1) / 2)
 
     return ripley_k_values, r_values
 
@@ -138,9 +136,7 @@ def density_ratio(
         Tuple containing the density ratio, normalized density1, and normalized density2
     """
     # regularize
-    min_value = np.minimum(
-        np.min(density1[density1 > 0]), np.min(density2[density2 > 0])
-    )
+    min_value = np.minimum(np.min(density1[density1 > 0]), np.min(density2[density2 > 0]))
     density1 = np.where(density1 <= min_value, min_value, density1)
     density2 = np.where(density2 <= min_value, min_value, density2)
 
@@ -241,7 +237,7 @@ def create_padded_numpy_array(
     return padded_array
 
 
-def sample_cellids_from_distance_dict(
+def sample_cell_ids_from_distance_dict(
     distance_dict: dict[str, np.ndarray], sample_size: int | None, rng_seed: int = 42
 ) -> list[str] | Any:
     """
@@ -263,10 +259,8 @@ def sample_cellids_from_distance_dict(
     """
     rng = np.random.default_rng(rng_seed)
     if sample_size is not None:
-        cellids_to_use = rng.choice(
-            list(distance_dict.keys()), sample_size, replace=False
-        )
+        cell_ids_to_use = rng.choice(list(distance_dict.keys()), sample_size, replace=False)
     else:
-        cellids_to_use = distance_dict.keys()
+        cell_ids_to_use = distance_dict.keys()
 
-    return cellids_to_use
+    return cell_ids_to_use

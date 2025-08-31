@@ -5,9 +5,7 @@ from aicsshparam import shparam
 from skimage import measure as skmeasure
 
 
-def get_mean_shape_as_image(
-    outer_mesh, inner_mesh, lmax=16, nisos_outer=32, nisos_inner=32
-):
+def get_mean_shape_as_image(outer_mesh, inner_mesh, lmax=16, nisos_outer=32, nisos_inner=32):
 
     domain, origin = shparam.shtools.voxelize_meshes([outer_mesh, inner_mesh])
     coords_param, _ = cytoparam.parameterize_image_coordinates(
@@ -75,7 +73,7 @@ class Projector:
         return ax.imshow(proj, cmap=self.CMAPS[alias], origin="lower", **args)
 
     def display(self, save):
-        for alias, proj in self.projs.items():
+        for alias, _proj in self.projs.items():
             fig, ax = plt.subplots(1, 1, figsize=(self.panel_size, self.panel_size))
             _ = self.view(alias=alias, ax=ax)
             ax.axis("off")
@@ -203,9 +201,7 @@ class Projector:
             pad = [int(0.5 * (self.box_size - s)) for s in shape]
             pad = [(p, int(self.box_size - s - p)) for (s, p) in zip(shape, pad, strict=False)]
             if np.min([np.min([i, j]) for i, j in pad]) < 0:
-                raise ValueError(
-                    f"Box of size {self.box_size} invalid for image of size: {shape}."
-                )
+                raise ValueError(f"Box of size {self.box_size} invalid for image of size: {shape}.")
             self.data[alias] = np.pad(
                 img,
                 pad,
@@ -229,18 +225,10 @@ class Projector:
         proj = self.projs["gfp"].copy()
         contour = self.get_proj_contours()
         fig, ax = plt.subplots(1, 1, figsize=(self.panel_size, self.panel_size))
-        ax.imshow(
-            proj, cmap="inferno", origin="lower", vmin=self.gfp_vmin, vmax=self.gfp_vmax
-        )
+        ax.imshow(proj, cmap="inferno", origin="lower", vmin=self.gfp_vmin, vmax=self.gfp_vmax)
         for alias_cont, alias_color in zip(["nuc", "mem"], ["cyan", "magenta"], strict=False):
-            [
-                ax.plot(c[:, 1], c[:, 0], lw=0.5, color=alias_color)
-                for c in contour[alias_cont]
-            ]
-            [
-                ax.plot(c[:, 1], c[:, 0], lw=0.5, color=alias_color)
-                for c in contour[alias_cont]
-            ]
+            [ax.plot(c[:, 1], c[:, 0], lw=0.5, color=alias_color) for c in contour[alias_cont]]
+            [ax.plot(c[:, 1], c[:, 0], lw=0.5, color=alias_color) for c in contour[alias_cont]]
         plt.show()
 
     @staticmethod
@@ -261,13 +249,13 @@ class Projector:
                     v = np.percentile(values, pct)
                 vmax[ax].append(v)
         if include_vmin_as_zero:
-            return dict([(ax, (0, func(vals))) for ax, vals in vmax.items()])
-        return dict([(ax, func(vals)) for ax, vals in vmax.items()])
+            return {ax: (0, func(vals)) for ax, vals in vmax.items()}
+        return {ax: func(vals) for ax, vals in vmax.items()}
 
     @staticmethod
     def get_shared_gfp_range_for_zy_views_old(instances, pcts, mode):
         minmax = {"z": [], "y": []}
-        for k, cellinfos in instances.items():
+        for _k, cellinfos in instances.items():
             for cellinfo in cellinfos:
                 img = cellinfo["img"]
                 for ax in ["z", "y"]:
@@ -278,4 +266,4 @@ class Projector:
                     if len(values):
                         minmax[ax].append(np.percentile(values, pcts))
         print(minmax)
-        return dict([(ax, (np.min(vals), np.max(vals))) for ax, vals in minmax.items()])
+        return {ax: (np.min(vals), np.max(vals)) for ax, vals in minmax.items()}

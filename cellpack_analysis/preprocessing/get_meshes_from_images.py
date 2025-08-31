@@ -49,14 +49,14 @@ def get_meshes_for_file(
     subsample=0.95,
     recalculate=RECALCULATE,
 ):
-    cellid = file.stem.split("_")[1]
+    cell_id = file.stem.split("_")[1]
     reader = AICSImage(file)
     data = reader.get_image_data("CZYX", S=0, T=0)
     writer = vtk.vtkOBJWriter()
     for name, channel in zip(
         ["nuc", "mem", "struct"], [nuc_channel, mem_channel, struct_channel], strict=False
     ):
-        save_path = save_folder / f"{name}_mesh_{cellid}.obj"
+        save_path = save_folder / f"{name}_mesh_{cell_id}.obj"
         if save_path.exists() and not recalculate:
             log.info(f"Mesh for {file.stem} already exists. Skipping.")
             return

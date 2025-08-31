@@ -13,5 +13,5 @@ python /allen/aics/animated-cell/Saurabh/cellpack-analysis/cellpack_analysis/scr
 --generate_recipes \
 --use_mean_cell \
 # --dry_run \
-# --use_cellid_as_seed \
+# --use_cell_id_as_seed \
 # --num_packings 4 \

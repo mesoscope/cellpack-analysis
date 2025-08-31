@@ -56,7 +56,7 @@ def get_positions_from_single_image(file):
     -------
         tuple: A tuple containing the cell ID and a list of positions of structures.
     """
-    cellid = file.stem.split("_")[1]
+    cell_id = file.stem.split("_")[1]
     img = io.imread(file)
     img_pex = img[:, struct_channel_index]
     img_nuc = img[:, nuc_channel_index]
@@ -68,7 +68,7 @@ def get_positions_from_single_image(file):
     nuc_positions = []
     nuc_sizes = []
     if n_nuc > 10:
-        print(f"Warning: {n_nuc} nuclei detected in cell {cellid}")
+        print(f"Warning: {n_nuc} nuclei detected in cell {cell_id}")
     for i in range(1, n_nuc + 1):
         zcoords, ycoords, xcoords = np.where(label_img_nuc == i)
         nuc_positions.append(
@@ -88,7 +88,7 @@ def get_positions_from_single_image(file):
     mem_positions = []
     mem_sizes = []
     if n_mem > 10:
-        print(f"Warning: {n_mem} membranes detected in cell {cellid}")
+        print(f"Warning: {n_mem} membranes detected in cell {cell_id}")
     for i in range(1, n_mem + 1):
         zcoords, ycoords, xcoords = np.where(label_img_mem == i)
         mem_positions.append(
@@ -122,7 +122,7 @@ def get_positions_from_single_image(file):
             mem_distances[centroid_inds[2], centroid_inds[1], centroid_inds[0]]
         )
     return (
-        cellid,
+        cell_id,
         positions,
         nuc_centroid,
         mem_centroid,
@@ -145,7 +145,7 @@ img_mem_max = np.max(img_mem, axis=0)
 label_img = measure.label(img_struct)
 print(img_struct.shape, img_struct_max.shape)
 
-cellid, positions, nuc_centroid, mem_centroid, nuc_distances_img, mem_distances_img = (
+cell_id, positions, nuc_centroid, mem_centroid, nuc_distances_img, mem_distances_img = (
     get_positions_from_single_image(file)
 )
 positions = np.array(positions)
@@ -153,12 +153,12 @@ nuc_centroid = np.array(nuc_centroid)
 mem_centroid = np.array(mem_centroid)
 
 # %% load nucleus and membrane mesh
-cellid = file.stem.split("_")[1]
-nuc_mesh_path = file.parents[2] / f"meshes/nuc_mesh_{cellid}.obj"
+cell_id = file.stem.split("_")[1]
+nuc_mesh_path = file.parents[2] / f"meshes/nuc_mesh_{cell_id}.obj"
 nuc_mesh = trimesh.load_mesh(nuc_mesh_path)
 # nuc_mesh.apply_translation(-nuc_mesh.centroid)
 
-mem_mesh_path = file.parents[2] / f"meshes/mem_mesh_{cellid}.obj"
+mem_mesh_path = file.parents[2] / f"meshes/mem_mesh_{cell_id}.obj"
 mem_mesh = trimesh.load_mesh(mem_mesh_path)
 # mem_mesh.apply_translation(-mem_mesh.centroid)
 
@@ -172,11 +172,11 @@ fraction_outside_mem = np.sum(mem_distances < 0) / len(mem_distances)
 fig, ax = plt.subplots(1, 2)
 
 ax[0].hist(nuc_distances)
-ax[0].set_title(f"Cell {cellid}\nFraction inside nuc: {fraction_inside_nuc:.2f}")
+ax[0].set_title(f"Cell {cell_id}\nFraction inside nuc: {fraction_inside_nuc:.2f}")
 ax[0].set_xlabel("Distance from nucleus")
 
 ax[1].hist(mem_distances)
-ax[1].set_title(f"Cell {cellid}\nFraction outside mem: {fraction_outside_mem:.2f}")
+ax[1].set_title(f"Cell {cell_id}\nFraction outside mem: {fraction_outside_mem:.2f}")
 ax[1].set_xlabel("Distance from membrane")
 plt.show()
 # %% find points outside membrane and inside nucleus
@@ -232,40 +232,35 @@ centroids_dict = {}
 parallel = True
 if parallel:
     with ProcessPoolExecutor(max_workers=num_processes) as executor:
-        for _, (cellid, positions, nuc_centroid, mem_centroid, _, _) in tqdm(
+        for _, (cell_id, positions, nuc_centroid, mem_centroid, _, _) in tqdm(
             zip(
                 file_path_list,
-                executor.map(get_positions_from_single_image, file_path_list), strict=False,
+                executor.map(get_positions_from_single_image, file_path_list),
+                strict=False,
             ),
             total=len(file_path_list),
         ):
-            positions_dict[cellid] = {}
-            positions_dict[cellid][structure_name] = positions
-            centroids_dict[cellid] = {}
-            centroids_dict[cellid]["nucleus"] = nuc_centroid
-            centroids_dict[cellid]["membrane"] = mem_centroid
+            positions_dict[cell_id] = {}
+            positions_dict[cell_id][structure_name] = positions
+            centroids_dict[cell_id] = {}
+            centroids_dict[cell_id]["nucleus"] = nuc_centroid
+            centroids_dict[cell_id]["membrane"] = mem_centroid
 else:
     for file in tqdm(file_path_list):
-        cellid, positions, nuc_centroid, mem_centroid, _, _ = (
-            get_positions_from_single_image(file)
-        )
-        positions_dict[cellid] = {}
-        positions_dict[cellid][structure_name] = positions
-        centroids_dict[cellid] = {}
-        centroids_dict[cellid]["nucleus"] = nuc_centroid
-        centroids_dict[cellid]["membrane"] = mem_centroid
+        cell_id, positions, nuc_centroid, mem_centroid, _, _ = get_positions_from_single_image(file)
+        positions_dict[cell_id] = {}
+        positions_dict[cell_id][structure_name] = positions
+        centroids_dict[cell_id] = {}
+        centroids_dict[cell_id]["nucleus"] = nuc_centroid
+        centroids_dict[cell_id]["membrane"] = mem_centroid
 
 # %% save positions
-save_path = (
-    datadir / f"structure_data/{STRUCTURE_ID}/{subfolder}/positions_{STRUCTURE_ID}.json"
-)
+save_path = datadir / f"structure_data/{STRUCTURE_ID}/{subfolder}/positions_{STRUCTURE_ID}.json"
 with open(save_path, "w") as f:
     json.dump(positions_dict, f, indent=4, sort_keys=True)
 print(f"Saved positions to {save_path}")
 # %% save centroids
-save_path = (
-    datadir / f"structure_data/{STRUCTURE_ID}/centroids/centroids_{STRUCTURE_ID}.json"
-)
+save_path = datadir / f"structure_data/{STRUCTURE_ID}/centroids/centroids_{STRUCTURE_ID}.json"
 save_path.parent.mkdir(parents=True, exist_ok=True)
 with open(save_path, "w") as f:
     json.dump(centroids_dict, f, indent=4, sort_keys=True)

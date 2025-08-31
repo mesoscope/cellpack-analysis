@@ -8,7 +8,7 @@ import pandas as pd
 from scipy.stats import pearsonr
 from tqdm import tqdm
 
-from cellpack_analysis.lib.get_cellid_list import get_cellid_list_for_structure
+from cellpack_analysis.lib.get_cell_id_list import get_cell_id_list_for_structure
 
 log = logging.getLogger(__name__)
 # %% [markdown]
@@ -80,9 +80,7 @@ observed_pilr_path = (
     / f"structure_data/{STRUCTURE_ID}/{subset_folder}/pilr/{STRUCTURE_ID}_individual_PILR.npy"
 )
 
-result_dir = (
-    base_result_dir / "multi_structure_colocalization" / COMPARE_STRUCTURE_FOLDER
-)
+result_dir = base_result_dir / "multi_structure_colocalization" / COMPARE_STRUCTURE_FOLDER
 result_dir.mkdir(parents=True, exist_ok=True)
 
 # %% [markdown]
@@ -98,15 +96,13 @@ for structure_name, rule_list in RULE_MAP.items():
         else:
             pilr_path = simulated_pilr_folder / f"{rule}/{rule}_individual_PILR.npy"
         individual_pilr_dict[structure_name][rule] = np.load(pilr_path)
-        log.info(
-            f"Loaded PILR with shape {individual_pilr_dict[structure_name][rule].shape}"
-        )
+        log.info(f"Loaded PILR with shape {individual_pilr_dict[structure_name][rule].shape}")
 # %% [markdown]
-# ## Get cellids
-cellids = {}
+# ## Get cell_ids
+cell_ids = {}
 for structure_name in individual_pilr_dict:
-    log.info(f"Getting cellids for {structure_name}")
-    cellids[structure_name] = get_cellid_list_for_structure(
+    log.info(f"Getting cell_ids for {structure_name}")
+    cell_ids[structure_name] = get_cell_id_list_for_structure(
         CHANNEL_STRUCTURE_MAP[structure_name], dsphere=True
     )
 # %% [markdown]
@@ -122,9 +118,9 @@ else:
     index_tuples = []
     for structure_name, rule_dict in individual_pilr_dict.items():
         for rule_name in rule_dict:
-            for cellid in cellids[structure_name]:
-                index_tuples.append((structure_name, rule_name, cellid))
-    index = pd.MultiIndex.from_tuples(index_tuples, names=["channel", "rule", "cellid"])
+            for cell_id in cell_ids[structure_name]:
+                index_tuples.append((structure_name, rule_name, cell_id))
+    index = pd.MultiIndex.from_tuples(index_tuples, names=["channel", "rule", "cell_id"])
     df_corr = pd.DataFrame(
         columns=index,
         index=index,
@@ -136,55 +132,49 @@ else:
 
     for channel_1, rule_dict_1 in individual_pilr_dict.items():
         for rule_1, pilr_list_1 in rule_dict_1.items():
-            cellid_list_1 = cellids[channel_1]
+            cell_id_list_1 = cell_ids[channel_1]
             for channel_2, rule_dict_2 in individual_pilr_dict.items():
                 for rule_2, pilr_list_2 in rule_dict_2.items():
-                    cellid_list_2 = cellids[channel_2]
+                    cell_id_list_2 = cell_ids[channel_2]
                     log.info(
                         f"Calculating correlation between {channel_1} with rule {rule_1}"
                         f" and {channel_2} with rule {rule_2}"
                     )
-                    for cellid1, pilr1 in tqdm(
-                        zip(cellid_list_1, pilr_list_1, strict=False), total=len(cellid_list_1)
+                    for cell_id1, pilr1 in tqdm(
+                        zip(cell_id_list_1, pilr_list_1, strict=False), total=len(cell_id_list_1)
                     ):
-                        masked_pilr1 = pilr1[
-                            (pilr1.shape[0] // 2) :, :
-                        ].flatten()
-                        for cellid2, pilr2 in zip(cellid_list_2, pilr_list_2, strict=False):
+                        masked_pilr1 = pilr1[(pilr1.shape[0] // 2) :, :].flatten()
+                        for cell_id2, pilr2 in zip(cell_id_list_2, pilr_list_2, strict=False):
                             # only calculate if not already calculated
                             if pd.isna(
                                 df_corr.loc[
-                                    (channel_1, rule_1, cellid1),
-                                    (channel_2, rule_2, cellid2),
+                                    (channel_1, rule_1, cell_id1),
+                                    (channel_2, rule_2, cell_id2),
                                 ]
                             ):
                                 if (
                                     (channel_1 == channel_2)
                                     and (rule_1 == rule_2)
-                                    and (cellid1 == cellid2)
+                                    and (cell_id1 == cell_id2)
                                 ):
                                     df_corr.loc[
-                                        (channel_1, rule_1, cellid1),
-                                        (channel_2, rule_2, cellid2),
+                                        (channel_1, rule_1, cell_id1),
+                                        (channel_2, rule_2, cell_id2),
                                     ] = 1
                                     df_corr.loc[
-                                        (channel_2, rule_2, cellid2),
-                                        (channel_1, rule_1, cellid1),
+                                        (channel_2, rule_2, cell_id2),
+                                        (channel_1, rule_1, cell_id1),
                                     ] = 1
                                 else:
-                                    masked_pilr2 = pilr2[
-                                        (pilr2.shape[0] // 2) :, :
-                                    ].flatten()
-                                    corr_val = pearsonr(
-                                        masked_pilr1, masked_pilr2
-                                    ).correlation
+                                    masked_pilr2 = pilr2[(pilr2.shape[0] // 2) :, :].flatten()
+                                    corr_val = pearsonr(masked_pilr1, masked_pilr2).correlation
                                     df_corr.loc[
-                                        (channel_1, rule_1, cellid1),
-                                        (channel_2, rule_2, cellid2),
+                                        (channel_1, rule_1, cell_id1),
+                                        (channel_2, rule_2, cell_id2),
                                     ] = corr_val
                                     df_corr.loc[
-                                        (channel_2, rule_2, cellid2),
-                                        (channel_1, rule_1, cellid1),
+                                        (channel_2, rule_2, cell_id2),
+                                        (channel_1, rule_1, cell_id1),
                                     ] = corr_val
         df_corr.to_parquet(df_corr_path)
 log.info(f"Correlations calculated and saved to {df_corr_path}")

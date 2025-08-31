@@ -15,7 +15,9 @@ MAX_NUM_CLUSTERS = 5
 CREATE_FILES = True
 RUN_PACKINGS = True
 
-recipe_template_path = "/allen/aics/animated-cell/Saurabh/forRitvik/npm1_cellPACK/templates/npm1_template.json"
+recipe_template_path = (
+    "/allen/aics/animated-cell/Saurabh/forRitvik/npm1_cellPACK/templates/npm1_template.json"
+)
 config_path = "/allen/aics/animated-cell/Saurabh/forRitvik/npm1_cellPACK/config/npm1_parallel_packing_config.json"
 
 generated_recipe_path = (
@@ -144,16 +146,12 @@ def create_recipe_files(
                 **RADIAL_GRADIENT_DICT,
                 **SURFACE_GRADIENT_DICT,
             }
-            contents_clust["objects"]["seed_center"] = contents_clust["objects"][
-                "seed"
-            ].copy()
+            contents_clust["objects"]["seed_center"] = contents_clust["objects"]["seed"].copy()
             contents_clust["objects"]["seed_center"]["packing_mode"] = "gradient"
             contents_clust["objects"]["seed_center"]["gradient"] = "radial_gradient"
 
             # put 2 clusters along the nuclear boundary
-            contents_clust["objects"]["seed_surface"] = contents_clust["objects"][
-                "seed"
-            ].copy()
+            contents_clust["objects"]["seed_surface"] = contents_clust["objects"]["seed"].copy()
             contents_clust["objects"]["seed_surface"]["packing_mode"] = "gradient"
             contents_clust["objects"]["seed_surface"]["gradient"] = "surface_gradient"
 
@@ -194,8 +192,8 @@ if CREATE_FILES:
 
 
 files = os.listdir(generated_recipe_path)
-# max_num_cellIDs = 24
-max_num_cellIDs = np.inf
+# max_num_cell_ids = 24
+max_num_cell_ids = np.inf
 max_num_files = np.inf
 input_files_to_use = []
 num_files = 0
@@ -266,15 +264,12 @@ if RUN_PACKINGS:
             #     output_folder / f"results_npm1_analyze_{fname}_seed_0.simularium"
             # )
             output_file = (
-                output_folder
-                / f"figures/voxelized_image_npm1_analyze_{fname}_seed_0.ome.tiff"
+                output_folder / f"figures/voxelized_image_npm1_analyze_{fname}_seed_0.ome.tiff"
             )
             if output_file.exists():
                 if skip_completed:
                     skipped_count += 1
-                    print(
-                        f"Skipping {file} because output file exists, {skipped_count} skipped"
-                    )
+                    print(f"Skipping {file} because output file exists, {skipped_count} skipped")
                     continue
             print(f"Submitted {file}")
             futures.append(executor.submit(run_packing, file))

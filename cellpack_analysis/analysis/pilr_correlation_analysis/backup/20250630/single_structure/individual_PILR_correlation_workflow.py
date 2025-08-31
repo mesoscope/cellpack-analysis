@@ -10,7 +10,7 @@ import seaborn as sns
 from scipy.stats import pearsonr
 from tqdm import tqdm
 
-from cellpack_analysis.lib.get_cellid_list import get_cellid_list_for_structure
+from cellpack_analysis.lib.get_cell_id_list import get_cell_id_list_for_structure
 
 log = logging.getLogger(__name__)
 # %% [markdown]
@@ -53,14 +53,12 @@ with open(individual_pilr_path) as f:
 
 # %% [markdown]
 # ## Convert to numpy arrays
-cellids = {}
+cell_ids = {}
 for channel, pilr_list in individual_pilr_dict.items():
     log.info(f"Converting PILRs for {channel} to numpy arrays")
     individual_pilr_dict[channel] = np.array(pilr_list, dtype=np.float16)
     log.info(f"{channel} PILR shape {individual_pilr_dict[channel].shape}")
-    cellids[channel] = get_cellid_list_for_structure(
-        CHANNEL_STRUCTURE_MAP[channel], dsphere=True
-    )
+    cell_ids[channel] = get_cell_id_list_for_structure(CHANNEL_STRUCTURE_MAP[channel], dsphere=True)
 # %% [markdown]
 # ## Calculate correlations
 recalculate = True
@@ -72,9 +70,9 @@ if (not recalculate) and df_corr_path.exists():
 else:
     log.info("Calculating correlations")
     index_tuples = []
-    for channel, cellid_list in cellids.items():
-        index_tuples.extend([(channel, cellid) for cellid in cellid_list])
-    index = pd.MultiIndex.from_tuples(index_tuples, names=["channel", "cellid"])
+    for channel, cell_id_list in cell_ids.items():
+        index_tuples.extend([(channel, cell_id) for cell_id in cell_id_list])
+    index = pd.MultiIndex.from_tuples(index_tuples, names=["channel", "cell_id"])
     df_corr = pd.DataFrame(
         columns=index,
         index=index,
@@ -82,31 +80,25 @@ else:
     )
     log.info(f"Created dataframe with shape {df_corr.shape}")
     for channel_1, pilr_list_1 in individual_pilr_dict.items():
-        cellid_list_1 = df_corr.loc[channel_1].index
+        cell_id_list_1 = df_corr.loc[channel_1].index
         for channel_2, pilr_list_2 in individual_pilr_dict.items():
-            cellid_list_2 = df_corr.loc[channel_2].index
+            cell_id_list_2 = df_corr.loc[channel_2].index
             log.info(f"Calculating correlation between {channel_1} and {channel_2}")
-            for cellid1, pilr1 in tqdm(
-                zip(cellid_list_1, pilr_list_1, strict=False), total=len(cellid_list_1)
+            for cell_id1, pilr1 in tqdm(
+                zip(cell_id_list_1, pilr_list_1, strict=False), total=len(cell_id_list_1)
             ):
                 masked_pilr1 = pilr1[(pilr1.shape[0] // 2) :, :].flatten()
-                for cellid2, pilr2 in zip(cellid_list_2, pilr_list_2, strict=False):
+                for cell_id2, pilr2 in zip(cell_id_list_2, pilr_list_2, strict=False):
                     # only calculate if not already calculated
-                    if pd.isna(df_corr.loc[(channel_1, cellid1), (channel_2, cellid2)]):
-                        if (channel_1 == channel_2) and (cellid1 == cellid2):
-                            df_corr.loc[(channel_1, cellid1), (channel_2, cellid2)] = 1
-                            df_corr.loc[(channel_2, cellid2), (channel_1, cellid1)] = 1
+                    if pd.isna(df_corr.loc[(channel_1, cell_id1), (channel_2, cell_id2)]):
+                        if (channel_1 == channel_2) and (cell_id1 == cell_id2):
+                            df_corr.loc[(channel_1, cell_id1), (channel_2, cell_id2)] = 1
+                            df_corr.loc[(channel_2, cell_id2), (channel_1, cell_id1)] = 1
                         else:
-                            masked_pilr2 = pilr2[
-                                (pilr2.shape[0] // 2) :, :
-                            ].flatten()
+                            masked_pilr2 = pilr2[(pilr2.shape[0] // 2) :, :].flatten()
                             corr_val = pearsonr(masked_pilr1, masked_pilr2).correlation
-                            df_corr.loc[(channel_1, cellid1), (channel_2, cellid2)] = (
-                                corr_val
-                            )
-                            df_corr.loc[(channel_2, cellid2), (channel_1, cellid1)] = (
-                                corr_val
-                            )
+                            df_corr.loc[(channel_1, cell_id1), (channel_2, cell_id2)] = corr_val
+                            df_corr.loc[(channel_2, cell_id2), (channel_1, cell_id1)] = corr_val
             # df.to_csv(result_dir / "individual_PILR_corr.csv")
         df_corr.to_parquet(result_dir / "individual_PILR_correlations.parquet")
 log.info(f"Correlations calculated and saved to {df_corr_path}")

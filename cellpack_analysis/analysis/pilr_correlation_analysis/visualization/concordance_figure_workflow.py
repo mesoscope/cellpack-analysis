@@ -17,9 +17,7 @@ plt.rcParams.update({"font.size": 14})
 # %% [markdown]
 # ## Set up folders
 project_root = get_project_root()
-config_folder = (
-    project_root / "cellpack_analysis/analysis/pilr_correlation_analysis/configs"
-)
+config_folder = project_root / "cellpack_analysis/analysis/pilr_correlation_analysis/configs"
 config_file = "concordance.json"
 config = read_json(config_folder / config_file)
 workflow = config["workflow"]
@@ -96,16 +94,10 @@ for struct, df_struct in df_plot.groupby("structure_2"):
         samples[struct][base_structures[0]],
         samples[struct][base_structures[1]],
     )
-    effect_size = (
-        "small"
-        if cohens_d_value < 0.2
-        else "medium" if cohens_d_value < 0.5 else "large"
-    )
+    effect_size = "small" if cohens_d_value < 0.2 else "medium" if cohens_d_value < 0.5 else "large"
     log.info(
-        
-            f"Statistical test for {struct}: t-statistic={t_stat:.3f}, p-value={p_value:.3e}\n"
-            f"Cohen's d={cohens_d_value:.3f} (effect size: {effect_size})"
-        
+        f"Statistical test for {struct}: t-statistic={t_stat:.3f}, p-value={p_value:.3e}\n"
+        f"Cohen's d={cohens_d_value:.3f} (effect size: {effect_size})"
     )
 
 # %% [markdown]

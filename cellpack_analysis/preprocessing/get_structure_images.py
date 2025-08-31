@@ -7,7 +7,7 @@ import pandas as pd
 import quilt3
 from tqdm import tqdm
 
-from cellpack_analysis.lib.get_cellid_list import get_cellid_list_for_structure
+from cellpack_analysis.lib.get_cell_id_list import get_cell_id_list_for_structure
 from cellpack_analysis.lib.get_variance_dataset import get_variance_dataframe
 
 log = logging.getLogger(__name__)
@@ -19,9 +19,7 @@ datadir = Path(__file__).parents[2] / "data"
 datadir.mkdir(exist_ok=True, parents=True)
 # %% [markdown]
 # ### Load variance dataset package from quilt
-pkg = quilt3.Package.browse(
-    "aics/hipsc_single_cell_image_dataset", registry="s3://allencell"
-)
+pkg = quilt3.Package.browse("aics/hipsc_single_cell_image_dataset", registry="s3://allencell")
 
 # %% [markdown]
 # ### Load variance dataset
@@ -42,22 +40,20 @@ log.info(meta_df.structure_name.unique())
 STRUCTURE_ID = "SLC25A17"
 
 # %% [markdown]
-# ### Get cellID list for structure
+# ### Get cell_id list for structure
 dsphere = True
-cellid_list = get_cellid_list_for_structure(STRUCTURE_ID, dsphere=dsphere)
-log.info(f"Found {len(cellid_list)} cell IDs for {STRUCTURE_ID}")
+cell_id_list = get_cell_id_list_for_structure(STRUCTURE_ID, dsphere=dsphere)
+log.info(f"Found {len(cell_id_list)} cell IDs for {STRUCTURE_ID}")
 # %% [markdown]
 # ### Create dataframe for structure metadata
-meta_df_struct = meta_df.loc[cellid_list].reset_index()
+meta_df_struct = meta_df.loc[cell_id_list].reset_index()
 # %% [markdown]
 # ### Prepare file paths to save images
 download_raw = False
 subfolder_name = "sample_8d" if dsphere else "full"
 folder_name = "unsegmented" if download_raw else "segmented"
 
-save_path = Path(
-    datadir / f"structure_data/{STRUCTURE_ID}/{subfolder_name}/{folder_name}"
-)
+save_path = Path(datadir / f"structure_data/{STRUCTURE_ID}/{subfolder_name}/{folder_name}")
 save_path.mkdir(exist_ok=True, parents=True)
 log.info(f"Images will be saved to {save_path}")
 

@@ -7,10 +7,8 @@ import numpy as np
 from tqdm import tqdm
 
 from cellpack_analysis.lib.file_io import read_json, write_json
-from cellpack_analysis.lib.get_cellid_list import get_cellid_list_for_structure
-from cellpack_analysis.lib.get_structure_stats_dataframe import (
-    get_structure_stats_dataframe,
-)
+from cellpack_analysis.lib.get_cell_id_list import get_cell_id_list_for_structure
+from cellpack_analysis.lib.get_structure_stats_dataframe import get_structure_stats_dataframe
 from cellpack_analysis.lib.mesh_tools import get_bounding_box
 from cellpack_analysis.packing import rule_repository
 
@@ -19,7 +17,7 @@ log = logging.getLogger(__name__)
 
 def set_gradient_mode_center(mode_settings, bounding_box):
     """
-    Get gradient mode center
+    Get gradient mode center.
 
     Parameters
     ----------
@@ -35,9 +33,7 @@ def set_gradient_mode_center(mode_settings, bounding_box):
         if center == "center":
             center_position = bounding_box.mean(axis=0).tolist()
         elif center == "random":
-            center_position = np.random.uniform(
-                low=bounding_box[0], high=bounding_box[1]
-            ).tolist()
+            center_position = np.random.uniform(low=bounding_box[0], high=bounding_box[1]).tolist()
         elif center == "max":
             direction = mode_settings.get("direction", [0, 0, 0])
             center_position = bounding_box.mean(axis=0)
@@ -68,7 +64,7 @@ def set_gradient_mode_center(mode_settings, bounding_box):
 
 def resolve_gradient_names(gradient_list):
     """
-    Resolve gradient names
+    Resolve gradient names.
 
     Parameters
     ----------
@@ -87,7 +83,7 @@ def resolve_gradient_names(gradient_list):
 
 def process_gradient_data(recipe_entry, recipe, gradient_structure_name):
     """
-    Process gradient data
+    Process gradient data.
 
     Parameters
     ----------
@@ -121,7 +117,7 @@ def process_gradient_data(recipe_entry, recipe, gradient_structure_name):
 
 def process_rule_dict(updated_recipe, rule_dict, gradient_structure_name):
     """
-    Process rule dictionary
+    Process rule dictionary.
 
     Parameters
     ----------
@@ -141,7 +137,7 @@ def process_rule_dict(updated_recipe, rule_dict, gradient_structure_name):
 
 
 def update_and_save_recipe(
-    cellid,
+    cell_id,
     structure_name,
     recipe_template,
     rule_name,
@@ -162,7 +158,7 @@ def update_and_save_recipe(
 
     Parameters
     ----------
-    cellid : int
+    cell_id : int
         The ID of the cell.
     structure_name : str
         The name of the structure.
@@ -199,40 +195,34 @@ def update_and_save_recipe(
     updated_recipe = recipe_template.copy()
 
     # update recipe version
-    updated_recipe["version"] = f"{rule_name}_{cellid}"
+    updated_recipe["version"] = f"{rule_name}_{cell_id}"
 
     # update bounding box
     if get_bounding_box_from_mesh:
-        bounding_box = get_bounding_box(
-            mesh_path / f"mem_mesh_{cellid}.obj", expand=1.05
-        ).tolist()
-        # print(f"Bounding box for {structure_name}_{cellid}: {bounding_box}")
+        bounding_box = get_bounding_box(mesh_path / f"mem_mesh_{cell_id}.obj", expand=1.05).tolist()
+        # print(f"Bounding box for {structure_name}_{cell_id}: {bounding_box}")
         updated_recipe["bounding_box"] = bounding_box
 
     # update seed if needed
-    if not multiple_replicates and isinstance(cellid, int):
-        updated_recipe["randomness_seed"] = cellid
+    if not multiple_replicates and isinstance(cell_id, int):
+        updated_recipe["randomness_seed"] = cell_id
 
     # update grid path
-    updated_recipe["grid_file_path"] = f"{grid_path}/{cellid}_grid.dat"
+    updated_recipe["grid_file_path"] = f"{grid_path}/{cell_id}_grid.dat"
 
     # update mesh paths
     for obj, short_name in zip(["nucleus_mesh", "membrane_mesh"], ["nuc", "mem"], strict=False):
-        updated_recipe["objects"][obj]["representations"]["mesh"][
-            "path"
-        ] = f"{mesh_path}"
+        updated_recipe["objects"][obj]["representations"]["mesh"]["path"] = f"{mesh_path}"
         updated_recipe["objects"][obj]["representations"]["mesh"][
             "name"
-        ] = f"{short_name}_mesh_{cellid}.obj"
+        ] = f"{short_name}_mesh_{cell_id}.obj"
 
     # update mesh path for additional structure if needed
     if use_additional_struct:
-        updated_recipe["objects"]["struct_mesh"]["representations"]["mesh"][
-            "path"
-        ] = f"{mesh_path}"
+        updated_recipe["objects"]["struct_mesh"]["representations"]["mesh"]["path"] = f"{mesh_path}"
         updated_recipe["objects"]["struct_mesh"]["representations"]["mesh"][
             "name"
-        ] = f"struct_mesh_{cellid}.obj"
+        ] = f"struct_mesh_{cell_id}.obj"
 
     # update counts
     if count is not None:
@@ -251,23 +241,21 @@ def update_and_save_recipe(
     # update recipe rule data
     if gradient_structure_name is None:
         gradient_structure_name = structure_name
-    updated_recipe = process_rule_dict(
-        updated_recipe, rule_dict, gradient_structure_name
-    )
+    updated_recipe = process_rule_dict(updated_recipe, rule_dict, gradient_structure_name)
 
     # save recipe
     rule_path = f"{generated_recipe_path}/{rule_name}"
     Path(rule_path).mkdir(parents=True, exist_ok=True)
-    recipe_path = f"{rule_path}/{structure_name}_{rule_name}_{cellid}.json"
+    recipe_path = f"{rule_path}/{structure_name}_{rule_name}_{cell_id}.json"
     log.debug(f"Saving recipe to {recipe_path}")
     write_json(recipe_path, updated_recipe)
 
     return updated_recipe
 
 
-def get_cellids(workflow_config):
+def get_cell_ids(workflow_config):
     """
-    Get list of cell IDs to pack for a given structure
+    Get list of cell IDs to pack for a given structure.
 
     Parameters
     ----------
@@ -277,9 +265,9 @@ def get_cellids(workflow_config):
     if workflow_config.use_mean_cell:
         return ["mean"]
     else:
-        return get_cellid_list_for_structure(
+        return get_cell_id_list_for_structure(
             structure_id=workflow_config.structure_id,
-            df_cellID=None,
+            df_cell_id=None,
             dsphere=workflow_config.use_cells_in_8d_sphere,
             load_local=True,
         )
@@ -300,7 +288,7 @@ def generate_recipes(
     workflow_config:
         workflow configuration
     """
-    cellid_list = get_cellids(workflow_config)
+    cell_id_list = get_cell_ids(workflow_config)
 
     recipe_data = workflow_config.data.get("recipe_data", {})
 
@@ -308,7 +296,7 @@ def generate_recipes(
         num_processes = workflow_config.num_processes
     else:
         num_processes = np.min(
-            [int(np.floor(0.8 * multiprocessing.cpu_count())), len(cellid_list)]
+            [int(np.floor(0.8 * multiprocessing.cpu_count())), len(cell_id_list)]
         )
 
     recipe_template = read_json(workflow_config.recipe_template_path)
@@ -317,25 +305,23 @@ def generate_recipes(
 
     for rule_name, rule_dict in recipe_data.items():
         log.info(f"Generating recipes for rule: {rule_name}")
-        with tqdm(total=len(cellid_list)) as pbar:
-            with concurrent.futures.ProcessPoolExecutor(
-                max_workers=num_processes
-            ) as executor:
+        with tqdm(total=len(cell_id_list)) as pbar:
+            with concurrent.futures.ProcessPoolExecutor(max_workers=num_processes) as executor:
                 futures = []
-                for cellid in cellid_list:
+                for cell_id in cell_id_list:
                     # get count from cell stats
                     count = None
                     if workflow_config.get_counts_from_data:
-                        count = stats_df.loc[cellid, "count"]
+                        count = stats_df.loc[cell_id, "count"]
 
                     # get size from cell stats
                     radius = None
                     if workflow_config.get_size_from_data:
-                        radius = stats_df.loc[cellid, "radius"]
+                        radius = stats_df.loc[cell_id, "radius"]
 
                     future = executor.submit(
                         update_and_save_recipe,
-                        cellid=cellid,
+                        cell_id=cell_id,
                         structure_name=workflow_config.structure_name,
                         recipe_template=recipe_template,
                         rule_name=rule_name,
@@ -358,7 +344,7 @@ def generate_recipes(
 
 def generate_configs(workflow_config):
     """
-    Generate cellpack config file
+    Generate cellpack config file.
 
     Parameters
     ----------

@@ -80,8 +80,7 @@ COLORS = {
 # %% [markdown]
 # ## Set up folders
 base_folder = (
-    Path(__file__).parents[4]
-    / f"results/PILR_correlation_analysis/{FOLDER_ID}/{STRUCTURE_NAME}"
+    Path(__file__).parents[4] / f"results/PILR_correlation_analysis/{FOLDER_ID}/{STRUCTURE_NAME}"
 )
 
 fig_folder = base_folder / "figures"
@@ -106,8 +105,8 @@ else:
     df_plot = pd.DataFrame(
         index=np.arange(df_clean.shape[0] * df_clean.shape[1]),
         columns=[
-            "cellid1",
-            "cellid2",
+            "cell_id1",
+            "cell_id2",
             "rule1",
             "rule2",
             "structure1",
@@ -123,21 +122,21 @@ else:
         for rule1, rule2 in itertools.product(RULE_MAP[struct1], RULE_MAP[struct2]):
             log.info(f"Processing rule {rule1} vs {rule2}")
             df_rule = df_struct.loc[rule1, rule2]
-            cellids1 = df_rule.index
-            cellids2 = df_rule.columns
-            for cellid1, cellid2 in tqdm(
-                itertools.product(cellids1, cellids2),
-                total=len(cellids1) * len(cellids2),
+            cell_ids1 = df_rule.index
+            cell_ids2 = df_rule.columns
+            for cell_id1, cell_id2 in tqdm(
+                itertools.product(cell_ids1, cell_ids2),
+                total=len(cell_ids1) * len(cell_ids2),
                 desc=f"Processing {rule1} vs {rule2}",
             ):
                 row = {
-                    "cellid1": cellid1,
-                    "cellid2": cellid2,
+                    "cell_id1": cell_id1,
+                    "cell_id2": cell_id2,
                     "rule1": rule1,
                     "rule2": rule2,
                     "structure1": struct1,
                     "structure2": struct2,
-                    "correlation": df_rule.loc[cellid1, cellid2],
+                    "correlation": df_rule.loc[cell_id1, cell_id2],
                 }
                 df_plot.loc[ct] = pd.Series(row)
                 ct += 1

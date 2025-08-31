@@ -18,8 +18,7 @@ EXPERIMENT = "rules_shape"
 
 # %%
 base_folder = (
-    Path(__file__).parents[3]
-    / f"results/PILR_correlation_analysis/{STRUCTURE_ID}/{EXPERIMENT}/"
+    Path(__file__).parents[3] / f"results/PILR_correlation_analysis/{STRUCTURE_ID}/{EXPERIMENT}/"
 )
 
 # %%
@@ -131,12 +130,8 @@ fig.savefig(f"{base_folder}/avg_PILR_squeezed.png", dpi=300, bbox_inches="tight"
 # ### Get correlations between average PILRs
 
 # %%
-df = pd.DataFrame(
-    index=ch_names_dict.values(), columns=ch_names_dict.values(), dtype=float
-)
-std_df = pd.DataFrame(
-    index=ch_names_dict.values(), columns=ch_names_dict.values(), dtype=float
-)
+df = pd.DataFrame(index=ch_names_dict.values(), columns=ch_names_dict.values(), dtype=float)
+std_df = pd.DataFrame(index=ch_names_dict.values(), columns=ch_names_dict.values(), dtype=float)
 
 # %% [markdown]
 # ### Calculate correlations between channels
@@ -179,12 +174,8 @@ df = df.sort_values(by=raw_image_label, ascending=False).sort_values(
 print(df)
 
 # %%
-bar_vals = df.loc[
-    raw_image_label, [col for col in df.columns if col != raw_image_label]
-].values
-bar_errs = std_df.loc[
-    raw_image_label, [col for col in df.columns if col != raw_image_label]
-].values
+bar_vals = df.loc[raw_image_label, [col for col in df.columns if col != raw_image_label]].values
+bar_errs = std_df.loc[raw_image_label, [col for col in df.columns if col != raw_image_label]].values
 
 # %% [markdown]
 # Create bar plot with values and errors
@@ -221,7 +212,9 @@ df_sorted = df.sort_values(by=raw_image_label, ascending=False).sort_values(
 df_sorted
 
 # %%
-save_dir = "/allen/aics/animated-cell/Saurabh/cellpack-analysis/results/SLC25A17/sample_8d_actual_shape"
+save_dir = (
+    "/allen/aics/animated-cell/Saurabh/cellpack-analysis/results/SLC25A17/sample_8d_actual_shape"
+)
 
 # %%
 mask = np.zeros_like(df, dtype=bool)

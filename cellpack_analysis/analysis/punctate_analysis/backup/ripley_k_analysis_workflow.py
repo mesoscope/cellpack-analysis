@@ -39,9 +39,7 @@ base_datadir = Path(__file__).parents[3] / "data"
 base_results_dir = Path(__file__).parents[3] / "results"
 
 folder_name = "baseline" if baseline_analysis else "rules"
-results_dir = (
-    base_results_dir / f"stochastic_variation_analysis/{STRUCTURE_ID}/{folder_name}"
-)
+results_dir = base_results_dir / f"stochastic_variation_analysis/{STRUCTURE_ID}/{folder_name}"
 results_dir.mkdir(exist_ok=True, parents=True)
 
 figures_dir = results_dir / "figures"

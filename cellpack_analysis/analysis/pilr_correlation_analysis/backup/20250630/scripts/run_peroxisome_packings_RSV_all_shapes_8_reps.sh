@@ -13,4 +13,4 @@ python /allen/aics/animated-cell/Saurabh/cellpack-analysis/cellpack_analysis/scr
 --skip_completed \
 # --dry_run \
 # --num_packings 8 \
-# --use_cellid_as_seed \afkjakj
+# --use_cell_id_as_seed \afkjakj

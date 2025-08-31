@@ -47,9 +47,7 @@ def get_pilr_for_single_image(
         log.error(f"Error reading image: {e}")
         return
 
-    img_data, _ = shtools.align_image_2d(
-        img.data[0], alignment_channel=channel_map["mem"]
-    )
+    img_data, _ = shtools.align_image_2d(img.data[0], alignment_channel=channel_map["mem"])
 
     gfp = img_data[channel_map["gfp"], :, :, :].squeeze()
     mem = img_data[channel_map["mem"], :, :, :].squeeze()
@@ -97,9 +95,7 @@ def average_over_dimension(value, dim=1):
     return value[:, 2:].reshape(65, 128, 64).mean(axis=dim).squeeze()  # R, phi, theta
 
 
-def get_processed_PILR_from_dict(
-    pilr_dict, ch_ind, average_over_phi=False, mask_nucleus=True
-):
+def get_processed_PILR_from_dict(pilr_dict, ch_ind, average_over_phi=False, mask_nucleus=True):
     """
     Get the flattened and processed PILR from the dictionary.
 
@@ -255,15 +251,11 @@ def add_contour_to_axis(ax, projection, dim, domain_nuc, domain_mem, **kwargs):
     nuc_contour = skmeasure.find_contours(nuc_proj, 0.5)
     mem_contour = skmeasure.find_contours(mem_proj, 0.5)
 
-    for alias_cont, alias_color in zip([nuc_contour, mem_contour], ["cyan", "magenta"], strict=False):
-        [
-            ax.plot(c[:, 1], c[:, 0], lw=kwargs.get("lw", 1), color=alias_color)
-            for c in alias_cont
-        ]
-        [
-            ax.plot(c[:, 1], c[:, 0], lw=kwargs.get("lw", 1), color=alias_color)
-            for c in alias_cont
-        ]
+    for alias_cont, alias_color in zip(
+        [nuc_contour, mem_contour], ["cyan", "magenta"], strict=False
+    ):
+        [ax.plot(c[:, 1], c[:, 0], lw=kwargs.get("lw", 1), color=alias_color) for c in alias_cont]
+        [ax.plot(c[:, 1], c[:, 0], lw=kwargs.get("lw", 1), color=alias_color) for c in alias_cont]
     return ax
 
 
@@ -331,7 +323,7 @@ def morph_PILRs_into_average_shape(
     return morphed
 
 
-def get_cellid_ch_seed_from_filename(fname, config_name="analyze", suffix="_pilr"):
+def get_cell_id_ch_seed_from_filename(fname, config_name="analyze", suffix="_pilr"):
     """
     Extracts the cell ID, channel, and seed name from a given file name.
 
@@ -347,14 +339,12 @@ def get_cellid_ch_seed_from_filename(fname, config_name="analyze", suffix="_pilr
     """
     fname = fname.split(suffix)[0]
     seed_name = fname.split("_")[-1].split(".")[0]
-    cellid = fname.split("_")[-3]
-    ch = fname.split(f"{config_name}_")[-1].split(f"_{cellid}")[0]
-    return cellid, ch, seed_name
+    cell_id = fname.split("_")[-3]
+    ch = fname.split(f"{config_name}_")[-1].split(f"_{cell_id}")[0]
+    return cell_id, ch, seed_name
 
 
-def get_correlations_between_average_PILRs(
-    average_pilr_dict, channel_name_dict, save_dir
-):
+def get_correlations_between_average_PILRs(average_pilr_dict, channel_name_dict, save_dir):
     """
     Calculate correlations between average PILRs and save the results.
 
@@ -473,9 +463,7 @@ def calculate_simplified_PILR(positions, nuc_mesh, mem_mesh, scale=True):
     return spilr
 
 
-def get_mean_shape_as_image(
-    outer_mesh, inner_mesh, lmax=16, nisos_outer=32, nisos_inner=32
-):
+def get_mean_shape_as_image(outer_mesh, inner_mesh, lmax=16, nisos_outer=32, nisos_inner=32):
     """
     Converts the outer and inner meshes into an image representation of the mean shape.
 
@@ -561,7 +549,7 @@ class Projector:
         return ax.imshow(proj, cmap=self.CMAPS[alias], origin="lower", **args)
 
     def display(self, save):
-        for alias, proj in self.projs.items():
+        for alias, _proj in self.projs.items():
             fig, ax = plt.subplots(1, 1, figsize=(self.panel_size, self.panel_size))
             _ = self.view(alias=alias, ax=ax)
             ax.axis("off")
@@ -689,9 +677,7 @@ class Projector:
             pad = [int(0.5 * (self.box_size - s)) for s in shape]
             pad = [(p, int(self.box_size - s - p)) for (s, p) in zip(shape, pad, strict=False)]
             if np.min([np.min([i, j]) for i, j in pad]) < 0:
-                raise ValueError(
-                    f"Box of size {self.box_size} invalid for image of size: {shape}."
-                )
+                raise ValueError(f"Box of size {self.box_size} invalid for image of size: {shape}.")
             self.data[alias] = np.pad(
                 img,
                 pad,
@@ -715,18 +701,10 @@ class Projector:
         proj = self.projs["gfp"].copy()
         contour = self.get_proj_contours()
         fig, ax = plt.subplots(1, 1, figsize=(self.panel_size, self.panel_size))
-        ax.imshow(
-            proj, cmap="inferno", origin="lower", vmin=self.gfp_vmin, vmax=self.gfp_vmax
-        )
+        ax.imshow(proj, cmap="inferno", origin="lower", vmin=self.gfp_vmin, vmax=self.gfp_vmax)
         for alias_cont, alias_color in zip(["nuc", "mem"], ["cyan", "magenta"], strict=False):
-            [
-                ax.plot(c[:, 1], c[:, 0], lw=0.5, color=alias_color)
-                for c in contour[alias_cont]
-            ]
-            [
-                ax.plot(c[:, 1], c[:, 0], lw=0.5, color=alias_color)
-                for c in contour[alias_cont]
-            ]
+            [ax.plot(c[:, 1], c[:, 0], lw=0.5, color=alias_color) for c in contour[alias_cont]]
+            [ax.plot(c[:, 1], c[:, 0], lw=0.5, color=alias_color) for c in contour[alias_cont]]
         plt.show()
 
     @staticmethod
@@ -747,13 +725,13 @@ class Projector:
                     v = np.percentile(values, pct)
                 vmax[ax].append(v)
         if include_vmin_as_zero:
-            return dict([(ax, (0, func(vals))) for ax, vals in vmax.items()])
-        return dict([(ax, func(vals)) for ax, vals in vmax.items()])
+            return {ax: (0, func(vals)) for ax, vals in vmax.items()}
+        return {ax: func(vals) for ax, vals in vmax.items()}
 
     @staticmethod
     def get_shared_gfp_range_for_zy_views_old(instances, pcts, mode):
         minmax = {"z": [], "y": []}
-        for k, cellinfos in instances.items():
+        for _k, cellinfos in instances.items():
             for cellinfo in cellinfos:
                 img = cellinfo["img"]
                 for ax in ["z", "y"]:
@@ -764,7 +742,7 @@ class Projector:
                     if len(values):
                         minmax[ax].append(np.percentile(values, pcts))
         print(minmax)
-        return dict([(ax, (np.min(vals), np.max(vals))) for ax, vals in minmax.items()])
+        return {ax: (np.min(vals), np.max(vals)) for ax, vals in minmax.items()}
 
 
 def vectorized_pixelwise_correlation(images: np.ndarray, flatten=False) -> np.ndarray:
@@ -786,9 +764,7 @@ def vectorized_pixelwise_correlation(images: np.ndarray, flatten=False) -> np.nd
     np.ndarray
         Correlation matrix of shape (N, N).
     """
-    flat = np.array(
-        [(img > 0)[(img.shape[0] // 2) :, :].flatten() for img in images]
-    ).astype(
+    flat = np.array([(img > 0)[(img.shape[0] // 2) :, :].flatten() for img in images]).astype(
         np.float32
     )  # Shape: (N, H*W)
 

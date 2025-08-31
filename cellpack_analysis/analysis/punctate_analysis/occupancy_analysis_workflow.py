@@ -242,9 +242,7 @@ fig_combined, ax_combined = visualization.plot_combined_occupancy_ratio(
     figures_dir=figures_dir,
     save_format=save_format,
 )
-log.info(
-    f"Time taken to plot occupancy ratio: {time.time() - occupancy_start_time:.2f} s"
-)
+log.info(f"Time taken to plot occupancy ratio: {time.time() - occupancy_start_time:.2f} s")
 # %% [markdown]
 # ### plot binned occupancy ratio
 fig_binned, ax_binned = visualization.plot_binned_occupancy_ratio(

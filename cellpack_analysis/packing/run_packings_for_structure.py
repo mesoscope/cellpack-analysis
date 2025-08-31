@@ -86,7 +86,7 @@ def set_paths(
         mesh_path = datadir / f"structure_data/{structure_id}/meshes/"
         grid_path = datadir / f"structure_data/{structure_id}/grids/"
 
-    cellid_df_path = datadir / "all_cellids.csv"
+    cell_id_df_path = datadir / "all_cell_ids.csv"
 
     return (
         recipe_template_path,
@@ -94,32 +94,30 @@ def set_paths(
         generated_recipe_path,
         mesh_path,
         grid_path,
-        cellid_df_path,
+        cell_id_df_path,
     )
 
 
 def transform_and_save_dict_for_rule(
     input_dict,
     rule,
-    cellID,
+    cell_id,
     base_output_path,
     mesh_base_path,
     grid_path,
     structure_name,
-    use_cellid_as_seed=False,
+    use_cell_id_as_seed=False,
 ):
     output_dict = input_dict.copy()
-    base_mesh_name = f"mesh_{cellID}.obj"
-    output_dict["version"] = f"{rule}_{cellID}"
-    grid_file_path = grid_path / f"{cellID}_grid.dat"
+    base_mesh_name = f"mesh_{cell_id}.obj"
+    output_dict["version"] = f"{rule}_{cell_id}"
+    grid_file_path = grid_path / f"{cell_id}_grid.dat"
     output_dict["grid_file_path"] = f"{grid_file_path}"
     base_output_path.mkdir(parents=True, exist_ok=True)
-    if use_cellid_as_seed:
-        output_dict["randomness_seed"] = [cellID]
+    if use_cell_id_as_seed:
+        output_dict["randomness_seed"] = [cell_id]
     for obj, short_name in zip(["nucleus_mesh", "membrane_mesh"], ["nuc", "mem"], strict=False):
-        output_dict["objects"][obj]["representations"]["mesh"][
-            "path"
-        ] = f"{mesh_base_path}"
+        output_dict["objects"][obj]["representations"]["mesh"]["path"] = f"{mesh_base_path}"
         output_dict["objects"][obj]["representations"]["mesh"][
             "name"
         ] = f"{short_name}_{base_mesh_name}"
@@ -141,13 +139,9 @@ def transform_and_save_dict_for_rule(
             "weight_mode_settings": {"decay_length": 0.1},
         }
         if "nucleus" in rule:
-            output_dict["gradients"]["surface_gradient"]["mode_settings"][
-                "object"
-            ] = "nucleus"
+            output_dict["gradients"]["surface_gradient"]["mode_settings"]["object"] = "nucleus"
         if "membrane" in rule:
-            output_dict["gradients"]["surface_gradient"]["mode_settings"][
-                "object"
-            ] = "membrane"
+            output_dict["gradients"]["surface_gradient"]["mode_settings"]["object"] = "membrane"
         if "weak" in rule:
             output_dict["gradients"]["surface_gradient"]["weight_mode_settings"] = {
                 "decay_length": 0.3
@@ -208,7 +202,7 @@ def transform_and_save_dict_for_rule(
             output_dict["gradients"]["planar_gradient"]["invert"] = "weight"
 
     # save transformed dict
-    with open(base_output_path / f"{structure_name}_{rule}_{cellID}.json", "w") as f:
+    with open(base_output_path / f"{structure_name}_{rule}_{cell_id}.json", "w") as f:
         json.dump(output_dict, f, indent=4)
 
     return output_dict
@@ -230,16 +224,16 @@ def update_config_file(config_path, output_path):
 
 
 def generate_recipes(
-    cellID_list,
+    cell_id_list,
     template_path,
     output_path,
     mesh_base_path,
     grid_path,
     structure_name,
     rule_list=RULE_LIST,
-    use_cellid_as_seed=False,
+    use_cell_id_as_seed=False,
 ):
-    # if cellID_list is None, will use mean cell
+    # if cell_id_list is None, will use mean cell
     # read json template
     with open(template_path) as j:
         template = json.load(j)
@@ -249,16 +243,16 @@ def generate_recipes(
 
     for rule in rule_list:
         print(f"Creating files for rule {rule}")
-        if cellID_list is None:
+        if cell_id_list is None:
             transform_and_save_dict_for_rule(
                 input_dict=template,
                 rule=rule,
-                cellID="mean",
+                cell_id="mean",
                 base_output_path=output_path,
                 mesh_base_path=mesh_base_path,
                 grid_path=grid_path,
                 structure_name=structure_name,
-                use_cellid_as_seed=False,
+                use_cell_id_as_seed=False,
             )
             continue
 
@@ -266,27 +260,25 @@ def generate_recipes(
         num_processes = np.min(
             [
                 int(np.floor(0.8 * multiprocessing.cpu_count())),
-                len(cellID_list),
+                len(cell_id_list),
             ]
         )
-        with concurrent.futures.ProcessPoolExecutor(
-            max_workers=num_processes
-        ) as executor:
+        with concurrent.futures.ProcessPoolExecutor(max_workers=num_processes) as executor:
             executor.map(
                 transform_and_save_dict_for_rule,
-                [template] * len(cellID_list),
-                [rule] * len(cellID_list),
-                cellID_list,
-                [output_path] * len(cellID_list),
-                [mesh_base_path] * len(cellID_list),
-                [grid_path] * len(cellID_list),
-                [structure_name] * len(cellID_list),
-                [use_cellid_as_seed] * len(cellID_list),
+                [template] * len(cell_id_list),
+                [rule] * len(cell_id_list),
+                cell_id_list,
+                [output_path] * len(cell_id_list),
+                [mesh_base_path] * len(cell_id_list),
+                [grid_path] * len(cell_id_list),
+                [structure_name] * len(cell_id_list),
+                [use_cell_id_as_seed] * len(cell_id_list),
             )
 
 
 def get_cell_ids_to_use(
-    cellid_df_path,
+    cell_id_df_path,
     structure_id,
     num_cells=0,
     use_mean_cell=False,
@@ -297,23 +289,21 @@ def get_cell_ids_to_use(
     if use_mean_cell:
         return None
 
-    df_cellID = pd.read_csv(cellid_df_path)
+    df_cell_id = pd.read_csv(cell_id_df_path)
     if use_cells_in_8d_sphere:
-        df_cellID = df_cellID[df_cellID["8dsphere"]]
+        df_cell_id = df_cell_id[df_cell_id["8dsphere"]]
 
-    cellid_list = df_cellID.loc[
-        df_cellID["structure_name"] == structure_id, "CellId"
+    cell_id_list = df_cell_id.loc[
+        df_cell_id["structure_name"] == structure_id, "CellId"
     ].values.tolist()
 
-    cellid_to_use = cellid_list
+    cell_id_to_use = cell_id_list
     if num_cells > 0:
-        cellid_to_use = np.random.choice(cellid_list, num_cells, replace=False).tolist()
+        cell_id_to_use = np.random.choice(cell_id_list, num_cells, replace=False).tolist()
 
-    print(
-        f"Using {len(cellid_to_use)} cell ids out of {len(cellid_list)} for {structure_id}"
-    )
+    print(f"Using {len(cell_id_to_use)} cell ids out of {len(cell_id_list)} for {structure_id}")
 
-    return cellid_to_use
+    return cell_id_to_use
 
 
 def run_single_packing(recipe_path, config_path):
@@ -337,7 +327,7 @@ def run_single_packing(recipe_path, config_path):
 
 def get_recipes_to_use(
     generated_recipe_path,
-    cellid_df_path,
+    cell_id_df_path,
     structure_id,
     num_cells=0,
     rule_list=RULE_LIST,
@@ -349,7 +339,7 @@ def get_recipes_to_use(
         cell_ids_to_use = ["mean"]
     elif cell_ids_to_use is None:
         cell_ids_to_use = get_cell_ids_to_use(
-            cellid_df_path=cellid_df_path,
+            cell_id_df_path=cell_id_df_path,
             structure_id=structure_id,
             num_cells=num_cells,
             use_mean_cell=use_mean_cell,
@@ -358,9 +348,9 @@ def get_recipes_to_use(
     input_file_list = list(generated_recipe_path.glob("*.json"))
     input_files_to_use = []
     for file in input_file_list:
-        for cellid in cell_ids_to_use:
+        for cell_id in cell_ids_to_use:
             fstem = file.stem
-            if str(cellid) in fstem and any([rule in fstem for rule in rule_list]):
+            if str(cell_id) in fstem and any(rule in fstem for rule in rule_list):
                 input_files_to_use.append(file)
     print("Found", len(input_files_to_use), "files")
     return input_files_to_use, cell_ids_to_use
@@ -410,7 +400,7 @@ def run_packing_workflow(
     config_path,
     structure_name,
     structure_id,
-    cellid_df_path,
+    cell_id_df_path,
     out_path=OUT_FOLDER,
     skip_completed=SKIP_COMPLETED,
     dry_run=DRY_RUN,
@@ -420,7 +410,7 @@ def run_packing_workflow(
 ):
     input_recipes_to_use, _ = get_recipes_to_use(
         generated_recipe_path=generated_recipe_path,
-        cellid_df_path=cellid_df_path,
+        cell_id_df_path=cell_id_df_path,
         structure_id=structure_id,
         num_cells=num_packings,
         cell_ids_to_use=cell_ids_to_use,
@@ -444,13 +434,12 @@ def run_packing_workflow(
     futures = []
     if num_processes == 1:
         for recipe_path in input_recipes_to_use:
-            if check_run_this_recipe(
-                recipe_path, config_data, structure_name, check_type="image"
-            ):
+            if check_run_this_recipe(recipe_path, config_data, structure_name, check_type="image"):
                 if skip_completed:
                     skipped_count += 1
                     print(
-                        f"Skipping {recipe_path} because result file exists, {skipped_count} skipped"
+                        f"Skipping {recipe_path} because result file exists,"
+                        f" {skipped_count} skipped"
                     )
                     continue
 
@@ -482,9 +471,7 @@ def run_packing_workflow(
             )
             gc.collect()
     else:
-        with concurrent.futures.ProcessPoolExecutor(
-            max_workers=num_processes
-        ) as executor:
+        with concurrent.futures.ProcessPoolExecutor(max_workers=num_processes) as executor:
             for recipe_path in input_recipes_to_use:
                 if check_run_this_recipe(
                     recipe_path, config_data, structure_name, check_type="image"
@@ -492,16 +479,15 @@ def run_packing_workflow(
                     if skip_completed:
                         skipped_count += 1
                         print(
-                            f"Skipping {recipe_path} because result file exists, {skipped_count} skipped"
+                            f"Skipping {recipe_path} because result file exists,"
+                            f" {skipped_count} skipped"
                         )
                         continue
 
                 if dry_run:
                     continue
 
-                futures.append(
-                    executor.submit(run_single_packing, recipe_path, config_path)
-                )
+                futures.append(executor.submit(run_single_packing, recipe_path, config_path))
                 print(f"Submitted {recipe_path}")
 
             print(f"Submitted {len(futures)} jobs, {skipped_count} skipped")
@@ -616,10 +602,10 @@ if __name__ == "__main__":
         help="Path to data directory",
     )
     parser.add_argument(
-        "--use_cellid_as_seed",
+        "--use_cell_id_as_seed",
         action="store_true",
         default=False,
-        help="If true, will use cellid as seed",
+        help="If true, will use cell_id as seed",
     )
     parser.add_argument(
         "--use_mean_cell",
@@ -643,7 +629,7 @@ if __name__ == "__main__":
         generated_recipe_path,
         mesh_path,
         grid_path,
-        cellid_df_path,
+        cell_id_df_path,
     ) = set_paths(
         structure_name=args.structure_name,
         structure_id=args.structure_id,
@@ -655,24 +641,24 @@ if __name__ == "__main__":
     )
 
     # create files if needed
-    cellid_list = None
+    cell_id_list = None
     if args.generate_recipes:
-        cellid_list = get_cell_ids_to_use(
-            cellid_df_path=cellid_df_path,
+        cell_id_list = get_cell_ids_to_use(
+            cell_id_df_path=cell_id_df_path,
             structure_id=args.structure_id,
             num_cells=args.num_packings,
             use_mean_cell=args.use_mean_cell,
             use_cells_in_8d_sphere=args.use_cells_in_8d_sphere,
         )
         generate_recipes(
-            cellID_list=cellid_list,
+            cell_id_list=cell_id_list,
             template_path=recipe_template_path,
             output_path=generated_recipe_path,
             mesh_base_path=mesh_path,
             grid_path=grid_path,
             structure_name=args.structure_name,
             rule_list=RULE_LIST,
-            use_cellid_as_seed=args.use_cellid_as_seed,
+            use_cell_id_as_seed=args.use_cell_id_as_seed,
         )
 
     # run packings
@@ -686,11 +672,11 @@ if __name__ == "__main__":
             config_path=config_path,
             structure_name=args.structure_name,
             structure_id=args.structure_id,
-            cellid_df_path=cellid_df_path,
+            cell_id_df_path=cell_id_df_path,
             out_path=out_folder,
             skip_completed=args.skip_completed,
             dry_run=args.dry_run,
-            cell_ids_to_use=cellid_list,
+            cell_ids_to_use=cell_id_list,
             use_mean_cell=args.use_mean_cell,
             use_cells_in_8d_sphere=args.use_cells_in_8d_sphere,
         )

@@ -15,9 +15,7 @@ plt.rcParams.update({"font.size": 14})
 # %% [markdown]
 # ## Set up folders
 project_root = get_project_root()
-config_folder = (
-    project_root / "cellpack_analysis/analysis/pilr_correlation_analysis/configs"
-)
+config_folder = project_root / "cellpack_analysis/analysis/pilr_correlation_analysis/configs"
 config_file = "peroxisome_radial_bias.json"
 base_structure = "peroxisome"
 config = read_json(config_folder / config_file)
@@ -39,7 +37,7 @@ except FileNotFoundError:
 # ## Get label and color maps for rules
 rule_label_map = {}
 color_map = {}
-for strucure_name, structure_info in config["data"].items():
+for _strucure_name, structure_info in config["data"].items():
     for rule, rule_dict in structure_info["rules"].items():
         if rule not in rule_label_map:
             rule_label_map[rule] = rule_dict["label"]

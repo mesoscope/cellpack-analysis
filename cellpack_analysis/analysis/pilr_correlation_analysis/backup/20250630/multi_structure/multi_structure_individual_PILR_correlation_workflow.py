@@ -9,7 +9,7 @@ from scipy.stats import pearsonr
 from tqdm import tqdm
 
 from cellpack_analysis.lib.file_io import get_project_root
-from cellpack_analysis.lib.get_cellid_list import get_cellid_list_for_structure
+from cellpack_analysis.lib.get_cell_id_list import get_cell_id_list_for_structure
 from cellpack_analysis.lib.label_tables import DATA_CONFIG
 
 log = logging.getLogger(__name__)
@@ -20,9 +20,7 @@ subset_folder = "sample_8d" if dsphere else "full"
 
 project_root = get_project_root()
 base_datadir = project_root / "data"
-result_dir = (
-    project_root / "results/PILR_correlation_analysis/multi_structure_colocalization"
-)
+result_dir = project_root / "results/PILR_correlation_analysis/multi_structure_colocalization"
 result_dir.mkdir(parents=True, exist_ok=True)
 # %% [markdown]
 # ## Setup pilr dict
@@ -52,9 +50,7 @@ else:
                     base_datadir
                     / f"PILR/{structure_name}/rules_shape/{rule}/{rule}_individual_PILR.npy"
                 )
-            log.info(
-                f"Loading PILR for {structure_name} with rule {rule} from {pilr_path}"
-            )
+            log.info(f"Loading PILR for {structure_name} with rule {rule} from {pilr_path}")
             if not pilr_path.exists():
                 log.warning(f"PILR file {pilr_path} does not exist")
                 continue
@@ -62,13 +58,13 @@ else:
                 pilr_path,
             )
             log.info(f"Loaded PILR with shape {pilr_array.shape}")
-            cellids = get_cellid_list_for_structure(
+            cell_ids = get_cell_id_list_for_structure(
                 structure_id=structure_id,
                 dsphere=dsphere,
             )
-            for ct, cellid in enumerate(cellids):
-                index_tuples.append((structure_name, rule, cellid))
-                individual_pilr_dict[structure_name][rule][cellid] = pilr_array[ct]
+            for ct, cell_id in enumerate(cell_ids):
+                index_tuples.append((structure_name, rule, cell_id))
+                individual_pilr_dict[structure_name][rule][cell_id] = pilr_array[ct]
     # save combined pilr dict
     with open(pilr_dict_file, "wb") as f:
         pd.to_pickle(individual_pilr_dict, f)
@@ -78,10 +74,10 @@ else:
 # %% [markdown]
 # ## Get list of all structures and rules
 all_struct_rule_pairs = []
-cellid_dict = {}
+cell_id_dict = {}
 for structure in DATA_CONFIG.keys():
     structure_id = DATA_CONFIG[structure]["structure_id"]
-    cellid_dict[structure_id] = get_cellid_list_for_structure(
+    cell_id_dict[structure_id] = get_cell_id_list_for_structure(
         structure_id=structure_id,
         dsphere=dsphere,
     )
@@ -104,13 +100,13 @@ for (structure_1, rule_1), (
 ):
     structure_id_1 = DATA_CONFIG[structure_1]["structure_id"]
     structure_id_2 = DATA_CONFIG[structure_2]["structure_id"]
-    cellids_1 = cellid_dict[structure_id_1]
-    cellids_2 = cellid_dict[structure_id_2]
-    for cellid_1, cellid_2 in itertools.product(cellids_1, cellids_2):
+    cell_ids_1 = cell_id_dict[structure_id_1]
+    cell_ids_2 = cell_id_dict[structure_id_2]
+    for cell_id_1, cell_id_2 in itertools.product(cell_ids_1, cell_ids_2):
         restricted_tuples.append(
             (
-                (structure_1, rule_1, cellid_1),
-                (structure_2, rule_2, cellid_2),
+                (structure_1, rule_1, cell_id_1),
+                (structure_2, rule_2, cell_id_2),
             )
         )
 
@@ -124,8 +120,8 @@ save_frequency = 10000000
 df = pd.DataFrame(
     index=index,
     columns=[
-        "cellid_1",
-        "cellid_2",
+        "cell_id_1",
+        "cell_id_2",
         "rule_1",
         "rule_2",
         "structure_1",
@@ -134,24 +130,20 @@ df = pd.DataFrame(
     ],
 )
 for row, (
-    (structure_name_1, rule_1, cellid_1),
-    (structure_name_2, rule_2, cellid_2),
+    (structure_name_1, rule_1, cell_id_1),
+    (structure_name_2, rule_2, cell_id_2),
 ) in tqdm(enumerate(restricted_tuples), total=len(df)):
-    if (
-        structure_name_1 == structure_name_2
-        and rule_1 == rule_2
-        and cellid_1 == cellid_2
-    ):
+    if structure_name_1 == structure_name_2 and rule_1 == rule_2 and cell_id_1 == cell_id_2:
         corr_val = 1.0
     else:
-        pilr_1 = individual_pilr_dict[structure_name_1][rule_1][cellid_1]
-        pilr_2 = individual_pilr_dict[structure_name_2][rule_2][cellid_2]
+        pilr_1 = individual_pilr_dict[structure_name_1][rule_1][cell_id_1]
+        pilr_2 = individual_pilr_dict[structure_name_2][rule_2][cell_id_2]
         masked_pilr_1 = pilr_1[(pilr_1.shape[0] // 2) :, :].flatten()
         masked_pilr_2 = pilr_2[(pilr_2.shape[0] // 2) :, :].flatten()
         corr_val = pearsonr(masked_pilr_1, masked_pilr_2).correlation
     df.loc[row] = [
-        cellid_1,
-        cellid_2,
+        cell_id_1,
+        cell_id_2,
         rule_1,
         rule_2,
         structure_name_1,
@@ -164,7 +156,8 @@ for row, (
         )
         df.to_parquet(result_dir / "individual_PILR_correlations.parquet")
 log.info(
-    f"Finished calculating correlations, saving to {result_dir / 'individual_PILR_correlations.parquet'}"
+    "Finished calculating correlations, saving to"
+    f" {result_dir / 'individual_PILR_correlations.parquet'}"
 )
 df.to_parquet(result_dir / "individual_PILR_correlations.parquet")
 

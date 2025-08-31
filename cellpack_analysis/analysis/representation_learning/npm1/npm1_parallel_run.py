@@ -15,7 +15,9 @@ MAX_NUM_CLUSTERS = 3
 CREATE_FILES = False
 RUN_PACKINGS = True
 
-recipe_template_path = "/allen/aics/animated-cell/Saurabh/forRitvik/npm1_cellPACK/templates/npm1_template.json"
+recipe_template_path = (
+    "/allen/aics/animated-cell/Saurabh/forRitvik/npm1_cellPACK/templates/npm1_template.json"
+)
 config_path = "/allen/aics/animated-cell/Saurabh/forRitvik/npm1_cellPACK/config/npm1_parallel_packing_config.json"
 
 generated_recipe_path = (
@@ -46,9 +48,7 @@ def create_recipe_files(
     for clust in np.arange(1, num_clusters + 1):
         print(f"Creating files for {clust} clusters")
         contents_clust = contents.copy()
-        contents_clust["composition"]["nucleus"]["regions"]["interior"][1]["count"] = (
-            int(clust)
-        )
+        contents_clust["composition"]["nucleus"]["regions"]["interior"][1]["count"] = int(clust)
         for this_id in shape_ids:
             this_row = shape_df.loc[shape_df["CellId"] == this_id]
             this_row = this_row.loc[this_row["angle"] == 0]
@@ -77,8 +77,8 @@ if CREATE_FILES:
 
 
 files = os.listdir(generated_recipe_path)
-# max_num_cellIDs = 24
-max_num_cellIDs = np.inf
+# max_num_cell_ids = 24
+max_num_cell_ids = np.inf
 max_num_files = np.inf
 input_files_to_use = []
 num_files = 0
@@ -117,12 +117,8 @@ def copy_grid_file(recipe_path, config_path, max_num_clust=MAX_NUM_CLUSTERS):
         # create files with all num_clust
         for clust in np.arange(1, max_num_clust + 1):
             new_recipe_version = f"{clust}_{recipe_tail}"
-            new_grid_file_name = (
-                f"{recipe_name}_{config_name}_{new_recipe_version}_grid.dat"
-            )
-            new_grid_file_path = (
-                out_path / recipe_name / "spheresSST" / new_grid_file_name
-            )
+            new_grid_file_name = f"{recipe_name}_{config_name}_{new_recipe_version}_grid.dat"
+            new_grid_file_path = out_path / recipe_name / "spheresSST" / new_grid_file_name
 
             if not new_grid_file_path.exists():
                 print(f"Copying {grid_file_path} to {new_grid_file_path}")
@@ -184,15 +180,12 @@ if RUN_PACKINGS:
             #     output_folder / f"results_npm1_analyze_{fname}_seed_0.simularium"
             # )
             output_file = (
-                output_folder
-                / f"figures/voxelized_image_npm1_analyze_{fname}_seed_0.ome.tiff"
+                output_folder / f"figures/voxelized_image_npm1_analyze_{fname}_seed_0.ome.tiff"
             )
             if output_file.exists():
                 if skip_completed:
                     skipped_count += 1
-                    print(
-                        f"Skipping {file} because output file exists, {skipped_count} skipped"
-                    )
+                    print(f"Skipping {file} because output file exists, {skipped_count} skipped")
                     continue
                 # else:
                 # remove simularium file

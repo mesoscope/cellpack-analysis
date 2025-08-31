@@ -89,9 +89,7 @@ dim_to_axis_map = {
     2: "YZ",
 }
 
-fig, axs = plt.subplots(
-    2, len(STRUCTURE_IDS), figsize=(len(STRUCTURE_IDS) * 2, 4), dpi=300
-)
+fig, axs = plt.subplots(2, len(STRUCTURE_IDS), figsize=(len(STRUCTURE_IDS) * 2, 4), dpi=300)
 for ct, (structure_id, morphed_pilr) in enumerate(morphed_pilrs.items()):
     morphed_pilr = (255 * (morphed_pilr / np.max(morphed_pilr))).astype(np.uint8)
     morphed_pilr[domain > 0] += 3
@@ -145,9 +143,7 @@ for dim in range(2):
         morphed_pilr1[domain == 0] = 0
         for ct2, struct_y in enumerate(struct_y_list):
             morphed_pilr2 = morphed_pilrs[struct_y]
-            morphed_pilr2 = (255 * (morphed_pilr2 / np.max(morphed_pilr2))).astype(
-                np.uint8
-            )
+            morphed_pilr2 = (255 * (morphed_pilr2 / np.max(morphed_pilr2))).astype(np.uint8)
             morphed_pilr2[domain > 0] += 3
             morphed_pilr2[domain == 0] = 0
             ax = axs[ct2, ct1] if len(morphed_pilrs) > 1 else axs
@@ -161,16 +157,12 @@ for dim in range(2):
             threshold2 = np.percentile(morphed_pilr2, threshold_pct)
             above_threshold1 = morphed_pilr1 > threshold1
             above_threshold2 = morphed_pilr2 > threshold2
-            overlap_fraction = np.sum(
-                np.logical_and(above_threshold1, above_threshold2)
-            ) / np.sum(np.logical_or(above_threshold1, above_threshold2))
-            combined_pilr[
-                np.logical_or(morphed_pilr1 < threshold1, morphed_pilr2 < threshold2)
-            ] = 0
-            maxval = np.nanmax(combined_pilr)
-            combined_pilr = (255 * (combined_pilr / np.max(combined_pilr))).astype(
-                np.uint8
+            overlap_fraction = np.sum(np.logical_and(above_threshold1, above_threshold2)) / np.sum(
+                np.logical_or(above_threshold1, above_threshold2)
             )
+            combined_pilr[np.logical_or(morphed_pilr1 < threshold1, morphed_pilr2 < threshold2)] = 0
+            maxval = np.nanmax(combined_pilr)
+            combined_pilr = (255 * (combined_pilr / np.max(combined_pilr))).astype(np.uint8)
             combined_pilr[domain > 0] += 3
 
             # ax.set_title(f"Overlap: {overlap_fraction:.2f}", color="white")

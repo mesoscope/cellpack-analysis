@@ -59,7 +59,7 @@ def set_paths(
 
     grid_path = datadir / f"structure_data/{structure_id}/grids/"
 
-    cellid_df_path = datadir / "8dsphere_ids.csv"
+    cell_id_df_path = datadir / "8dsphere_ids.csv"
 
     return (
         recipe_template_path,
@@ -67,14 +67,12 @@ def set_paths(
         generated_recipe_path,
         mesh_path,
         grid_path,
-        cellid_df_path,
+        cell_id_df_path,
     )
 
 
 def get_mesh_vertices(mesh_file_path):
-    """
-    Given a mesh file path, returns the coordinates of the mesh vertices.
-    """
+    """Given a mesh file path, returns the coordinates of the mesh vertices."""
     coordinates = []
     with open(mesh_file_path) as mesh_file:
         for line in mesh_file:
@@ -85,9 +83,7 @@ def get_mesh_vertices(mesh_file_path):
 
 
 def get_mesh_center(mesh_file_path):
-    """
-    Given a mesh file path, returns the center of the mesh.
-    """
+    """Given a mesh file path, returns the center of the mesh."""
     coordinates = get_mesh_vertices(mesh_file_path)
     center = np.mean(coordinates, axis=0)
     return center
@@ -96,7 +92,7 @@ def get_mesh_center(mesh_file_path):
 def get_mesh_boundaries(mesh_file_path):
     """
     Given a mesh file path, returns the coordinates:
-    [max_x, max_y, max_z] , [min_x, min_y, min_z]
+    [max_x, max_y, max_z] , [min_x, min_y, min_z].
     """
     coordinates = get_mesh_vertices(mesh_file_path)
     max_coordinates = np.max(coordinates, axis=0)
@@ -107,21 +103,19 @@ def get_mesh_boundaries(mesh_file_path):
 def transform_and_save_dict_for_rule(
     input_dict,
     rule,
-    cellID,
+    cell_id,
     base_output_path,
     mesh_base_path,
     grid_path,
     structure_name,
 ):
     output_dict = input_dict.copy()
-    base_mesh_name = f"mesh_{cellID}.obj"
-    output_dict["version"] = f"{rule}_{cellID}"
-    grid_file_path = grid_path / f"{cellID}_grid.dat"
+    base_mesh_name = f"mesh_{cell_id}.obj"
+    output_dict["version"] = f"{rule}_{cell_id}"
+    grid_file_path = grid_path / f"{cell_id}_grid.dat"
     output_dict["grid_file_path"] = f"{grid_file_path}"
     for obj, short_name in zip(["nucleus_mesh", "membrane_mesh"], ["nuc", "mem"], strict=False):
-        output_dict["objects"][obj]["representations"]["mesh"][
-            "path"
-        ] = f"{mesh_base_path}"
+        output_dict["objects"][obj]["representations"]["mesh"]["path"] = f"{mesh_base_path}"
         output_dict["objects"][obj]["representations"]["mesh"][
             "name"
         ] = f"{short_name}_{base_mesh_name}"
@@ -132,13 +126,9 @@ def transform_and_save_dict_for_rule(
         output_dict["objects"][structure_name]["packing_mode"] = "random"
     elif "surface_gradient" in rule:
         if "nucleus" in rule:
-            output_dict["gradients"]["surface_gradient"]["mode_settings"][
-                "object"
-            ] = "nucleus"
+            output_dict["gradients"]["surface_gradient"]["mode_settings"]["object"] = "nucleus"
         if "membrane" in rule:
-            output_dict["gradients"]["surface_gradient"]["mode_settings"][
-                "object"
-            ] = "membrane"
+            output_dict["gradients"]["surface_gradient"]["mode_settings"]["object"] = "membrane"
         if "weak" in rule:
             output_dict["gradients"]["surface_gradient"]["weight_mode_settings"] = {
                 "decay_length": 0.3
@@ -199,7 +189,7 @@ def transform_and_save_dict_for_rule(
             output_dict["gradients"]["planar_gradient"]["invert"] = "weight"
 
     # save transformed dict
-    with open(base_output_path / f"{structure_name}_{rule}_{cellID}.json", "w") as f:
+    with open(base_output_path / f"{structure_name}_{rule}_{cell_id}.json", "w") as f:
         json.dump(output_dict, f, indent=4)
 
     return output_dict
@@ -219,7 +209,7 @@ def update_config_file(config_path, output_path):
 
 
 def generate_recipes(
-    cellID_list,
+    cell_id_list,
     template_path,
     output_path,
     mesh_base_path,
@@ -240,44 +230,40 @@ def generate_recipes(
         num_processes = np.min(
             [
                 int(np.floor(0.8 * multiprocessing.cpu_count())),
-                len(cellID_list),
+                len(cell_id_list),
             ]
         )
-        with concurrent.futures.ProcessPoolExecutor(
-            max_workers=num_processes
-        ) as executor:
+        with concurrent.futures.ProcessPoolExecutor(max_workers=num_processes) as executor:
             executor.map(
                 transform_and_save_dict_for_rule,
-                [template] * len(cellID_list),
-                [rule] * len(cellID_list),
-                cellID_list,
-                [output_path] * len(cellID_list),
-                [mesh_base_path] * len(cellID_list),
-                [grid_path] * len(cellID_list),
-                [structure_name] * len(cellID_list),
+                [template] * len(cell_id_list),
+                [rule] * len(cell_id_list),
+                cell_id_list,
+                [output_path] * len(cell_id_list),
+                [mesh_base_path] * len(cell_id_list),
+                [grid_path] * len(cell_id_list),
+                [structure_name] * len(cell_id_list),
             )
 
 
 def get_cell_ids_to_use(df_path, structure_id, num_cells=0):
     # get cell id list for given structure
     # uses all cells by default
-    df_cellID = pd.read_csv(df_path)
-    df_cellID.set_index("structure", inplace=True)
-    all_cellid_as_strings = df_cellID.loc[structure_id, "CellIds"].split(",")
+    df_cell_id = pd.read_csv(df_path)
+    df_cell_id.set_index("structure", inplace=True)
+    all_cell_id_as_strings = df_cell_id.loc[structure_id, "CellIds"].split(",")
 
-    cellid_list = []
-    for cellid in all_cellid_as_strings:
-        cellid_list.append(int(cellid.replace("[", "").replace("]", "")))
+    cell_id_list = []
+    for cell_id in all_cell_id_as_strings:
+        cell_id_list.append(int(cell_id.replace("[", "").replace("]", "")))
 
-    cellid_to_use = cellid_list
+    cell_id_to_use = cell_id_list
     if num_cells > 0:
-        cellid_to_use = np.random.choice(cellid_list, num_cells)
+        cell_id_to_use = np.random.choice(cell_id_list, num_cells)
 
-    print(
-        f"Using {len(cellid_to_use)} cell ids out of {len(cellid_list)} for {structure_id}"
-    )
+    print(f"Using {len(cell_id_to_use)} cell ids out of {len(cell_id_list)} for {structure_id}")
 
-    return cellid_to_use
+    return cell_id_to_use
 
 
 def run_single_packing(recipe_path, config_path):
@@ -309,9 +295,9 @@ def get_recipes_to_use(generated_recipe_path, num_cells=0, rule_list=RULE_LIST):
     input_file_list = list(generated_recipe_path.glob("*.json"))
     input_files_to_use = []
     for file in input_file_list:
-        for cellid in cell_ids_to_use:
+        for cell_id in cell_ids_to_use:
             fstem = file.stem
-            if str(cellid) in fstem and any([rule in fstem for rule in rule_list]):
+            if str(cell_id) in fstem and any(rule in fstem for rule in rule_list):
                 input_files_to_use.append(file)
     print("Found", len(input_files_to_use), "files")
     return input_files_to_use
@@ -355,7 +341,8 @@ def run_packing_workflow(
                 if skip_completed:
                     skipped_count += 1
                     print(
-                        f"Skipping {recipe_path} because result file exists, {skipped_count} skipped"
+                        f"Skipping {recipe_path} because result file exists,"
+                        f" {skipped_count} skipped"
                     )
                     continue
             # sleep_time = np.random.random_sample() * 0.01
@@ -363,9 +350,7 @@ def run_packing_workflow(
             print(f"Submitted {recipe_path}")
             if dry_run:
                 continue
-            futures.append(
-                executor.submit(run_single_packing, recipe_path, config_path)
-            )
+            futures.append(executor.submit(run_single_packing, recipe_path, config_path))
         # print number of futures completed
         print(f"Submitted {len(futures)} jobs, {skipped_count} skipped")
         for future in concurrent.futures.as_completed(futures):
@@ -462,18 +447,18 @@ if __name__ == "__main__":
         generated_recipe_path,
         mesh_path,
         grid_path,
-        cellid_df_path,
+        cell_id_df_path,
     ) = set_paths()
 
     # create files if needed
     if args.generate_recipes:
-        cellID_list = get_cell_ids_to_use(
-            df_path=cellid_df_path,
+        cell_id_list = get_cell_ids_to_use(
+            df_path=cell_id_df_path,
             structure_id=args.structure_id,
             num_cells=args.num_packings,
         )
         generate_recipes(
-            cellID_list=cellID_list,
+            cell_id_list=cell_id_list,
             template_path=recipe_template_path,
             output_path=generated_recipe_path,
             mesh_base_path=mesh_path,

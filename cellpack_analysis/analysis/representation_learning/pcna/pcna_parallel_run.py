@@ -26,14 +26,10 @@ rules = [
 CREATE_FILES = True
 RUN_PACKINGS = True
 
-recipe_template_path = (
-    "/allen/aics/animated-cell/Saurabh/forRitvik/pcna_cellPACK/templates/"
-)
+recipe_template_path = "/allen/aics/animated-cell/Saurabh/forRitvik/pcna_cellPACK/templates/"
 config_path = "/allen/aics/animated-cell/Saurabh/forRitvik/pcna_cellPACK/config/pcna_parallel_packing_config.json"
 cellpack_rules = os.listdir(recipe_template_path)
-cellpack_rules = [
-    recipe_template_path + i for i in cellpack_rules if i.split(".")[-1] == "json"
-]
+cellpack_rules = [recipe_template_path + i for i in cellpack_rules if i.split(".")[-1] == "json"]
 generated_recipe_path = (
     "/allen/aics/animated-cell/Saurabh/forRitvik/pcna_cellPACK/generated_recipes/"
 )
@@ -66,12 +62,12 @@ def create_rule_files(
                     this_row = this_row.loc[this_row["angle"] == ang]
 
                     contents_shape["version"] = f"{base_version}_{this_id}_{ang}"
-                    contents_shape["objects"]["mean_nucleus"]["representations"][
-                        "mesh"
-                    ]["name"] = f"{this_id}_{ang}.obj"
-                    contents_shape["objects"]["mean_nucleus"]["representations"][
-                        "mesh"
-                    ]["path"] = mesh_path
+                    contents_shape["objects"]["mean_nucleus"]["representations"]["mesh"][
+                        "name"
+                    ] = f"{this_id}_{ang}.obj"
+                    contents_shape["objects"]["mean_nucleus"]["representations"]["mesh"][
+                        "path"
+                    ] = mesh_path
                     # save json
                     with open(
                         output_path + f"/{base_version}_{this_id}_rotation_{ang}.json",
@@ -99,9 +95,9 @@ shape_rotations = [
 ]
 
 files = os.listdir(generated_recipe_path)
-# max_num_cellIDs = 24
-max_num_cellIDs = np.inf
-# max_num_files = max_num_cellIDs * len(shape_rotations) * len(rules_to_use)  # 9 rules x number of files per rule
+# max_num_cell_ids = 24
+max_num_cell_ids = np.inf
+# max_num_files = max_num_cell_ids * len(shape_rotations) * len(rules_to_use)  # 9 rules x number of files per rule
 max_num_files = np.inf
 input_files_to_use = []
 num_files = 0
@@ -166,9 +162,7 @@ if RUN_PACKINGS:
         for file in input_files_to_use:
             fname = Path(file).stem
             fname = "".join(fname.split("_rotation"))
-            simularium_file = (
-                out_path / f"results_pcna_analyze_{fname}_seed_0.simularium"
-            )
+            simularium_file = out_path / f"results_pcna_analyze_{fname}_seed_0.simularium"
             if simularium_file.exists():
                 if skip_completed:
                     skipped_count += 1

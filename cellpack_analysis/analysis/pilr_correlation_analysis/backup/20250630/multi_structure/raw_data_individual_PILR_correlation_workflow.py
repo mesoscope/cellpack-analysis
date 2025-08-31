@@ -10,9 +10,7 @@ import seaborn as sns
 from scipy.stats import pearsonr
 from tqdm import tqdm
 
-from cellpack_analysis.analysis.pilr_correlation_analysis import (
-    individual_PILR_correlation,
-)
+from cellpack_analysis.analysis.pilr_correlation_analysis import individual_PILR_correlation
 
 log = logging.getLogger(__name__)
 # %% [markdown]
@@ -72,34 +70,30 @@ if (not recalculate) and df_corr_path.exists():
     df_corr = pd.read_csv(df_corr_path, index_col=[0, 1], header=[0, 1])
 else:
     log.info("Calculating correlations")
-    df_corr = individual_PILR_correlation.get_structure_cellid_dataframe(
+    df_corr = individual_PILR_correlation.get_structure_cell_id_dataframe(
         structure_ids=STRUCTURE_IDS,
         use_8d_sphere=True,
     )
     for struct_1, pilr_list_1 in individual_pilr_dict.items():
-        cellid_list_1 = df_corr.loc[struct_1].index
+        cell_id_list_1 = df_corr.loc[struct_1].index
         for struct_2, pilr_list_2 in individual_pilr_dict.items():
-            cellid_list_2 = df_corr.loc[struct_2].index
+            cell_id_list_2 = df_corr.loc[struct_2].index
             log.info(f"Calculating correlation between {struct_1} and {struct_2}")
-            for cellid1, pilr1 in tqdm(
-                zip(cellid_list_1, pilr_list_1, strict=False), total=len(cellid_list_1)
+            for cell_id1, pilr1 in tqdm(
+                zip(cell_id_list_1, pilr_list_1, strict=False), total=len(cell_id_list_1)
             ):
                 masked_pilr1 = pilr1[(pilr1.shape[0] // 2) :, :].flatten()
-                for cellid2, pilr2 in zip(cellid_list_2, pilr_list_2, strict=False):
+                for cell_id2, pilr2 in zip(cell_id_list_2, pilr_list_2, strict=False):
                     # only calculate if not already calculated
-                    if df_corr.loc[(struct_1, cellid1), (struct_2, cellid2)] is np.nan:
-                        if (struct_1 == struct_2) and (cellid1 == cellid2):
-                            df_corr.loc[(struct_1, cellid1), (struct_2, cellid2)] = 1
-                            df_corr.loc[(struct_2, cellid2), (struct_1, cellid1)] = 1
+                    if df_corr.loc[(struct_1, cell_id1), (struct_2, cell_id2)] is np.nan:
+                        if (struct_1 == struct_2) and (cell_id1 == cell_id2):
+                            df_corr.loc[(struct_1, cell_id1), (struct_2, cell_id2)] = 1
+                            df_corr.loc[(struct_2, cell_id2), (struct_1, cell_id1)] = 1
                         else:
                             masked_pilr2 = pilr2[(pilr2.shape[0] // 2) :, :].flatten()
                             corr_val = pearsonr(masked_pilr1, masked_pilr2)[0]
-                            df_corr.loc[(struct_1, cellid1), (struct_2, cellid2)] = (
-                                corr_val
-                            )
-                            df_corr.loc[(struct_2, cellid2), (struct_1, cellid1)] = (
-                                corr_val
-                            )
+                            df_corr.loc[(struct_1, cell_id1), (struct_2, cell_id2)] = corr_val
+                            df_corr.loc[(struct_2, cell_id2), (struct_1, cell_id1)] = corr_val
             # df.to_csv(result_dir / "individual_PILR_corr.csv")
         df_corr.to_csv(result_dir / "individual_PILR_correlations.csv")
 

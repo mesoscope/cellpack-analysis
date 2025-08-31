@@ -60,9 +60,7 @@ base_datadir = project_root / "data"
 base_results_dir = project_root / "results"
 
 folder_name = "rules"
-results_dir = (
-    base_results_dir / f"stochastic_variation_analysis/{STRUCTURE_NAME}/{folder_name}"
-)
+results_dir = base_results_dir / f"stochastic_variation_analysis/{STRUCTURE_NAME}/{folder_name}"
 results_dir.mkdir(exist_ok=True, parents=True)
 
 occupancy_figures_dir = results_dir / "figures/occupancy"
@@ -253,9 +251,7 @@ fig_combined, ax_combined = distance.plot_combined_occupancy_ratio(
     xlim=4,
     ylim=3,
 )
-log.info(
-    f"Time taken to plot occupancy ratio: {time.time() - occupancy_start_time:.2f} s"
-)
+log.info(f"Time taken to plot occupancy ratio: {time.time() - occupancy_start_time:.2f} s")
 # %% [markdown]
 # #### edit figure as needed
 ax = ax_combined

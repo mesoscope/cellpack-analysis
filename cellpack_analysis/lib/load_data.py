@@ -85,9 +85,7 @@ def get_positions_dictionary_from_file(
     with open(filename) as j:
         raw_data = json.load(j)
     if drop_random_seed:
-        positions = {
-            k.split("_")[0]: np.array(v[ingredient_key]) for k, v in raw_data.items()
-        }
+        positions = {k.split("_")[0]: np.array(v[ingredient_key]) for k, v in raw_data.items()}
     else:
         positions = {k: np.array(v[ingredient_key]) for k, v in raw_data.items()}
 
@@ -156,9 +154,7 @@ def get_position_data_from_outputs(
 
             data_folder = base_datadir / f"{packing_output_folder}/{subfolder}"
 
-            mode_position_filename = (
-                f"all_positions_{structure_name}_analyze_{mode}.json"
-            )
+            mode_position_filename = f"all_positions_{structure_name}_analyze_{mode}.json"
 
             mode_file_path = data_folder / mode_position_filename
 
@@ -181,9 +177,7 @@ def get_position_data_from_outputs(
                 save_name=mode_position_filename,
             )
 
-        log.info(
-            f"Reading positions for {mode} from {mode_file_path.relative_to(PROJECT_ROOT)}"
-        )
+        log.info(f"Reading positions for {mode} from {mode_file_path.relative_to(PROJECT_ROOT)}")
         positions = get_positions_dictionary_from_file(
             mode_file_path,
             ingredient_key=ingredient_key,
@@ -191,7 +185,7 @@ def get_position_data_from_outputs(
         )
 
         all_positions[mode] = positions
-        log.info(f"Read {len(positions)} cellids for {mode}")
+        log.info(f"Read {len(positions)} cell_ids for {mode}")
 
     # save all positions dictionary
     with open(save_file_path, "wb") as f:

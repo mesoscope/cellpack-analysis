@@ -11,6 +11,6 @@ python /allen/aics/animated-cell/Saurabh/cellpack-analysis/cellpack_analysis/scr
 --run_packings \
 --generate_recipes \
 --num_packings 8 \
---use_cellid_as_seed \
+--use_cell_id_as_seed \
 --skip_completed \
 # --dry_run \

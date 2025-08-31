@@ -53,9 +53,7 @@ for gene, df_gene in meta_df.groupby("structure_name"):
     if gene in structures_of_interest:
         print(gene)
         print(f"Count: {np.mean(counts):0.2f} +/- {np.std(counts):.2f}")
-        print(
-            f"Volume: {np.mean(volume_per_unit):0.2f} +/- {np.std(volume_per_unit):.2f}"
-        )
+        print(f"Volume: {np.mean(volume_per_unit):0.2f} +/- {np.std(volume_per_unit):.2f}")
         print(f"Radius: {np.mean(unit_radius):0.2f} +/- {np.std(unit_radius):.2f}")
 
 # %% save updated dataframe

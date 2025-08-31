@@ -12,7 +12,7 @@ from cellpack_analysis.analysis.punctate_analysis.lib.distance import (
     get_normalization_factor,
 )
 from cellpack_analysis.analysis.punctate_analysis.lib.stats_functions import (
-    sample_cellids_from_distance_dict,
+    sample_cell_ids_from_distance_dict,
 )
 from cellpack_analysis.lib.label_tables import GRID_DISTANCE_LABELS
 
@@ -87,16 +87,14 @@ def get_combined_occupancy_kde(
 
         mode_mesh_dict = mesh_information_dict.get(channel_map.get(mode, mode), {})
 
-        cellids_to_use = sample_cellids_from_distance_dict(mode_dict, sample_size)
+        cell_ids_to_use = sample_cell_ids_from_distance_dict(mode_dict, sample_size)
 
-        if len(cellids_to_use) == 0:
+        if len(cell_ids_to_use) == 0:
             log.warning(f"No valid seeds found for mode {mode}")
             continue
 
         mode_dict = {
-            cellid: mode_dict[cellid]
-            for cellid in cellids_to_use
-            if cellid in mode_mesh_dict
+            cell_id: mode_dict[cell_id] for cell_id in cell_ids_to_use if cell_id in mode_mesh_dict
         }
         log.info(f"Using {len(mode_dict)} seeds for mode {mode}")
 
@@ -113,7 +111,7 @@ def get_combined_occupancy_kde(
             normalization_factor = get_normalization_factor(
                 normalization=normalization,
                 mesh_information_dict=mode_mesh_dict,
-                cellid=seed,
+                cell_id=seed,
                 distance_measure=distance_measure,
                 distances=available_distances,
             )
@@ -122,9 +120,7 @@ def get_combined_occupancy_kde(
 
         combined_available_distances = np.concatenate(combined_available_distances)
 
-        kde_available_space = gaussian_kde(
-            combined_available_distances, bw_method=bandwidth
-        )
+        kde_available_space = gaussian_kde(combined_available_distances, bw_method=bandwidth)
 
         combined_kde_dict[mode] = {
             "mode_distances": combined_mode_distances,
@@ -186,9 +182,7 @@ def get_occupancy_emd(
         log.info(mode)
         mode_dict = distance_dict[mode]
         emd_occupancy_dict[mode] = {}
-        for k, (seed, distances) in tqdm(
-            enumerate(mode_dict.items()), total=len(mode_dict)
-        ):
+        for _k, (seed, _distances) in tqdm(enumerate(mode_dict.items()), total=len(mode_dict)):
             occupied_distance = kde_dict[seed][mode]["distances"]
             available_distance = kde_dict[seed]["available_distance"]["distances"]
             emd_occupancy_dict[mode][seed] = wasserstein_distance(
@@ -251,9 +245,7 @@ def get_occupancy_ks_test_dict(
         log.info(mode)
         mode_dict = distance_dict[mode]
         ks_occupancy_dict[mode] = {}
-        for k, (seed, distances) in tqdm(
-            enumerate(mode_dict.items()), total=len(mode_dict)
-        ):
+        for _k, (seed, _distances) in tqdm(enumerate(mode_dict.items()), total=len(mode_dict)):
             occupied_distance = kde_dict[seed][mode]["distances"]
             available_distance = kde_dict[seed]["available_distance"]["distances"]
             _, p_val = ks_2samp(occupied_distance, available_distance)
