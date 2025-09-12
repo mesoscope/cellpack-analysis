@@ -379,7 +379,10 @@ def check_run_this_recipe(recipe_path, config_data, structure_name, check_type="
         # check whether all files exist explicitly
         result_file_list = [
             folder_to_check
-            / f"{prefix}_{recipe_data['name']}_{config_data['name']}_{recipe_data['version']}_seed_{seed_val}.ome.tiff"
+            / (
+                f"{prefix}_{recipe_data['name']}_{config_data['name']}_"
+                f"{recipe_data['version']}_seed_{seed_val}.ome.tiff"
+            )
             for seed_val in seed_vals
         ]
     else:

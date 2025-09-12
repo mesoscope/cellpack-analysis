@@ -1,7 +1,7 @@
 from pathlib import Path
 
 # Top level parameters
-PIX_SIZE = 0.108
+PIXEL_SIZE_IN_UM = 0.108
 """Pixel size in microns."""
 STRUCTURE_NAME = "peroxisome"
 """Name of the structure to pack."""

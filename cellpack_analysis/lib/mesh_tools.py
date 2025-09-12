@@ -302,6 +302,7 @@ def calculate_grid_distances(
     calc_z_distances=True,
     calc_scaled_nuc_distances=True,
     chunk_size=None,
+    struct_mesh_path=None,
 ):
     """
     Calculate distances to nucleus, membrane, z-coordinate for each point in points.
@@ -355,6 +356,7 @@ def calculate_grid_distances(
     # Initialize variables
     mem_distances = None
     nuc_distances = None
+    struct_distances = None
     z_distances = None
     scaled_nuc_distances = None
 
@@ -387,6 +389,9 @@ def calculate_grid_distances(
     # load meshes
     nuc_mesh = trimesh.load_mesh(nuc_mesh_path)
     mem_mesh = trimesh.load_mesh(mem_mesh_path)
+    struct_mesh = None
+    if struct_mesh_path is not None:
+        struct_mesh = trimesh.load_mesh(struct_mesh_path)
 
     # get bounding box
     bounding_box = round_away_from_zero(mem_mesh.bounds)
@@ -403,6 +408,10 @@ def calculate_grid_distances(
 
         start_time = time.time()
         mem_distances = np.full(len(points), np.inf)
+
+        if struct_mesh is not None:
+            struct_distances = np.full(len(points), np.inf)
+
         for i in tqdm(
             range(0, len(points), chunk_size),
             desc=f"Membrane distance chunks for {cell_id}",
@@ -411,6 +420,10 @@ def calculate_grid_distances(
             mem_distances[i : (i + chunk_size)] = trimesh.proximity.signed_distance(
                 mem_mesh, chunk_points
             )
+            if struct_mesh is not None:
+                struct_distances[i : (i + chunk_size)] = trimesh.proximity.signed_distance(
+                    struct_mesh, chunk_points
+                )
 
         if save_dir is not None:
             np.save(save_dir / f"mem_distances_{cell_id}.npy", mem_distances)
@@ -423,6 +436,10 @@ def calculate_grid_distances(
         raise ValueError("Membrane distances must be calculated or loaded first")
 
     inside_mem_inds = np.where((mem_distances > 0) & ~np.isinf(mem_distances))[0]
+    if struct_distances is not None:
+        inside_mem_inds = inside_mem_inds[
+            struct_distances[inside_mem_inds] < 0 & ~np.isinf(struct_distances[inside_mem_inds])
+        ]
     # calculate scaled distances
     if calc_scaled_nuc_distances:
         log.info(f"Calculating scaled distances for {cell_id}")

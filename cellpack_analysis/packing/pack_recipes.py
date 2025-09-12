@@ -6,6 +6,7 @@ import subprocess
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 from dotenv import load_dotenv
@@ -30,10 +31,26 @@ assert os.path.exists(PACK_PATH), f"PACK path {PACK_PATH} does not exist"
 log.debug(f"Using cellPACK at {PACK_PATH}")
 
 
-def check_recipe_completed(recipe_path, config_data, workflow_config):
+def check_recipe_completed(
+    recipe_path: str | Path, config_data: dict[str, Any], workflow_config: Any
+) -> bool:
     """
     Check if a recipe has completed packing.
     Also checks for single recipes that pack multiple outputs.
+
+    Parameters
+    ----------
+    recipe_path
+        Path to the recipe file
+    config_data
+        Configuration data dictionary
+    workflow_config
+        Workflow configuration object
+
+    Returns
+    -------
+    :
+        True if recipe has completed packing, False otherwise
     """
     recipe_data = read_json(recipe_path)
     number_of_packings = config_data.get("number_of_packings", 1)
@@ -59,7 +76,10 @@ def check_recipe_completed(recipe_path, config_data, workflow_config):
         # check whether all files exist explicitly
         result_file_list = [
             folder_to_check
-            / f"{prefix}_{recipe_data['name']}_{config_data['name']}_{recipe_data['version']}_seed_{seed_val}.{suffix}"
+            / (
+                f"{prefix}_{recipe_data['name']}_{config_data['name']}_"
+                f"{recipe_data['version']}_seed_{seed_val}.{suffix}"
+            )
             for seed_val in seed_vals
         ]
     else:
@@ -74,18 +94,31 @@ def check_recipe_completed(recipe_path, config_data, workflow_config):
     return num_existing_files == number_of_packings
 
 
-def log_update(count, skipped_count, failed_count, start, num_files, rule_start):
+def log_update(
+    count: int,
+    skipped_count: int,
+    failed_count: int,
+    start: float,
+    num_files: int,
+    rule_start: float,
+) -> None:
     """
-    Logs the update of the packing process.
+    Log the update of the packing process.
 
-    Args:
-    ----
-        count (int): The number of completed runs.
-        skipped_count (int): The number of skipped runs.
-        failed_count (int): The number of failed runs.
-        start (float): The start time of the packing process.
-        num_files (int): The total number of files to process.
-        rule_start (float): The start time of the current rule.
+    Parameters
+    ----------
+    count
+        The number of completed runs
+    skipped_count
+        The number of skipped runs
+    failed_count
+        The number of failed runs
+    start
+        The start time of the packing process
+    num_files
+        The total number of files to process
+    rule_start
+        The start time of the current rule
     """
     done = count + skipped_count
     remaining = num_files - done - failed_count
@@ -108,14 +141,19 @@ def log_update(count, skipped_count, failed_count, start, num_files, rule_start)
     )
 
 
-def get_cell_ids_to_pack(workflow_config):
+def get_cell_ids_to_pack(workflow_config: Any) -> list[str]:
     """
     Get list of cell IDs to pack for a structure.
 
     Parameters
     ----------
-    workflow_config: type
-        workflow configuration
+    workflow_config
+        Workflow configuration object
+
+    Returns
+    -------
+    :
+        List of cell IDs to pack
     """
     if workflow_config.use_mean_cell:
         return ["mean"]
@@ -142,18 +180,19 @@ def get_cell_ids_to_pack(workflow_config):
         return cell_ids
 
 
-def get_input_file_dictionary(workflow_config):
+def get_input_file_dictionary(workflow_config: Any) -> dict[str, dict[str, Any]]:
     """
     Get the input file dictionary containing the configuration path and recipe paths for each rule.
 
-    Args:
-    ----
-        workflow_config: The workflow configuration object.
+    Parameters
+    ----------
+    workflow_config
+        The workflow configuration object
 
-    Returns:
+    Returns
     -------
-        input_file_dict:
-            The dictionary containing the configuration path and recipe paths for each rule.
+    :
+        The dictionary containing the configuration path and recipe paths for each rule
     """
     packing_info = workflow_config.data.get("packings_to_run", {})
     rule_list = packing_info.get("rules", [])
@@ -184,10 +223,22 @@ def get_input_file_dictionary(workflow_config):
     return input_file_dict
 
 
-def run_single_packing(
-    recipe_path,
-    config_path,
-):
+def run_single_packing(recipe_path: str | Path, config_path: str | Path) -> bool:
+    """
+    Run a single packing operation using cellPACK.
+
+    Parameters
+    ----------
+    recipe_path
+        Path to the recipe file
+    config_path
+        Path to the configuration file
+
+    Returns
+    -------
+    :
+        True if packing completed successfully, False otherwise
+    """
     try:
         log.debug(f"Running {recipe_path}")
         result = subprocess.run(
@@ -207,14 +258,14 @@ def run_single_packing(
         return False
 
 
-def pack_recipes(workflow_config):
+def pack_recipes(workflow_config: Any) -> None:
     """
     Pack recipes using cellPACK.
 
     Parameters
     ----------
-    workflow_config: type
-        workflow configuration
+    workflow_config
+        Workflow configuration object
     """
     input_file_dict = get_input_file_dictionary(workflow_config)
     start = time.time()

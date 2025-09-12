@@ -2,6 +2,7 @@ import concurrent.futures
 import logging
 import multiprocessing
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
 from tqdm import tqdm
@@ -15,61 +16,75 @@ from cellpack_analysis.packing import rule_repository
 log = logging.getLogger(__name__)
 
 
-def set_gradient_mode_center(mode_settings, bounding_box):
+def set_gradient_mode_center(
+    mode_settings: Dict[str, Any], bounding_box: List[List[float]]
+) -> Dict[str, Any]:
     """
-    Get gradient mode center.
+    Set gradient mode center based on mode settings and bounding box.
 
     Parameters
     ----------
-    mode_settings:
-        mode settings dictionary
-    bounding_box:
-        bounding box for the packing
+    mode_settings
+        Mode settings dictionary
+    bounding_box
+        Bounding box for the packing
+
+    Returns
+    -------
+    :
+        Updated mode settings dictionary with center position
     """
     center = mode_settings.get("center")
-    bounding_box = np.array(bounding_box)
+    bounding_box_np = np.array(bounding_box)
 
     if center is not None:
         if center == "center":
-            center_position = bounding_box.mean(axis=0).tolist()
+            center_position = bounding_box_np.mean(axis=0).tolist()
         elif center == "random":
-            center_position = np.random.uniform(low=bounding_box[0], high=bounding_box[1]).tolist()
+            center_position = np.random.uniform(
+                low=bounding_box_np[0], high=bounding_box_np[1]
+            ).tolist()
         elif center == "max":
             direction = mode_settings.get("direction", [0, 0, 0])
-            center_position = bounding_box.mean(axis=0)
+            center_position = bounding_box_np.mean(axis=0)
             for i in range(3):
                 if direction[i]:
-                    center_position[i] = np.max(bounding_box[:, i])
+                    center_position[i] = np.max(bounding_box_np[:, i])
                 else:
-                    center_position[i] = np.mean(bounding_box[:, i])
+                    center_position[i] = np.mean(bounding_box_np[:, i])
             center_position = center_position.tolist()
         elif center == "min":
             direction = mode_settings.get("direction", [0, 0, 0])
-            center_position = bounding_box.mean(axis=0)
+            center_position = bounding_box_np.mean(axis=0)
             for i in range(3):
                 if direction[i]:
-                    center_position[i] = np.max(bounding_box[:, i])
+                    center_position[i] = np.max(bounding_box_np[:, i])
                 else:
-                    center_position[i] = np.mean(bounding_box[:, i])
+                    center_position[i] = np.mean(bounding_box_np[:, i])
             center_position = center_position.tolist()
         else:
             center_position = center
     else:
-        center_position = bounding_box.mean(axis=0).tolist()
+        center_position = bounding_box_np.mean(axis=0).tolist()
 
     mode_settings["center"] = center_position
 
     return mode_settings
 
 
-def resolve_gradient_names(gradient_list):
+def resolve_gradient_names(gradient_list: List[str]) -> Dict[str, Any]:
     """
-    Resolve gradient names.
+    Resolve gradient names from gradient list.
 
     Parameters
     ----------
-    gradient_list:
-        gradient list
+    gradient_list
+        Gradient list
+
+    Returns
+    -------
+    :
+        Dictionary mapping gradient names to their definitions
     """
     resolved_gradient_dict = {}
     for gradient in gradient_list:
@@ -81,14 +96,27 @@ def resolve_gradient_names(gradient_list):
     return resolved_gradient_dict
 
 
-def process_gradient_data(recipe_entry, recipe, gradient_structure_name):
+def process_gradient_data(
+    recipe_entry: Union[List[str], Dict[str, Any]],
+    recipe: Dict[str, Any],
+    gradient_structure_name: str,
+) -> Dict[str, Any]:
     """
-    Process gradient data.
+    Process gradient data for recipe.
 
     Parameters
     ----------
-    rule_data: type
-        rule data
+    recipe_entry
+        Recipe entry containing gradient information
+    recipe
+        Recipe dictionary to update
+    gradient_structure_name
+        Name of the structure to apply gradient to
+
+    Returns
+    -------
+    :
+        Updated recipe with gradient data processed
     """
     bounding_box = recipe["bounding_box"]
 
@@ -115,16 +143,25 @@ def process_gradient_data(recipe_entry, recipe, gradient_structure_name):
     return recipe
 
 
-def process_rule_dict(updated_recipe, rule_dict, gradient_structure_name):
+def process_rule_dict(
+    updated_recipe: Dict[str, Any], rule_dict: Dict[str, Any], gradient_structure_name: str
+) -> Dict[str, Any]:
     """
-    Process rule dictionary.
+    Process rule dictionary and update recipe.
 
     Parameters
     ----------
-    updated_recipe:
-        updated recipe
-    rule_dict:
-        rule dictionary
+    updated_recipe
+        Updated recipe dictionary
+    rule_dict
+        Rule dictionary to process
+    gradient_structure_name
+        Name of the structure to apply gradient to
+
+    Returns
+    -------
+    :
+        Updated recipe with rule data processed
     """
     for recipe_key, recipe_entry in rule_dict.items():
 
@@ -137,60 +174,59 @@ def process_rule_dict(updated_recipe, rule_dict, gradient_structure_name):
 
 
 def update_and_save_recipe(
-    cell_id,
-    structure_name,
-    recipe_template,
-    rule_name,
-    rule_dict,
-    grid_path,
-    mesh_path,
-    generated_recipe_path,
-    multiple_replicates,
-    count=None,
-    radius=None,
-    get_bounding_box_from_mesh=False,
-    use_additional_struct=False,
-    gradient_structure_name=None,
-):
+    cell_id: Union[int, str],
+    structure_name: str,
+    recipe_template: Dict[str, Any],
+    rule_name: str,
+    rule_dict: Dict[str, Any],
+    grid_path: Union[str, Path],
+    mesh_path: Union[str, Path],
+    generated_recipe_path: Union[str, Path],
+    multiple_replicates: bool,
+    count: Optional[int] = None,
+    radius: Optional[float] = None,
+    get_bounding_box_from_mesh: bool = False,
+    use_additional_struct: bool = False,
+    gradient_structure_name: Optional[str] = None,
+) -> Dict[str, Any]:
     """
-    Updates the recipe template with the provided parameters and saves the updated
-    recipe to a JSON file.
+    Update the recipe template with provided parameters and save the updated recipe to a JSON file.
 
     Parameters
     ----------
-    cell_id : int
-        The ID of the cell.
-    structure_name : str
-        The name of the structure.
-    recipe_template : dict
-        The template recipe to be updated.
-    rule_name : str
-        The name of the rule.
-    rule_dict : dict
-        The rule dictionary.
-    grid_path : str
-        The path to the grid file.
-    mesh_path : str
-        The path to the mesh file.
-    generated_recipe_path : str
-        The path to save the generated recipe.
-    multiple_replicates : bool
-        Indicates whether multiple replicates are used.
-    count : int, optional
-        The count of the structure. Defaults to None.
-    radius : float, optional
-        The radius of the structure. Defaults to None.
-    get_bounding_box_from_mesh : bool, optional
-        Indicates whether to get the bounding box from the mesh. Defaults to False.
-    use_additional_struct : bool, optional
-        Indicates whether to use an additional structure. Defaults to False.
-    gradient_structure_name : str, optional
-        The name of the structure to apply the gradient. Defaults to None.
+    cell_id
+        The ID of the cell
+    structure_name
+        The name of the structure
+    recipe_template
+        The template recipe to be updated
+    rule_name
+        The name of the rule
+    rule_dict
+        The rule dictionary
+    grid_path
+        The path to the grid file
+    mesh_path
+        The path to the mesh file
+    generated_recipe_path
+        The path to save the generated recipe
+    multiple_replicates
+        Indicates whether multiple replicates are used
+    count
+        The count of the structure
+    radius
+        The radius of the structure
+    get_bounding_box_from_mesh
+        Indicates whether to get the bounding box from the mesh
+    use_additional_struct
+        Indicates whether to use an additional structure
+    gradient_structure_name
+        The name of the structure to apply the gradient
 
     Returns
     -------
-    dict
-        The updated recipe.
+    :
+        The updated recipe
     """
     updated_recipe = recipe_template.copy()
 
@@ -199,7 +235,9 @@ def update_and_save_recipe(
 
     # update bounding box
     if get_bounding_box_from_mesh:
-        bounding_box = get_bounding_box(mesh_path / f"mem_mesh_{cell_id}.obj", expand=1.05).tolist()
+        bounding_box = get_bounding_box(
+            Path(mesh_path) / f"mem_mesh_{cell_id}.obj", expand=1.05
+        ).tolist()
         # print(f"Bounding box for {structure_name}_{cell_id}: {bounding_box}")
         updated_recipe["bounding_box"] = bounding_box
 
@@ -253,14 +291,19 @@ def update_and_save_recipe(
     return updated_recipe
 
 
-def get_cell_ids(workflow_config):
+def get_cell_ids(workflow_config: Any) -> List[Union[int, str]]:
     """
     Get list of cell IDs to pack for a given structure.
 
     Parameters
     ----------
-    workflow_config:
-        workflow configuration
+    workflow_config
+        Workflow configuration
+
+    Returns
+    -------
+    :
+        List of cell IDs
     """
     if workflow_config.use_mean_cell:
         return ["mean"]
@@ -273,11 +316,10 @@ def get_cell_ids(workflow_config):
         )
 
 
-def generate_recipes(
-    workflow_config,
-):
+def generate_recipes(workflow_config: Any) -> None:
     """
-    Generates cellPACK recipes.
+    Generate cellPACK recipes.
+
     Operations that need to get data from a dataframe are
     performed in this function.
     Other operations are performed in parallel inside the function
@@ -285,8 +327,8 @@ def generate_recipes(
 
     Parameters
     ----------
-    workflow_config:
-        workflow configuration
+    workflow_config
+        Workflow configuration
     """
     cell_id_list = get_cell_ids(workflow_config)
 
@@ -338,18 +380,18 @@ def generate_recipes(
                     )
                     futures.append(future)
 
-                for future in concurrent.futures.as_completed(futures):
+                for _ in concurrent.futures.as_completed(futures):
                     pbar.update(1)
 
 
-def generate_configs(workflow_config):
+def generate_configs(workflow_config: Any) -> None:
     """
     Generate cellpack config file.
 
     Parameters
     ----------
-    workflow_config:
-        workflow configuration
+    workflow_config
+        Workflow configuration
     """
     config_template = read_json(workflow_config.config_template_path)
 

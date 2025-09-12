@@ -37,19 +37,20 @@ log.info(meta_df.structure_name.unique())
 # - `ATP2A2` is smooth ER
 # - `TOMM20` is mitochondria
 # - `ST6GAL1` is Golgi
-STRUCTURE_ID = "SLC25A17"
+STRUCTURE_ID = "RAB5A"
 
 # %% [markdown]
 # ### Get cell_id list for structure
 dsphere = True
 cell_id_list = get_cell_id_list_for_structure(STRUCTURE_ID, dsphere=dsphere)
 log.info(f"Found {len(cell_id_list)} cell IDs for {STRUCTURE_ID}")
+cell_id_list = [cell_id_list[0]]
 # %% [markdown]
 # ### Create dataframe for structure metadata
 meta_df_struct = meta_df.loc[cell_id_list].reset_index()
 # %% [markdown]
 # ### Prepare file paths to save images
-download_raw = False
+download_raw = True
 subfolder_name = "sample_8d" if dsphere else "full"
 folder_name = "unsegmented" if download_raw else "segmented"
 

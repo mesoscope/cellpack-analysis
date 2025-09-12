@@ -27,6 +27,8 @@ dependencies = [
     "scikit-learn",
     "scipy",
     "seaborn",
+    "statannotations>=0.7.2",
+    "statsmodels>=0.14.5",
     "tqdm",
     "trimesh",
     "vtk",

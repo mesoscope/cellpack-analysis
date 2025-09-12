@@ -166,7 +166,7 @@ data/
 results/
 
 # backups
-**backups**
+**backup**
 
 # credentials
 .creds

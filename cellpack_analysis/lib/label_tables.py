@@ -18,11 +18,11 @@ MODE_LABELS = {
     "ST6GAL1": "Golgi",
     "TOMM20": "Mitochondria",
     "mean_count_and_size": "Baseline",
-    "variable_size": "Variable Size",
-    "variable_count": "Variable Count",
-    "variable_count_and_size": "Variable Count and Size",
+    "variable_size": "Size variation",
+    "variable_count": "Count variation",
+    "variable_count_and_size": "Count and size variation",
     "random": "Random",
-    "shape": "Shape",
+    "shape": "Shape variation",
     "nucleus_moderate": "Nucleus bias",
     "nucleus_gradient": "Nucleus bias 0.3",
     "nucleus_gradient_0pt4": "Nucleus bias 0.4",
@@ -39,6 +39,7 @@ MODE_LABELS = {
     "apical_gradient": "Apical bias",
     "planar_gradient_Z_moderate_invert": "Basal bias",
     "struct_gradient": "Structure bias",
+    "struct_gradient_weak": "Structure bias",
 }
 
 STATIC_SHAPE_MODES = [
@@ -64,12 +65,12 @@ VARIABLE_SHAPE_MODES = [
 ]
 
 DISTANCE_MEASURE_LABELS = {
-    "nucleus": "Distance from Nucleus",
-    "membrane": "Distance from Membrane",
+    "nucleus": "Distance from nucleus",
+    "membrane": "Distance from membrane",
     "z": "Z distance",
-    "nearest": "Nearest Distance",
-    "pairwise": "Pairwise Distance",
-    "scaled_nucleus": "Scaled Distance from Nucleus",
+    "nearest": "Nearest neighbor distance",
+    "pairwise": "Pairwise distance",
+    "scaled_nucleus": "Scaled distance from nucleus",
 }
 
 GRID_DISTANCE_LABELS = {
@@ -96,25 +97,32 @@ DISTANCE_LIMITS = {
     "pairwise": (0, 25),
     "nucleus": (0, 6),
     "nearest": (0, 5),
-    "z": (0, 12),
+    "z": (0, 10),
     "scaled_nucleus": (0.0, 1.0),
     "membrane": (0.0, 3.2),
 }
 
 COLOR_PALETTE = {
+    "mean_count_and_size": "C0",
+    "variable_count": "C11",
+    "variable_size": "C12",
+    "shape": "C3",
     "SLC25A17": "green",
     "peroxisome": "green",
-    "RAB5A": "gold",
-    "endosome": "gold",
-    "SEC61B": "blue",
-    "ER": "blue",
-    "ST6GAL1": "orange",
-    "golgi": "orange",
-    "random": "gray",
-    "nucleus_gradient_strong": "cyan",
-    "membrane_gradient_strong": "magenta",
-    "apical_gradient": "brown",
-    "struct_gradient": "pink",
+    "RAB5A": "#FF8000",
+    "endosome": "#FF8000",
+    "random": "C4",
+    "nucleus_gradient_strong": "C5",
+    "membrane_gradient_strong": "C6",
+    "apical_gradient": "C7",
+    "struct_gradient": "C8",
+    "struct_gradient_weak": "C8",
+    "SEC61B": "C9",
+    "ER": "C9",
+    "ST6GAL1": "C10",
+    "golgi": "C10",
+    "membrane": "#F5A1F5",
+    "nucleus": "#3D9090",
 }
 
 DATA_CONFIG = {
