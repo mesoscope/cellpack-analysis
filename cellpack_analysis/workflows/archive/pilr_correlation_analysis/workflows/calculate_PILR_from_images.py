@@ -11,16 +11,16 @@ import numpy as np
 from aicsimageio.writers.ome_tiff_writer import OmeTiffWriter
 from tqdm import tqdm
 
-from cellpack_analysis.lib.archive.PILR_tools import (
+from cellpack_analysis.lib.archive.PILR_utils import (
     average_over_dimension,
     get_pilr_for_single_image,
 )
+from cellpack_analysis.lib.archive.PILR_visualization import plot_PILR, save_PILR_as_tiff
 from cellpack_analysis.lib.label_tables import (
     DUAL_STRUCTURE_SIM_CHANNEL_MAP,
     RAW_CHANNEL_MAP,
     SIM_CHANNEL_MAP,
 )
-from cellpack_analysis.lib.plotting_tools import plot_PILR, save_PILR_as_tiff
 
 log = getLogger(__name__)
 

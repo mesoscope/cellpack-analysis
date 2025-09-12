@@ -14,7 +14,7 @@ import fire
 import numpy as np
 import pandas as pd
 
-from cellpack_analysis.lib.archive.PILR_tools import vectorized_pixelwise_correlation
+from cellpack_analysis.lib.archive.PILR_utils import vectorized_pixelwise_correlation
 from cellpack_analysis.lib.file_io import get_project_root, read_json
 from cellpack_analysis.lib.get_cell_id_list import get_cell_id_list_for_structure
 

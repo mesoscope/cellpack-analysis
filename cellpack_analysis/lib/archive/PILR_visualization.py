@@ -5,7 +5,7 @@ import numpy as np
 import seaborn as sns
 from aicsimageio.aics_image import AICSImage
 
-from cellpack_analysis.lib.archive.PILR_tools import add_contour_to_axis
+from cellpack_analysis.lib.archive.PILR_utils import add_contour_to_axis
 
 
 def plot_PILR(

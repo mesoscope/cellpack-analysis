@@ -43,8 +43,8 @@ log.info(f"Using {len(cell_ids_to_use)} cell_ids")
 cell_id_list = []
 nuc_meshes_to_use = []
 mem_meshes_to_use = []
-if USE_STRUCT_MESH:
-    struct_meshes_to_use = []
+struct_meshes_to_use = []
+
 for cell_id in cell_ids_to_use:
     nuc_mesh_path = mesh_folder / f"nuc_mesh_{cell_id}.obj"
     mem_mesh_path = mesh_folder / f"mem_mesh_{cell_id}.obj"
@@ -96,13 +96,13 @@ if PARALLEL:
                 )
             )
 
-        with tqdm(total=len(results), desc="CellIDs done") as pbar:
+        with tqdm(total=len(results), desc="cells") as pbar:
             for result in as_completed(results):
                 if result.result:
                     pbar.update(1)
 else:
     results = []
-    for i in tqdm(range(len(nuc_meshes_to_use)), desc="CellIDs done"):
+    for i in tqdm(range(len(nuc_meshes_to_use)), desc="cells"):
         results.append(
             calculate_grid_distances(
                 nuc_mesh_path=nuc_meshes_to_use[i],

@@ -10,8 +10,8 @@ import trimesh
 from matplotlib.ticker import MaxNLocator
 from tqdm import tqdm
 
-from cellpack_analysis.analysis.punctate_analysis.lib.distance import filter_invalid_distances
 from cellpack_analysis.lib.default_values import PIXEL_SIZE_IN_UM
+from cellpack_analysis.lib.distance import filter_invalid_distances
 from cellpack_analysis.lib.file_io import get_project_root
 from cellpack_analysis.lib.get_cell_id_list import get_cell_id_list_for_structure
 from cellpack_analysis.lib.label_tables import COLOR_PALETTE, DISTANCE_LIMITS

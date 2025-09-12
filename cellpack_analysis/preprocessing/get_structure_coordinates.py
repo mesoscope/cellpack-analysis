@@ -12,22 +12,19 @@ from scipy import ndimage
 from skimage import io, measure
 from tqdm import tqdm
 
+from cellpack_analysis.lib.file_io import get_datadir_path
+from cellpack_analysis.lib.label_tables import STRUCTURE_NAME_DICT
+
 # %% [markdown]
 # ### Set structure id
-structure_name_dict = {
-    "SLC25A17": "peroxisome",
-    "RAB5A": "endosome",
-}
 STRUCTURE_ID = "SLC25A17"  # peroxisome: "SLC25A17", early endosome: "RAB5A"
-STRUCTURE_NAME = structure_name_dict[STRUCTURE_ID]
+STRUCTURE_NAME = STRUCTURE_NAME_DICT[STRUCTURE_ID]
 dsphere = True
 subfolder = "sample_8d" if dsphere else "full"
-# %% [markdown]
-# ### get data directory
-datadir = Path(__file__).parents[2] / "data"
+
 # %% [markdown]
 # ### Get path for images
-img_path = datadir / f"structure_data/{STRUCTURE_ID}/{subfolder}/segmented/"
+img_path = get_datadir_path() / f"structure_data/{STRUCTURE_ID}/{subfolder}/segmented/"
 
 # %% [markdown]
 # ### Get list of files
