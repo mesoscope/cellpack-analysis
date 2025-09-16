@@ -82,7 +82,6 @@ source-include = [
     "cellpack_analysis",
     "docs",
     "tests",
-    "__init__.py",
     ".gitignore",
     "pre-commit-config.yaml",
     ".python-version",

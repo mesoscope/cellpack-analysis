@@ -1,7 +1,56 @@
+"""cellpack_analysis package - Analysis methods for cellPACK."""
+
+__author__ = "Saurabh Mogre"
+__email__ = "saurabh.mogre@alleninstitute.org"
+# Do not edit this string manually, always use bumpversion
+# Details in CONTRIBUTING.md
+__version__ = "0.0.1"
+
 import logging
 import logging.config
 from pathlib import Path
 
-log_file_path = Path(__file__).parents[1] / "logging.conf"
-logging.config.fileConfig(log_file_path, disable_existing_loggers=True)
-log = logging.getLogger()
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+# Global logger instance
+log = None
+
+
+def get_module_version():
+    """Get the current module version."""
+    return __version__
+
+
+def setup_logging():
+    """Set up logging configuration for the entire package."""
+    global log
+
+    config_path = Path(__file__).parents[1] / "logging.conf"
+    if config_path.exists():
+        logging.config.fileConfig(config_path, disable_existing_loggers=True)
+    else:
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s | %(levelname)s | %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+
+    log = logging.getLogger()
+    return log
+
+
+# Initialize logging automatically when the package is imported
+setup_logging()
+
+
+__all__ = [
+    "get_module_version",
+    "setup_logging",
+    "log",
+    "__version__",
+    "__author__",
+    "__email__",
+]
