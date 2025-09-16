@@ -194,7 +194,7 @@ _ = visualization.plot_baseline_mode_emd(
 # %% [markdown]
 # ### Print central tendencies
 for comparison_type in ["within_rule", "baseline"]:
-    distance.print_central_tendencies_for_emd(
+    distance.log_central_tendencies_for_emd(
         df_emd=df_emd,
         distance_measures=distance_measures,
         packing_modes=packing_modes,
@@ -239,7 +239,7 @@ fig_list, ax_list = visualization.plot_ks_observed_barplots(
 )
 # %% [markdown]
 # ### Print KS central tendencies
-distance.print_central_tendencies_for_ks(
+distance.log_central_tendencies_for_ks(
     df_ks_bootstrap=df_ks_bootstrap,
     distance_measures=distance_measures,
 )

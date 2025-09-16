@@ -1,0 +1,30 @@
+{
+    "analysis_type": "biological_variation",
+    "structure_id": "SLC25A17",
+    "packing_id": "peroxisome",
+    "structure_name": "peroxisome",
+    "packing_modes": [
+        "mean_count_and_size",
+        "variable_count",
+        "variable_size",
+        "shape"
+    ],
+    "channel_map": {
+        "mean_count_and_size": "mean",
+        "variable_count": "mean",
+        "variable_size": "mean",
+        "shape": "SLC25A17"
+    },
+    "packing_output_folder": "packing_outputs/stochastic_variation_analysis/",
+    "baseline_mode": "mean_count_and_size",
+    "distance_measures": [
+        "nearest",
+        "pairwise",
+        "nucleus",
+        "z"
+    ],
+    "normalization": null,
+    "save_format": "svg",
+    "bandwidth": 0.4,
+    "recalculate": false
+}

@@ -13,18 +13,15 @@
 import logging
 import time
 
-import matplotlib.pyplot as plt
-
-from cellpack_analysis.analysis.punctate_analysis.lib import distance, visualization
-from cellpack_analysis.analysis.punctate_analysis.lib.stats_functions import normalize_distances
+from cellpack_analysis.lib import distance, visualization
 from cellpack_analysis.lib.file_io import get_project_root
 from cellpack_analysis.lib.label_tables import DISTANCE_LIMITS
 from cellpack_analysis.lib.load_data import get_position_data_from_outputs
 from cellpack_analysis.lib.mesh_tools import get_mesh_information_dict_for_structure
+from cellpack_analysis.lib.stats_functions import normalize_distances
 
 log = logging.getLogger(__name__)
 
-plt.rcParams.update({"font.size": 14})
 start_time = time.time()
 # %% [markdown]
 # ## Set up parameters
@@ -34,8 +31,9 @@ start_time = time.time()
 # RAB5A: early endosomes
 # SEC61B: ER
 # ST6GAL1: Golgi
-STRUCTURE_ID = "RAB5A"
-STRUCTURE_NAME = "endosome"
+STRUCTURE_ID = "SLC25A17"
+PACKING_ID = "peroxisome"
+STRUCTURE_NAME = "peroxisome"
 # %% [markdown]
 # ### Set packing modes to analyze
 save_format = "svg"
@@ -44,19 +42,21 @@ packing_modes = [
     "random",
     "nucleus_gradient_strong",
     "membrane_gradient_strong",
-    "apical_gradient",
+    # "apical_gradient",
     # "struct_gradient",
 ]
 
 channel_map = {
-    # "SLC25A17": "SLC25A17",
-    "RAB5A": "RAB5A",
-    "random": "RAB5A",
-    "nucleus_gradient_strong": "RAB5A",
-    "membrane_gradient_strong": "RAB5A",
+    "SLC25A17": "SLC25A17",
+    # "RAB5A": "RAB5A",
+    "random": "SLC25A17",
+    "nucleus_gradient_strong": "SLC25A17",
+    "membrane_gradient_strong": "SLC25A17",
+    # "apical_gradient": "SLC25A17",
     # "struct_gradient": "SEC61B",
 }
 
+# relative path to packing outputs
 packing_output_folder = "packing_outputs/8d_sphere_data/rules_shape/"
 baseline_mode = STRUCTURE_ID
 
@@ -67,21 +67,20 @@ project_root = get_project_root()
 base_datadir = project_root / "data"
 base_results_dir = project_root / "results"
 
-folder_name = "rules"
-results_dir = base_results_dir / f"punctate_analysis/{STRUCTURE_NAME}/{folder_name}"
+results_dir = base_results_dir / f"punctate_analysis/{PACKING_ID}/data"
 results_dir.mkdir(exist_ok=True, parents=True)
 
-figures_dir = results_dir / "figures"
+figures_dir = results_dir.parent / "figures/"
 figures_dir.mkdir(exist_ok=True, parents=True)
-
 # %% [markdown]
 # ### Distance measures to use
 distance_measures = [
-    "nearest",
-    "pairwise",
+    # "nearest",
+    # "pairwise",
     "nucleus",
-    "scaled_nucleus",
+    # "scaled_nucleus",
     "z",
+    # "membrane",
 ]
 # %% [markdown]
 # ### Set normalization
@@ -95,23 +94,24 @@ if normalization is not None:
 # ### Read position data from outputs
 all_positions = get_position_data_from_outputs(
     structure_id=STRUCTURE_ID,
-    structure_name=STRUCTURE_NAME,
+    structure_name=PACKING_ID,
     packing_modes=packing_modes,
     base_datadir=base_datadir,
     results_dir=results_dir,
     packing_output_folder=packing_output_folder,
-    recalculate=True,
+    ingredient_key=f"membrane_interior_{STRUCTURE_NAME}",
+    recalculate=False,
 )
 # %% [markdown]
 # ### Get mesh information
 combined_mesh_information_dict = {}
-for structure in all_structures:
+for structure_id in all_structures:
     mesh_information_dict = get_mesh_information_dict_for_structure(
-        structure_id=structure,
+        structure_id=structure_id,
         base_datadir=base_datadir,
-        recalculate=True,
+        recalculate=False,
     )
-    combined_mesh_information_dict[structure] = mesh_information_dict
+    combined_mesh_information_dict[structure_id] = mesh_information_dict
 # %% [markdown]
 # ### Calculate distance measures and normalize
 all_distance_dict = distance.get_distance_dictionary(
@@ -120,7 +120,7 @@ all_distance_dict = distance.get_distance_dictionary(
     mesh_information_dict=combined_mesh_information_dict,
     channel_map=channel_map,
     results_dir=results_dir,
-    recalculate=True,
+    recalculate=False,
 )
 
 all_distance_dict = distance.filter_invalids_from_distance_distribution_dict(
@@ -139,17 +139,29 @@ all_distance_dict = normalize_distances(
 distance_figures_dir = figures_dir / "distance_distributions"
 distance_figures_dir.mkdir(exist_ok=True, parents=True)
 # %% [markdown]
-# ### plot distance distributions as vertical kde
-fig_list, ax_list = visualization.plot_distance_distributions_kde_vertical(
+# ### plot distance distribution kde
+fig, axs = visualization.plot_distance_distributions_kde(
     distance_measures=distance_measures,
     packing_modes=packing_modes,
     all_distance_dict=all_distance_dict,
+    figures_dir=distance_figures_dir,
     suffix=suffix,
     normalization=normalization,
     overlay=True,
     distance_limits=DISTANCE_LIMITS,
-    figures_dir=distance_figures_dir,
+    bandwidth=0.4,
     save_format=save_format,
+)
+# %% [markdown]
+# ### log central tendencies for distance distributions
+log_file_path = (
+    results_dir / f"{STRUCTURE_NAME}_distance_distribution_central_tendencies{suffix}.log"
+)
+distance.log_central_tendencies_for_distance_distributions(
+    all_distance_dict=all_distance_dict,
+    distance_measures=distance_measures,
+    packing_modes=packing_modes,
+    file_path=log_file_path,
 )
 # %% [markdown]
 # ## EMD Analysis for distance distributions
@@ -157,62 +169,50 @@ fig_list, ax_list = visualization.plot_distance_distributions_kde_vertical(
 # ### create emd analysis folders
 emd_figures_dir = figures_dir / "emd"
 emd_figures_dir.mkdir(exist_ok=True, parents=True)
-
 # %% [markdown]
 # ### Get earth movers distances between distance distributions
-all_pairwise_emd = distance.get_distance_distribution_emd_dictionary(
+df_emd = distance.get_distance_distribution_emd_df(
     all_distance_dict=all_distance_dict,
-    distance_measures=distance_measures,
     packing_modes=packing_modes,
+    distance_measures=distance_measures,
     results_dir=results_dir,
-    recalculate=True,
+    recalculate=False,
     suffix=suffix,
-)
-# %%
-visualization.plot_emd_kdeplots(
-    distance_measures=distance_measures,
-    all_pairwise_emd=all_pairwise_emd,
-    baseline_mode=baseline_mode,
-    suffix=suffix,
-    emd_figures_dir=emd_figures_dir,
-    save_format=save_format,
 )
 # %% [markdown]
-# ### get average emd correlation dataframe
-corr_df_dict = distance.get_average_emd_correlation(
+# ### Create plots for within rule EMD
+_ = visualization.plot_intra_mode_emd(
+    df_emd=df_emd,
     distance_measures=distance_measures,
-    all_pairwise_emd=all_pairwise_emd,
-    baseline_mode=baseline_mode,
-)
-# %% [markdown]
-# ### plot EMD correlation circles
-visualization.plot_emd_correlation_circles(
-    distance_measures=distance_measures,
-    corr_df_dict=corr_df_dict,
-    suffix=suffix,
     figures_dir=emd_figures_dir,
+    suffix=suffix,
     save_format=save_format,
+    baseline_mode=baseline_mode,
+    annotate_significance=False,
 )
 # %% [markdown]
-# ### plot EMD barplots
-visualization.plot_emd_barplots(
+# ### Create plots for baseline comparison EMD
+_ = visualization.plot_baseline_mode_emd(
+    df_emd=df_emd,
     distance_measures=distance_measures,
-    all_pairwise_emd=all_pairwise_emd,
     baseline_mode=baseline_mode,
-    suffix=suffix,
     figures_dir=emd_figures_dir,
+    suffix=suffix,
     save_format=save_format,
+    annotate_significance=False,
 )
 # %% [markdown]
-# ### plot EMD violinplots
-visualization.plot_baseline_emd_comparison_violinplots(
-    distance_measures=distance_measures,
-    all_pairwise_emd=all_pairwise_emd,
-    baseline_mode=baseline_mode,
-    suffix=suffix,
-    figures_dir=emd_figures_dir,
-    save_format=save_format,
-)
+# ### Log statistics for EMD comparisons
+emd_log_file_path = results_dir / f"{PACKING_ID}_emd_central_tendencies{suffix}.log"
+for comparison_type in ["within_rule", "baseline"]:
+    distance.log_central_tendencies_for_emd(
+        df_emd=df_emd,
+        distance_measures=distance_measures,
+        packing_modes=packing_modes,
+        baseline_mode=baseline_mode,
+        log_file_path=emd_log_file_path,
+        comparison_type=comparison_type,
+    )
 # %% [markdown]
 # ## KS Test Analysis for distance distributions
 # %% [markdown]
@@ -222,51 +222,37 @@ ks_figures_dir.mkdir(exist_ok=True, parents=True)
 ks_significance_level = 0.05
 # %% [markdown]
 # ### Run KS test between observed and other modes
-ks_observed_combined_df = distance.get_ks_test_df(
+ks_test_df = distance.get_ks_test_df(
     distance_measures=distance_measures,
     packing_modes=packing_modes,
     all_distance_dict=all_distance_dict,
     baseline_mode=baseline_mode,
     significance_level=ks_significance_level,
     save_dir=results_dir,
-    recalculate=True,
+    recalculate=False,
 )
 # %% [markdown]
-# ### Melt ks observed dataframe for plotting
-distance_measures_to_plot = ["nucleus", "scaled_nucleus"]
-df_plot = ks_observed_combined_df.loc[
-    ks_observed_combined_df["distance_measure"].isin(distance_measures_to_plot)
-]
-df_melt = distance.melt_df_for_plotting(df_plot)
-
+# ### Bootstrap KS test
+df_ks_bootstrap = distance.bootstrap_ks_tests(
+    ks_test_df=ks_test_df,
+    distance_measures=distance_measures,
+    packing_modes=[pm for pm in packing_modes if pm != baseline_mode],
+    n_bootstrap=1000,
+)
 # %% [markdown]
 # ### Plot KS observed results
-fig, ax = visualization.plot_ks_observed_barplots(
-    df_ks=df_melt,
+fig_list, ax_list = visualization.plot_ks_observed_barplots(
+    df_ks_bootstrap=df_ks_bootstrap,
+    distance_measures=distance_measures,
     figures_dir=ks_figures_dir,
     suffix=suffix,
-    significance_level=ks_significance_level,
     save_format=save_format,
 )
-
 # %% [markdown]
-# ## Ripley's K Analysis
-# %% [markdown]
-# ### create ripley analysis folders
-ripley_figures_dir = figures_dir / "ripley"
-ripley_figures_dir.mkdir(exist_ok=True, parents=True)
-# %% [markdown]
-# ## calculate ripleyK for all positions
-all_ripleyK, mean_ripleyK, ci_ripleyK, r_values = distance.calculate_ripley_k(
-    all_positions=all_positions,
-    mesh_information_dict=combined_mesh_information_dict[baseline_mode],
-)
-# %% [markdown]
-# ## plot ripleyK distributions
-visualization.plot_ripley_k(
-    mean_ripleyK=mean_ripleyK,
-    ci_ripleyK=ci_ripleyK,
-    r_values=r_values,
-    figures_dir=ripley_figures_dir,
-    save_format=save_format,
+# ### Log statistics for KS test comparisons
+ks_log_file_path = results_dir / f"{STRUCTURE_NAME}_ks_test_central_tendencies{suffix}.log"
+distance.log_central_tendencies_for_ks(
+    df_ks_bootstrap=df_ks_bootstrap,
+    distance_measures=distance_measures,
+    file_path=ks_log_file_path,
 )

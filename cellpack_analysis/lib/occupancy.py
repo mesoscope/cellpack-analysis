@@ -7,14 +7,9 @@ import numpy as np
 from scipy.stats import gaussian_kde, ks_2samp, wasserstein_distance
 from tqdm import tqdm
 
-from cellpack_analysis.analysis.punctate_analysis.lib.distance import (
-    filter_invalid_distances,
-    get_normalization_factor,
-)
-from cellpack_analysis.analysis.punctate_analysis.lib.stats_functions import (
-    sample_cell_ids_from_distance_dict,
-)
+from cellpack_analysis.lib.distance import filter_invalid_distances, get_normalization_factor
 from cellpack_analysis.lib.label_tables import GRID_DISTANCE_LABELS
+from cellpack_analysis.lib.stats_functions import sample_cell_ids_from_distance_dict
 
 log = logging.getLogger(__name__)
 

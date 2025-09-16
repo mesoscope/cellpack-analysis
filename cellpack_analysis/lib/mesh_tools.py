@@ -9,12 +9,10 @@ from typing import Any
 import numpy as np
 import trimesh
 import vtk
+from rtree.exceptions import RTreeError
 from tqdm import tqdm
 from trimesh import proximity
 
-from cellpack_analysis.analysis.punctate_analysis.lib.distance import (
-    calc_scaled_distance_to_nucleus_surface,
-)
 from cellpack_analysis.lib.get_cell_id_list import get_cell_id_list_for_structure
 
 log = logging.getLogger(__name__)
@@ -288,6 +286,98 @@ def get_mesh_information_dict_for_structure(
         pickle.dump(mesh_information_dict, f)
 
     return mesh_information_dict
+
+
+def calc_scaled_distance_to_nucleus_surface(
+    position_list: np.ndarray,
+    nuc_mesh: Any,
+    mem_mesh: Any,
+    mem_distances: np.ndarray | None = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Calculate the scaled distance of each point in position_list to the nucleus surface.
+
+    Parameters
+    ----------
+    position_list
+        A list of 3D coordinates of points
+    nuc_mesh
+        A trimesh object representing the nucleus surface
+    mem_mesh
+        A trimesh object representing the membrane surface
+    mem_distances
+        Pre-computed distances to membrane surface
+
+    Returns
+    -------
+    :
+        Tuple containing nucleus surface distances, scaled nucleus distances,
+        and distance between surfaces
+    """
+    if mem_distances is None:
+        mem_distances = np.array(proximity.signed_distance(mem_mesh, position_list))
+
+    nuc_query = proximity.ProximityQuery(nuc_mesh)
+
+    # closest points in the inner mesh surface
+    nuc_surface_positions, _, _ = nuc_query.on_surface(position_list)
+    nuc_surface_distances = -nuc_query.signed_distance(position_list)
+
+    # intersecting points on the outer surface
+    mem_surface_positions = np.zeros(nuc_surface_positions.shape)
+    failed_inds = []
+    for ind, (
+        position,
+        nuc_surface_distance,
+        mem_surface_distance,
+    ) in enumerate(zip(position_list, nuc_surface_distances, mem_distances, strict=False)):
+        if (
+            nuc_surface_distance < 0
+            or mem_surface_distance < 0
+            or position in nuc_surface_positions
+        ):
+            mem_surface_positions[ind] = np.nan
+            failed_inds.append(ind)
+            continue
+        try:
+            direction = position - nuc_surface_positions[ind]
+            intersect_positions, _, _ = mem_mesh.ray.intersects_location(
+                ray_origins=[nuc_surface_positions[ind]],
+                ray_directions=[direction],
+            )
+            if len(intersect_positions) > 1:
+                intersect_distances = np.linalg.norm(
+                    intersect_positions - nuc_surface_positions[ind], axis=1
+                )
+                min_ind = np.argmin(intersect_distances)
+                mem_surface_positions[ind] = intersect_positions[min_ind]
+            else:
+                mem_surface_positions[ind] = intersect_positions
+        except ValueError as e:
+            log.error(f"Value error in scaled distance calculation: {e}")
+            failed_inds.append(ind)
+            continue
+        except RTreeError as e:
+            log.error(f"Rtree error in scaled distance calculation: {e}")
+            failed_inds.append(ind)
+            continue
+        except Exception as e:
+            log.error(f"Unexpected error in scaled distance calculation: {e}")
+            failed_inds.append(ind)
+            continue
+
+    if len(failed_inds) > 0:
+        log.debug(f"Failed {len(failed_inds)} out of {len(position_list)}")
+
+    distance_between_surfaces = np.linalg.norm(
+        mem_surface_positions - nuc_surface_positions, axis=1
+    )
+    with np.errstate(divide="ignore", invalid="ignore"):
+        scaled_nuc_distances = np.divide(nuc_surface_distances, distance_between_surfaces)
+    scaled_nuc_distances[failed_inds] = np.nan
+    scaled_nuc_distances[(scaled_nuc_distances < 0) | (scaled_nuc_distances > 1)] = np.nan
+
+    return nuc_surface_distances, scaled_nuc_distances, distance_between_surfaces
 
 
 def calculate_grid_distances(

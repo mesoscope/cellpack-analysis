@@ -16,28 +16,28 @@ from scipy.spatial.distance import squareform
 from statannotations.Annotator import Annotator
 from tqdm import tqdm
 
-from cellpack_analysis.analysis.punctate_analysis.lib.distance import (
+from cellpack_analysis.lib.default_values import PIXEL_SIZE_IN_UM
+from cellpack_analysis.lib.distance import (
     filter_invalid_distances,
     get_normalization_factor,
     get_scaled_structure_radius,
 )
-from cellpack_analysis.analysis.punctate_analysis.lib.occupancy import (
-    get_occupancy_file_path,
-    load_occupancy_ratio_from_file,
-    save_occupancy_ratio_to_file,
-)
-from cellpack_analysis.analysis.punctate_analysis.lib.stats_functions import (
-    create_padded_numpy_array,
-    get_pdf_ratio,
-    sample_cell_ids_from_distance_dict,
-)
-from cellpack_analysis.lib.default_values import PIXEL_SIZE_IN_UM
 from cellpack_analysis.lib.label_tables import (
     COLOR_PALETTE,
     DISTANCE_MEASURE_LABELS,
     GRID_DISTANCE_LABELS,
     MODE_LABELS,
     NORMALIZATION_LABELS,
+)
+from cellpack_analysis.lib.occupancy import (
+    get_occupancy_file_path,
+    load_occupancy_ratio_from_file,
+    save_occupancy_ratio_to_file,
+)
+from cellpack_analysis.lib.stats_functions import (
+    create_padded_numpy_array,
+    get_pdf_ratio,
+    sample_cell_ids_from_distance_dict,
 )
 
 log = logging.getLogger(__name__)
@@ -90,7 +90,7 @@ def plot_distance_distributions_kde(
     distance_limits: dict[str, tuple[float, float]] | None = None,
     bandwidth: Literal["scott", "silverman"] | float = "scott",
     save_format: Literal["svg", "png", "pdf"] = "png",
-) -> tuple[dict[str, list[Figure]], dict[str, list[Axes]]]:
+) -> tuple[Figure, dict[str, dict[str, Axes]]]:
     """
     Plot distance distributions using kernel density estimation (KDE).
 
@@ -118,108 +118,129 @@ def plot_distance_distributions_kde(
         Format to save the figures in
     """
     log.info("Starting distance distribution kde plot")
-    cmap = plt.get_cmap("tab10")
-    all_fig_dict = {}
+    plt.rcParams.update({"font.size": 6})
+
     all_ax_dict = {}
-    for distance_measure in distance_measures:
+    num_rows = len(packing_modes)
+    num_cols = len(distance_measures)
+    fig, axs = plt.subplots(
+        num_rows,
+        num_cols,
+        figsize=(num_cols * 1.2, num_rows * 0.5),
+        dpi=300,
+        squeeze=False,
+        sharex="col",
+        sharey="col",
+    )
+    for col, distance_measure in enumerate(distance_measures):
         distance_dict = all_distance_dict[distance_measure]
+        if distance_measure not in all_ax_dict:
+            all_ax_dict[distance_measure] = {}
 
         if normalization is not None:
+            unit = ""
             distance_label = (
                 f"{DISTANCE_MEASURE_LABELS[distance_measure]}"
                 f" / {NORMALIZATION_LABELS[normalization]}"
             )
         elif "scaled" in distance_measure:
+            unit = ""
             distance_label = DISTANCE_MEASURE_LABELS[distance_measure]
         else:
-            distance_label = f"{DISTANCE_MEASURE_LABELS[distance_measure]} (\u03bcm)"
+            unit = "\u03bcm"
+            distance_label = f"{DISTANCE_MEASURE_LABELS[distance_measure]} ({unit})"
 
-        fig_list = []
-        ax_list = []
-
-        plot_range = [-np.inf, -np.inf]  # (xmax, ymax)
-        for mode_index, mode in enumerate(packing_modes):
-            fig, ax = plt.subplots(
-                figsize=(5, 2.5),
-                dpi=300,
-            )
-            mode_dict = distance_dict[mode]
+        for row, mode in enumerate(packing_modes):
             log.info(f"Plotting distance distribution for: {distance_measure}, Mode: {mode}")
 
-            # plot individual kde plots of distance distributions
-            for _k, (_, distances) in tqdm(enumerate(mode_dict.items()), total=len(mode_dict)):
+            ax = axs[row, col]
+            mode_dict = distance_dict[mode]
+            mode_color = COLOR_PALETTE.get(mode, "gray")
+            mode_label = MODE_LABELS.get(mode, mode)
+
+            # kde plots of individual distance distributions
+            for _, distances in tqdm(mode_dict.items(), total=len(mode_dict)):
                 sns.kdeplot(
                     distances,
                     ax=ax,
-                    color=cmap(mode_index),
-                    linewidth=1,
+                    color=mode_color,
+                    linewidth=0.15,
                     alpha=0.05,
                     bw_method=bandwidth,
                     cut=0,
                 )
                 # break
 
-            # plot combined kde plot of distance distributions
+            # kde plot of combined distance distribution
             combined_mode_distances = np.concatenate(list(mode_dict.values()))
             combined_mode_distances = filter_invalid_distances(combined_mode_distances)
             if overlay:
                 sns.kdeplot(
                     combined_mode_distances,
                     ax=ax,
-                    color=cmap(mode_index),
-                    linewidth=3,
-                    label=MODE_LABELS.get(mode, mode),
+                    color=mode_color,
+                    linewidth=0.7,
+                    label=mode_label,
                     bw_method=bandwidth,
                     cut=0,
                 )
 
-            # plot mean distance and add title
+            # set axis limits
+            if distance_limits is not None:
+                ax.set_xlim(distance_limits.get(distance_measure, (0, 1)))
+            else:
+                min_xlim = np.nanmin(combined_mode_distances)
+                max_xlim = np.nanmax(combined_mode_distances)
+                min_xlim = min_xlim - 0.1 * (max_xlim - min_xlim)
+                max_xlim = max_xlim + 0.1 * (max_xlim - min_xlim)
+                ax.set_xlim(min_xlim, max_xlim)
+
+            # remove top and right spines
+            sns.despine(fig=fig)
+
+            # plot mean distance and add annotation
             mean_distance = np.nanmean(combined_mode_distances).item()
             std_distance = np.nanstd(combined_mode_distances).item()
-            if normalization is None and "scaled" not in distance_measure:
-                unit = "\u03bcm"
+            ax.axvline(mean_distance, color="gray", linestyle="--", linewidth=0.3)
+            ax.axvspan(
+                mean_distance - std_distance,
+                mean_distance + std_distance,
+                edgecolor="none",
+                facecolor="gray",
+                alpha=0.1,
+            )
+
+            # set labels
+            if col == 0:
+                ax.set_ylabel(f"{mode_label}\nPDF")
             else:
-                unit = ""
-            ax.set_title(f"{mean_distance:.2f}$\\pm${std_distance:0.2f}{unit}")
-            ax.axvline(mean_distance, color="k", linestyle="--")
-            ax.set_xlabel(distance_label)
-            ax.set_ylabel(f"{MODE_LABELS.get(mode, mode)} PDF")
+                ax.set_ylabel("")
+            if row == num_rows - 1:
+                ax.set_xlabel(distance_label)
 
-            xmax = ax.get_xlim()[1]
-            ymax = ax.get_ylim()[1]
-            if xmax > plot_range[0]:
-                plot_range[0] = xmax
-            if ymax > plot_range[1]:
-                plot_range[1] = ymax
-            log.debug("Plot range at mode %s: %s", mode, plot_range)
-            fig_list.append(fig)
-            ax_list.append(ax)
+            all_ax_dict[distance_measure][row] = ax
 
-        all_fig_dict[distance_measure] = fig_list
-        all_ax_dict[distance_measure] = ax_list
-        if figures_dir is not None:
-            distance_kde_dir = figures_dir / distance_measure
-            distance_kde_dir.mkdir(exist_ok=True, parents=True)
-            for fig, ax, mode in zip(fig_list, ax_list, packing_modes):
-                if distance_limits is not None:
-                    ax.set_xlim(distance_limits.get(distance_measure, (0, 1)))
-                else:
-                    ax.set_xlim(0, plot_range[0])
-                ax.set_ylim(0, plot_range[1])
-                log.debug("Axis limits for mode %s: %s", mode, ax.axis())
-                ax.xaxis.set_major_locator(MaxNLocator(integer=True))
-                ax.yaxis.set_major_locator(MaxNLocator(integer=True))
-                fig.tight_layout()
-                plt.show()
-                fig.savefig(
-                    distance_kde_dir
-                    / f"distance_distribution_{distance_measure}_{mode}{suffix}.{save_format}",
-                    dpi=300,
-                )
-                plt.close(fig)
+            # set axes to use integer ticks
+            ax.xaxis.set_major_locator(MaxNLocator(3, integer=True))
+            ax.yaxis.set_major_locator(MaxNLocator(2, integer=True))
+
+            # remove top and right spines
+            # ax.spines["top"].set_visible(False)
+            # ax.spines["right"].set_visible(False)
+
+    if figures_dir is not None:
+        plt.tight_layout()
+        plt.show()
+        fig.savefig(
+            figures_dir / f"distance_distribution_kdeplot_{suffix}.{save_format}",
+            dpi=300,
+            transparent=True,
+            bbox_inches="tight",
+        )
+        plt.close(fig)
         # break
 
-    return all_fig_dict, all_ax_dict
+    return fig, all_ax_dict
 
 
 def plot_distance_distributions_kde_vertical(
@@ -300,14 +321,18 @@ def plot_distance_distributions_kde_vertical(
         distance_dict = all_distance_dict[distance_measure]
 
         for row, mode in enumerate(packing_modes):
-            mode_dict = distance_dict[mode]
             log.info(f"Plotting distance kde for: {distance_measure}, Mode: {mode}")
+
             ax = axs[row]
+            mode_dict = distance_dict[mode]
+            mode_color = COLOR_PALETTE.get(mode, "gray")
+            mode_label = MODE_LABELS.get(mode, mode)
+
             for _, distances in tqdm(mode_dict.items(), total=len(mode_dict)):
                 sns.kdeplot(
                     distances,
                     ax=ax,
-                    color=COLOR_PALETTE.get(mode, "gray"),
+                    color=mode_color,
                     linewidth=1,
                     alpha=0.05,
                     bw_method=bandwidth,
@@ -324,7 +349,7 @@ def plot_distance_distributions_kde_vertical(
                 sns.kdeplot(
                     combined_mode_distances,
                     ax=ax,
-                    color=COLOR_PALETTE.get(mode, "gray"),
+                    color=mode_color,
                     linewidth=3,
                     bw_method=bandwidth,
                     cut=0,
@@ -352,7 +377,7 @@ def plot_distance_distributions_kde_vertical(
             )
 
             if col == 0:
-                ax.set_ylabel(f"{MODE_LABELS.get(mode, mode)}\nPDF")
+                ax.set_ylabel(f"{mode_label}\nPDF")
             else:
                 ax.set_ylabel("\n\n")
 
@@ -783,7 +808,6 @@ def plot_ks_observed_barplots(
             test="Mann-Whitney",
             verbose=False,
             comparisons_correction="Bonferroni",
-            loc="outside",
         ).apply_and_annotate()
 
         fig_list.append(fig)
@@ -1008,7 +1032,7 @@ def plot_intra_mode_emd(
     save_format: Literal["svg", "png", "pdf"] = "png",
     baseline_mode: str | None = "SLC25A17",
     annotate_significance: bool = False,
-) -> tuple[list[Figure], list[Axes], list[Figure], list[Axes]]:
+) -> tuple[Figure, np.ndarray, Figure, np.ndarray]:
     """
     Plot violinplots and barplots of Earth Mover's Distance (EMD) values within each rule.
 
@@ -1026,19 +1050,33 @@ def plot_intra_mode_emd(
         Format to save the figures in
     """
     log.info("Plotting within rule EMD plots")
-    fig_bar_list, ax_bar_list = [], []
-    fig_violin_list, ax_violin_list = [], []
+    plt.rcParams.update({"font.size": 6})
 
-    for distance_measure in distance_measures:
-        df_distance_measure = df_emd.query(f"distance_measure == '{distance_measure}'")
+    num_cols = len(distance_measures)
+    fig_bar, axs_bar = plt.subplots(
+        1,
+        num_cols,
+        figsize=(num_cols * 0.85, 2.5),
+        dpi=300,
+        squeeze=False,
+    )
+    fig_violin, axs_violin = plt.subplots(
+        1,
+        num_cols,
+        figsize=(num_cols * 0.85, 2.5),
+        dpi=300,
+        squeeze=False,
+    )
 
-        n_plots = df_distance_measure["packing_mode_1"].nunique()
-        fig_bar, ax_bar = plt.subplots(dpi=300, figsize=(2, 2.5 * n_plots))
-        fig_violin, ax_violin = plt.subplots(dpi=300, figsize=(2, 2.5 * n_plots))
+    for col, distance_measure in enumerate(distance_measures):
+        df_plot = df_emd.query(
+            f"distance_measure == '{distance_measure}' and " "packing_mode_1 == packing_mode_2"
+        )
 
-        df_plot = df_distance_measure.query("packing_mode_1 == packing_mode_2")
+        ax_bar = axs_bar[0, col]
+        ax_violin = axs_violin[0, col]
 
-        bar_plot_params = {
+        plot_params = {
             "data": df_plot,
             "x": "emd",
             "y": "packing_mode_1",
@@ -1046,94 +1084,59 @@ def plot_intra_mode_emd(
             "legend": False,
             "orient": "h",
             "palette": COLOR_PALETTE,
+            "linewidth": 0.5,
         }
-        sns.barplot(
-            ax=ax_bar,
-            **bar_plot_params,
-        )
+        sns.barplot(ax=ax_bar, **plot_params)
+        sns.violinplot(ax=ax_violin, **plot_params)
 
-        violin_plot_params = {
-            "data": df_plot,
-            "x": "emd",
-            "y": "packing_mode_1",
-            "hue": "packing_mode_1",
-            "legend": False,
-            "orient": "h",
-            "palette": COLOR_PALETTE,
-        }
-        sns.violinplot(
-            ax=ax_violin,
-            **violin_plot_params,
-        )
+        for ax, plot_type in zip([ax_bar, ax_violin], ["barplot", "violinplot"]):
+            sns.despine(ax=ax)
+            # ax.set_title(f"{DISTANCE_MEASURE_TITLES[distance_measure]}")
+            ax.set_xlabel("EMD")
+            ax.set_ylabel("")
+            ax.xaxis.set_major_locator(MaxNLocator(3, integer=True))
+            if col == 0:
+                ax.set_yticks(
+                    ax.get_yticks(),
+                    labels=[
+                        MODE_LABELS.get(label.get_text(), label.get_text())
+                        for label in ax.get_yticklabels()
+                    ],
+                )
+            else:
+                ax.set_yticks([])
 
-        ax_bar.set_xlabel(f"{DISTANCE_MEASURE_LABELS[distance_measure]} EMD")
-        ax_bar.set_ylabel("")
-        ax_bar.set_yticks(
-            ax_bar.get_yticks(),
-            labels=[
-                MODE_LABELS.get(label.get_text(), label.get_text())
-                for label in ax_bar.get_yticklabels()
-            ],
-        )
-        ax_bar.spines["top"].set_visible(False)
-        ax_bar.spines["right"].set_visible(False)
+            if annotate_significance:
+                packing_modes = df_plot["packing_mode_1"].unique()
+                pairs = list(combinations(packing_modes, 2))
+                if baseline_mode is not None:
+                    pairs = [pair for pair in pairs if baseline_mode in pair]
+                annotator = Annotator(ax=ax, pairs=pairs, plot=plot_type, **plot_params)
+                annotator.configure(
+                    test="Mann-Whitney",
+                    verbose=False,
+                    comparisons_correction="Bonferroni",
+                    loc="outside",
+                ).apply_and_annotate()
 
-        ax_violin.set_xlabel(f"{DISTANCE_MEASURE_LABELS[distance_measure]} EMD")
-        ax_violin.set_ylabel("")
-        ax_violin.set_yticks(
-            ax_violin.get_yticks(),
-            labels=[
-                MODE_LABELS.get(label.get_text(), label.get_text())
-                for label in ax_violin.get_yticklabels()
-            ],
-        )
-        ax_violin.spines["top"].set_visible(False)
-        ax_violin.spines["right"].set_visible(False)
-
+    if figures_dir is not None:
         if annotate_significance:
-            packing_modes = df_plot["packing_mode_1"].unique()
-            pairs = list(combinations(packing_modes, 2))
-            if baseline_mode is not None:
-                pairs = [pair for pair in pairs if baseline_mode in pair]
-            annotator_bar = Annotator(ax=ax_bar, pairs=pairs, plot="barplot", **bar_plot_params)
-            annotator_bar.configure(
-                test="Mann-Whitney",
-                verbose=False,
-                comparisons_correction="Bonferroni",
-                loc="outside",
-            ).apply_and_annotate()
-            annotator_violin = Annotator(
-                ax=ax_violin, pairs=pairs, plot="violinplot", **violin_plot_params
-            )
-            annotator_violin.configure(
-                test="Mann-Whitney",
-                verbose=False,
-                comparisons_correction="Bonferroni",
-                loc="outside",
-            ).apply_and_annotate()
+            suffix += "_annotated"
 
-        fig_bar_list.append(fig_bar)
-        ax_bar_list.append(ax_bar)
-        fig_violin_list.append(fig_violin)
-        ax_violin_list.append(ax_violin)
-
-        if figures_dir is not None:
-            distance_measure_dir = figures_dir / distance_measure
-            distance_measure_dir.mkdir(exist_ok=True, parents=True)
-            fig_bar.savefig(
-                distance_measure_dir
-                / f"{distance_measure}_within_rule_emd_barplot{suffix}.{save_format}",
+        for fig, label in zip(
+            [fig_bar, fig_violin],
+            ["barplot", "violinplot"],
+        ):
+            fig.tight_layout(pad=0)
+            fig.savefig(
+                figures_dir / f"intra_mode_emd_{label}{suffix}.{save_format}",
                 dpi=300,
                 bbox_inches="tight",
             )
-            fig_violin.savefig(
-                distance_measure_dir
-                / f"{distance_measure}_within_rule_emd_violinplot{suffix}.{save_format}",
-                dpi=300,
-                bbox_inches="tight",
-            )
+            plt.show()
+            plt.close(fig)
 
-    return fig_bar_list, ax_bar_list, fig_violin_list, ax_violin_list
+    return fig_bar, axs_bar, fig_violin, axs_violin
 
 
 def plot_baseline_mode_emd(
@@ -1144,7 +1147,7 @@ def plot_baseline_mode_emd(
     figures_dir: Path | None = None,
     save_format: Literal["svg", "png", "pdf"] = "png",
     annotate_significance: bool = False,
-) -> tuple[list[Figure], list[Axes], list[Figure], list[Axes]]:
+) -> tuple[Figure, np.ndarray, Figure, np.ndarray]:
     """
     Plot violinplots and barplots of Earth Mover's Distance (EMD) values within each rule.
 
@@ -1164,22 +1167,34 @@ def plot_baseline_mode_emd(
         Format to save the figures in
     """
     log.info("Plotting baseline mode EMD plots")
+    plt.rcParams.update({"font.size": 6})
 
-    fig_bar_list, ax_bar_list = [], []
-    fig_violin_list, ax_violin_list = [], []
+    num_cols = len(distance_measures)
+    fig_bar, axs_bar = plt.subplots(
+        1,
+        num_cols,
+        figsize=(num_cols * 0.85, 2.5),
+        dpi=300,
+        squeeze=False,
+    )
+    fig_violin, axs_violin = plt.subplots(
+        1,
+        num_cols,
+        figsize=(num_cols * 0.85, 2.5),
+        dpi=300,
+        squeeze=False,
+    )
 
-    for distance_measure in distance_measures:
-        df_distance_measure = df_emd.query(f"distance_measure == '{distance_measure}'")
-
-        n_plots = df_distance_measure["packing_mode_1"].nunique()
-        fig_bar, ax_bar = plt.subplots(dpi=300, figsize=(2, 2.5 * n_plots))
-        fig_violin, ax_violin = plt.subplots(dpi=300, figsize=(2, 2.5 * n_plots))
-
-        df_plot = df_distance_measure.query(
+    for col, distance_measure in enumerate(distance_measures):
+        df_plot = df_emd.query(
+            f"distance_measure == '{distance_measure}' and "
             f"packing_mode_1 == '{baseline_mode}' and packing_mode_2 != '{baseline_mode}'"
         )
 
-        bar_plot_params = {
+        ax_bar = axs_bar[0, col]
+        ax_violin = axs_violin[0, col]
+
+        plot_params = {
             "data": df_plot,
             "x": "emd",
             "y": "packing_mode_2",
@@ -1187,94 +1202,56 @@ def plot_baseline_mode_emd(
             "legend": False,
             "orient": "h",
             "palette": COLOR_PALETTE,
+            "linewidth": 0.5,
         }
-        sns.barplot(
-            ax=ax_bar,
-            **bar_plot_params,
-        )
+        sns.barplot(ax=ax_bar, **plot_params)
+        sns.violinplot(ax=ax_violin, **plot_params)
 
-        violin_plot_params = {
-            "data": df_plot,
-            "x": "emd",
-            "y": "packing_mode_2",
-            "hue": "packing_mode_2",
-            "legend": False,
-            "orient": "h",
-            "palette": COLOR_PALETTE,
-        }
-        sns.violinplot(
-            ax=ax_violin,
-            **violin_plot_params,
-        )
+        for ax, plot_type in zip([ax_bar, ax_violin], ["barplot", "violinplot"]):
+            sns.despine(ax=ax)
+            # ax.set_title(f"{DISTANCE_MEASURE_TITLES[distance_measure]}")
+            ax.set_xlabel("EMD")
+            ax.set_ylabel("")
+            ax.xaxis.set_major_locator(MaxNLocator(3, integer=True))
+            if col == 0:
+                ax.set_yticks(
+                    ax.get_yticks(),
+                    labels=[
+                        MODE_LABELS.get(label.get_text(), label.get_text())
+                        for label in ax.get_yticklabels()
+                    ],
+                )
+            else:
+                ax.set_yticks([])
 
-        ax_bar.set_xlabel(f"{DISTANCE_MEASURE_LABELS[distance_measure]} EMD")
-        ax_bar.set_ylabel("")
-        ax_bar.set_yticks(
-            ax_bar.get_yticks(),
-            labels=[
-                MODE_LABELS.get(label.get_text(), label.get_text())
-                for label in ax_bar.get_yticklabels()
-            ],
-        )
-        ax_bar.spines["top"].set_visible(False)
-        ax_bar.spines["right"].set_visible(False)
+            if annotate_significance:
+                packing_modes = [
+                    mode for mode in df_plot["packing_mode_2"].unique() if mode != baseline_mode
+                ]
+                pairs = list(combinations(packing_modes, 2))
+                annotator = Annotator(ax=ax, pairs=pairs, plot=plot_type, **plot_params)
+                annotator.configure(
+                    test="Mann-Whitney",
+                    verbose=False,
+                    comparisons_correction="Bonferroni",
+                ).apply_and_annotate()
+                suffix += "_annotated"
 
-        if annotate_significance:
-            packing_modes = [
-                mode for mode in df_plot["packing_mode_2"].unique() if mode != baseline_mode
-            ]
-            pairs = list(combinations(packing_modes, 2))
-            annotator_bar = Annotator(ax=ax_bar, pairs=pairs, plot="barplot", **bar_plot_params)
-            annotator_bar.configure(
-                test="Mann-Whitney",
-                verbose=False,
-                comparisons_correction="Bonferroni",
-                loc="outside",
-            ).apply_and_annotate()
-            annotator_violin = Annotator(
-                ax=ax_violin, pairs=pairs, plot="violinplot", **violin_plot_params
-            )
-            annotator_violin.configure(
-                test="Mann-Whitney",
-                verbose=False,
-                comparisons_correction="Bonferroni",
-                loc="outside",
-            ).apply_and_annotate()
-
-        ax_violin.set_xlabel(f"{DISTANCE_MEASURE_LABELS[distance_measure]} EMD")
-        ax_violin.set_ylabel("")
-        ax_violin.set_yticks(
-            ax_violin.get_yticks(),
-            labels=[
-                MODE_LABELS.get(label.get_text(), label.get_text())
-                for label in ax_violin.get_yticklabels()
-            ],
-        )
-        ax_violin.spines["top"].set_visible(False)
-        ax_violin.spines["right"].set_visible(False)
-
-        fig_bar_list.append(fig_bar)
-        ax_bar_list.append(ax_bar)
-        fig_violin_list.append(fig_violin)
-        ax_violin_list.append(ax_violin)
-
-        if figures_dir is not None:
-            distance_measure_dir = figures_dir / distance_measure
-            distance_measure_dir.mkdir(exist_ok=True, parents=True)
-            fig_bar.savefig(
-                distance_measure_dir
-                / f"{distance_measure}_baseline_comparison_emd_barplot{suffix}.{save_format}",
+    if figures_dir is not None:
+        for fig, label in zip(
+            [fig_bar, fig_violin],
+            ["barplot", "violinplot"],
+        ):
+            fig.tight_layout()
+            fig.savefig(
+                figures_dir / f"baseline_mode_emd_{label}{suffix}.{save_format}",
                 dpi=300,
                 bbox_inches="tight",
             )
-            fig_violin.savefig(
-                distance_measure_dir
-                / f"{distance_measure}_baseline_comparison_emd_violinplot{suffix}.{save_format}",
-                dpi=300,
-                bbox_inches="tight",
-            )
+            plt.show()
+            plt.close(fig)
 
-    return fig_bar_list, ax_bar_list, fig_violin_list, ax_violin_list
+    return fig_bar, axs_bar, fig_violin, axs_violin
 
 
 def plot_emd_kdeplots(

@@ -1,0 +1,39 @@
+{
+    "analysis_type": "occupancy_analysis",
+    "structure_id": "SLC25A17",
+    "packing_id": "peroxisome",
+    "structure_name": "peroxisome",
+    "packing_modes": [
+        "SLC25A17",
+        "random",
+        "nucleus_gradient_strong",
+        "membrane_gradient_strong"
+    ],
+    "channel_map": {
+        "SLC25A17": "SLC25A17",
+        "random": "SLC25A17",
+        "nucleus_gradient_strong": "SLC25A17",
+        "membrane_gradient_strong": "SLC25A17"
+    },
+    "packing_output_folder": "packing_outputs/8d_sphere_data/rules_shape/",
+    "baseline_mode": "SLC25A17",
+    "distance_measures": [
+        "nearest",
+        "pairwise",
+        "nucleus",
+        "z"
+    ],
+    "occupancy_distance_measures": [
+        "nucleus",
+        "z"
+    ],
+    "xlim": {
+        "nucleus": 6,
+        "z": 8
+    },
+    "normalization": null,
+    "save_format": "svg",
+    "bandwidth": 0.4,
+    "ingredient_key": "membrane_interior_peroxisome",
+    "recalculate": false
+}

@@ -6,115 +6,27 @@ from typing import Any, Literal
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from rtree.exceptions import RTreeError
 from scipy.spatial.distance import cdist, squareform
 from scipy.stats import gaussian_kde, ks_2samp, wasserstein_distance
 from tqdm import tqdm
 from trimesh import proximity
 
-from cellpack_analysis.analysis.punctate_analysis.lib.stats_functions import ripley_k
 from cellpack_analysis.lib.default_values import PIXEL_SIZE_IN_UM
-from cellpack_analysis.lib.file_io import get_project_root
+from cellpack_analysis.lib.file_io import (
+    add_file_handler_to_logger,
+    get_project_root,
+    remove_file_handler_from_logger,
+)
 from cellpack_analysis.lib.get_structure_stats_dataframe import get_structure_stats_dataframe
 from cellpack_analysis.lib.label_tables import GRID_DISTANCE_LABELS, MODE_LABELS, STATIC_SHAPE_MODES
+from cellpack_analysis.lib.mesh_tools import calc_scaled_distance_to_nucleus_surface
+from cellpack_analysis.lib.stats_functions import ripley_k
 
 log = logging.getLogger(__name__)
 
 plt.rcParams.update({"font.size": 16})
 
 PROJECT_ROOT = get_project_root()
-
-
-def calc_scaled_distance_to_nucleus_surface(
-    position_list: np.ndarray,
-    nuc_mesh: Any,
-    mem_mesh: Any,
-    mem_distances: np.ndarray | None = None,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """
-    Calculate the scaled distance of each point in position_list to the nucleus surface.
-
-    Parameters
-    ----------
-    position_list
-        A list of 3D coordinates of points
-    nuc_mesh
-        A trimesh object representing the nucleus surface
-    mem_mesh
-        A trimesh object representing the membrane surface
-    mem_distances
-        Pre-computed distances to membrane surface
-
-    Returns
-    -------
-    :
-        Tuple containing nucleus surface distances, scaled nucleus distances,
-        and distance between surfaces
-    """
-    if mem_distances is None:
-        mem_distances = np.array(proximity.signed_distance(mem_mesh, position_list))
-
-    nuc_query = proximity.ProximityQuery(nuc_mesh)
-
-    # closest points in the inner mesh surface
-    nuc_surface_positions, _, _ = nuc_query.on_surface(position_list)
-    nuc_surface_distances = -nuc_query.signed_distance(position_list)
-
-    # intersecting points on the outer surface
-    mem_surface_positions = np.zeros(nuc_surface_positions.shape)
-    failed_inds = []
-    for ind, (
-        position,
-        nuc_surface_distance,
-        mem_surface_distance,
-    ) in enumerate(zip(position_list, nuc_surface_distances, mem_distances, strict=False)):
-        if (
-            nuc_surface_distance < 0
-            or mem_surface_distance < 0
-            or position in nuc_surface_positions
-        ):
-            mem_surface_positions[ind] = np.nan
-            failed_inds.append(ind)
-            continue
-        try:
-            direction = position - nuc_surface_positions[ind]
-            intersect_positions, _, _ = mem_mesh.ray.intersects_location(
-                ray_origins=[nuc_surface_positions[ind]],
-                ray_directions=[direction],
-            )
-            if len(intersect_positions) > 1:
-                intersect_distances = np.linalg.norm(
-                    intersect_positions - nuc_surface_positions[ind], axis=1
-                )
-                min_ind = np.argmin(intersect_distances)
-                mem_surface_positions[ind] = intersect_positions[min_ind]
-            else:
-                mem_surface_positions[ind] = intersect_positions
-        except ValueError as e:
-            log.error(f"Value error in scaled distance calculation: {e}")
-            failed_inds.append(ind)
-            continue
-        except RTreeError as e:
-            log.error(f"Rtree error in scaled distance calculation: {e}")
-            failed_inds.append(ind)
-            continue
-        except Exception as e:
-            log.error(f"Unexpected error in scaled distance calculation: {e}")
-            failed_inds.append(ind)
-            continue
-
-    if len(failed_inds) > 0:
-        log.debug(f"Failed {len(failed_inds)} out of {len(position_list)}")
-
-    distance_between_surfaces = np.linalg.norm(
-        mem_surface_positions - nuc_surface_positions, axis=1
-    )
-    with np.errstate(divide="ignore", invalid="ignore"):
-        scaled_nuc_distances = np.divide(nuc_surface_distances, distance_between_surfaces)
-    scaled_nuc_distances[failed_inds] = np.nan
-    scaled_nuc_distances[(scaled_nuc_distances < 0) | (scaled_nuc_distances > 1)] = np.nan
-
-    return nuc_surface_distances, scaled_nuc_distances, distance_between_surfaces
 
 
 def filter_invalids_from_distance_distribution_dict(
@@ -565,10 +477,11 @@ def calculate_ripley_k(
             mean_k_values, _ = ripley_k(positions, volume, r_values, norm_factor=(radius * 2))
             all_ripleyK[mode][seed] = mean_k_values
         mean_ripleyK[mode] = np.mean(
-            np.array([np.array(v) for v in all_ripleyK[mode].values()]), axis=0
+            np.array([np.array(v, dtype=float) for v in all_ripleyK[mode].values()], dtype=float),
+            axis=0,
         )
         ci_ripleyK[mode] = np.percentile(
-            np.array([np.array(v) for v in all_ripleyK[mode].values()]),
+            np.array([np.array(v, dtype=float) for v in all_ripleyK[mode].values()], dtype=float),
             [2.5, 97.5],
             axis=0,
         )
@@ -812,12 +725,13 @@ def get_scaled_structure_radius(
     return avg_radius, std_radius
 
 
-def print_central_tendencies_for_emd(
+def log_central_tendencies_for_emd(
     df_emd: pd.DataFrame,
     distance_measures: list[str],
     packing_modes: list[str],
     baseline_mode: str = "mean_count_and_size",
     comparison_type: str = "within_rule",
+    log_file_path: Path | None = None,
 ):
     """
     Print central tendencies of EMD values for within-rule and baseline comparisons.
@@ -834,9 +748,14 @@ def print_central_tendencies_for_emd(
     baseline_mode
         The packing mode to use as the baseline for comparisons
     """
-    log.info("Comparison type: %s", comparison_type)
+    if log_file_path is not None:
+        emd_log = add_file_handler_to_logger(log, log_file_path)
+    else:
+        emd_log = log
+
+    emd_log.info("Comparison type: %s", comparison_type)
     for distance_measure in distance_measures:
-        log.info(f"Distance measure: {distance_measure}")
+        emd_log.info(f"Distance measure: {distance_measure}")
         for packing_mode in packing_modes:
             if comparison_type == "baseline":
                 if packing_mode == baseline_mode:
@@ -872,18 +791,21 @@ def print_central_tendencies_for_emd(
             median = sub_df.median()
             lower = sub_df.quantile(0.025)
             upper = sub_df.quantile(0.975)
-            log.info(
+            emd_log.info(
                 f"{label}: {mean:.2f} ± {std:.2f} "
                 f"(median: {median:.2f}, 95% CI: {lower:.2f}, {upper:.2f})"
             )
 
+    remove_file_handler_from_logger(emd_log, log_file_path)
 
-def print_central_tendencies_for_ks(
+
+def log_central_tendencies_for_ks(
     df_ks_bootstrap: pd.DataFrame,
     distance_measures: list[str],
+    file_path: Path | None = None,
 ):
     """
-    Print central tendencies of KS test results.
+    Log central tendencies of KS test results.
 
     Parameters
     ----------
@@ -892,9 +814,16 @@ def print_central_tendencies_for_ks(
         packing_mode, and similar_fraction
     distance_measures
         List of distance measures to analyze
+    file_path
+        Optional file path to save the log output
     """
+    if file_path is not None:
+        ks_log = add_file_handler_to_logger(log, file_path)
+    else:
+        ks_log = log
+
     for distance_measure in distance_measures:
-        log.info(f"Distance measure: {distance_measure}")
+        ks_log.info(f"Distance measure: {distance_measure}")
         sub_df = df_ks_bootstrap.loc[df_ks_bootstrap["distance_measure"] == distance_measure]
         for packing_mode in sub_df["packing_mode"].unique():
             mode_df = sub_df.loc[sub_df["packing_mode"] == packing_mode]
@@ -907,3 +836,53 @@ def print_central_tendencies_for_ks(
                 f"{packing_mode}: {mean:.2f} ± {std:.2f} "
                 f"(median: {median:.2f}, 95% CI: {lower:.2f}, {upper:.2f})"
             )
+
+    remove_file_handler_from_logger(ks_log, file_path)
+
+
+def log_central_tendencies_for_distance_distributions(
+    all_distance_dict: dict[str, dict[str, dict[str, np.ndarray]]],
+    distance_measures: list[str],
+    packing_modes: list[str],
+    file_path: Path | None = None,
+):
+    """
+    Log central tendencies of distance distributions.
+
+    Parameters
+    ----------
+    all_distance_dict
+        Dictionary containing distance measures for each packing mode
+    distance_measures
+        List of distance measures to analyze
+    packing_modes
+        List of packing modes to analyze
+    file_path
+        Optional file path to save the log output
+    """
+    if file_path is not None:
+        dist_log = add_file_handler_to_logger(log, file_path)
+    else:
+        dist_log = log
+
+    for distance_measure in distance_measures:
+        dist_log.info(f"Distance measure: {distance_measure}")
+        distance_dict = all_distance_dict[distance_measure]
+        for packing_mode in packing_modes:
+            mode_dict = distance_dict[packing_mode]
+            all_distances = np.concatenate(list(mode_dict.values()))
+            all_distances = filter_invalid_distances(all_distances)
+            if len(all_distances) == 0:
+                dist_log.warning(f"No valid distances found for mode {packing_mode}")
+                continue
+            mean = np.mean(all_distances)
+            std = np.std(all_distances)
+            median = np.median(all_distances)
+            lower = np.percentile(all_distances, 2.5)
+            upper = np.percentile(all_distances, 97.5)
+            dist_log.info(
+                f"{packing_mode}: {mean:.2f} ± {std:.2f} "
+                f"(median: {median:.2f}, 95% CI: {lower:.2f}, {upper:.2f})"
+            )
+
+    remove_file_handler_from_logger(dist_log, file_path)

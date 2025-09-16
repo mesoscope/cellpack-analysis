@@ -1,37 +1,31 @@
 # %% [markdown]
 # # Biological variation workflow
-# Compare distributions of various measures of distance using:
-# 1. Pairwise EMD
-# 2. KS test
-# 3. Ripley's K
-#
-# Used to compare variation due to
-# 1. Mean count and size
-# 2. Variable size
-# 3. Variable count
-# 4. Shape
+# Compare variation in spatial organization due to biological factors
+
+# Factors affecting spatial organization:
+# 1. Size variation
+# 2. Count variation
+# 3. Variation in cell and nucleus shape
 
 import logging
 import time
 
-import matplotlib.pyplot as plt
-
-from cellpack_analysis.analysis.punctate_analysis.lib import distance, visualization
-from cellpack_analysis.analysis.punctate_analysis.lib.stats_functions import normalize_distances
+from cellpack_analysis.lib import distance, visualization
 from cellpack_analysis.lib.file_io import get_project_root
 from cellpack_analysis.lib.label_tables import DISTANCE_LIMITS
 from cellpack_analysis.lib.load_data import get_position_data_from_outputs
 from cellpack_analysis.lib.mesh_tools import get_mesh_information_dict_for_structure
+from cellpack_analysis.lib.stats_functions import normalize_distances
 
 log = logging.getLogger(__name__)
 
-plt.rcParams.update({"font.size": 12})
 start_time = time.time()
 # %% [markdown]
 # ## Set up parameters
 # %% [markdown]
 # ### Set structure ID and radius
 STRUCTURE_ID = "SLC25A17"
+PACKING_ID = "peroxisome"
 STRUCTURE_NAME = "peroxisome"
 # %% [markdown]
 # ### Set packing modes to analyze
@@ -132,7 +126,7 @@ distance_figures_dir = figures_dir / "distance_distributions"
 distance_figures_dir.mkdir(exist_ok=True, parents=True)
 # %% [markdown]
 # ### plot distance distribution kde
-fig, axs = visualization.plot_distance_distributions_kde_vertical(
+fig, axs = visualization.plot_distance_distributions_kde(
     distance_measures=distance_measures,
     packing_modes=packing_modes,
     all_distance_dict=all_distance_dict,
@@ -140,9 +134,20 @@ fig, axs = visualization.plot_distance_distributions_kde_vertical(
     suffix=suffix,
     normalization=normalization,
     overlay=True,
-    save_format=save_format,
     distance_limits=DISTANCE_LIMITS,
     bandwidth=0.4,
+    save_format=save_format,
+)
+# %% [markdown]
+# ### log central tendencies for distance distributions
+log_file_path = (
+    results_dir / f"{STRUCTURE_NAME}_distance_distribution_central_tendencies{suffix}.log"
+)
+distance.log_central_tendencies_for_distance_distributions(
+    all_distance_dict=all_distance_dict,
+    distance_measures=distance_measures,
+    packing_modes=packing_modes,
+    file_path=log_file_path,
 )
 # %% [markdown]
 # ## EMD Analysis for distance distributions
@@ -169,7 +174,7 @@ _ = visualization.plot_intra_mode_emd(
     suffix=suffix,
     save_format=save_format,
     baseline_mode=baseline_mode,
-    annotate_significance=True,
+    annotate_significance=False,
 )
 # %% [markdown]
 # ### Create plots for baseline comparison EMD
@@ -180,15 +185,17 @@ _ = visualization.plot_baseline_mode_emd(
     figures_dir=emd_figures_dir,
     suffix=suffix,
     save_format=save_format,
-    annotate_significance=True,
+    annotate_significance=False,
 )
 # %% [markdown]
-# ### Print statistics for EMD comparisons
+# ### Log statistics for EMD comparisons
+emd_log_file_path = results_dir / f"{STRUCTURE_NAME}_emd_central_tendencies{suffix}.log"
 for comparison_type in ["within_rule", "baseline"]:
-    distance.print_central_tendencies_for_emd(
+    distance.log_central_tendencies_for_emd(
         df_emd=df_emd,
         distance_measures=distance_measures,
         packing_modes=packing_modes,
         baseline_mode=baseline_mode,
+        log_file_path=emd_log_file_path,
         comparison_type=comparison_type,
     )

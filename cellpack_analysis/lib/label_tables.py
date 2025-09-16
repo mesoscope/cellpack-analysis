@@ -1,3 +1,6 @@
+import seaborn as sns
+
+# Names of tagged genes
 STRUCTURE_NAME_DICT = {
     "SLC25A17": "peroxisome",
     "RAB5A": "endosome",
@@ -6,11 +9,13 @@ STRUCTURE_NAME_DICT = {
     "TOMM20": "mitochondria",
 }
 
-STRUCTURE_RADIUS_DICT = {
+# Radii of punctate structures in voxels
+STRUCTURE_RADIUS = {
     "SLC25A17": 2.37,
     "RAB5A": 2.6,
 }
 
+# Labels for cellPACK simulated packing modes
 MODE_LABELS = {
     "SLC25A17": "Peroxisomes",
     "RAB5A": "Endosomes",
@@ -18,11 +23,11 @@ MODE_LABELS = {
     "ST6GAL1": "Golgi",
     "TOMM20": "Mitochondria",
     "mean_count_and_size": "Baseline",
-    "variable_size": "Size variation",
-    "variable_count": "Count variation",
-    "variable_count_and_size": "Count and size variation",
+    "variable_size": "Size",
+    "variable_count": "Count",
+    "variable_count_and_size": "Count and size",
     "random": "Random",
-    "shape": "Shape variation",
+    "shape": "Shape",
     "nucleus_moderate": "Nucleus bias",
     "nucleus_gradient": "Nucleus bias 0.3",
     "nucleus_gradient_0pt4": "Nucleus bias 0.4",
@@ -42,6 +47,7 @@ MODE_LABELS = {
     "struct_gradient_weak": "Structure bias",
 }
 
+# Packing modes in the mean shape - do not have a cell ID associated
 STATIC_SHAPE_MODES = [
     "mean_count_and_size",
     "variable_size",
@@ -49,6 +55,7 @@ STATIC_SHAPE_MODES = [
     "variable_count_and_size",
 ]
 
+# Packing modes in observed cell shapes - have a cell ID associated
 VARIABLE_SHAPE_MODES = [
     "SLC25A17",
     "RAB5A",
@@ -64,6 +71,7 @@ VARIABLE_SHAPE_MODES = [
     "apical_gradient",
 ]
 
+# Labels for distance measures
 DISTANCE_MEASURE_LABELS = {
     "nucleus": "Distance from nucleus",
     "membrane": "Distance from membrane",
@@ -73,6 +81,17 @@ DISTANCE_MEASURE_LABELS = {
     "scaled_nucleus": "Scaled distance from nucleus",
 }
 
+# Distance measure title strings
+DISTANCE_MEASURE_TITLES = {
+    "nucleus": "Nucleus",
+    "membrane": "Membrane",
+    "z": "Z",
+    "nearest": "Nearest",
+    "pairwise": "Pairwise",
+    "scaled_nucleus": "Scaled Nucleus",
+}
+
+# Labels for grid distance files
 GRID_DISTANCE_LABELS = {
     "nucleus": "nuc_grid_distances",
     "membrane": "mem_grid_distances",
@@ -102,27 +121,29 @@ DISTANCE_LIMITS = {
     "membrane": (0.0, 3.2),
 }
 
+colormap = sns.color_palette("tab10", 10).as_hex()
+
 COLOR_PALETTE = {
-    "mean_count_and_size": "C0",
-    "variable_count": "C11",
-    "variable_size": "C12",
-    "shape": "C3",
-    "SLC25A17": "green",
-    "peroxisome": "green",
-    "RAB5A": "#FF8000",
-    "endosome": "#FF8000",
-    "random": "C4",
-    "nucleus_gradient_strong": "C5",
-    "membrane_gradient_strong": "C6",
-    "apical_gradient": "C7",
-    "struct_gradient": "C8",
-    "struct_gradient_weak": "C8",
-    "SEC61B": "C9",
-    "ER": "C9",
-    "ST6GAL1": "C10",
-    "golgi": "C10",
-    "membrane": "#F5A1F5",
-    "nucleus": "#3D9090",
+    "mean_count_and_size": colormap[0],
+    "variable_count": colormap[8],
+    "variable_size": colormap[4],
+    "shape": colormap[5],
+    "SLC25A17": colormap[2],
+    "peroxisome": colormap[2],
+    "RAB5A": colormap[1],
+    "endosome": colormap[1],
+    "random": colormap[3],
+    "nucleus_gradient_strong": colormap[9],
+    "membrane_gradient_strong": colormap[6],
+    "apical_gradient": colormap[9],
+    "struct_gradient": colormap[7],
+    "struct_gradient_weak": colormap[7],
+    "SEC61B": colormap[7],
+    "ER": colormap[7],
+    "ST6GAL1": colormap[7],
+    "golgi": colormap[7],
+    "membrane": colormap[6],
+    "nucleus": colormap[9],
 }
 
 DATA_CONFIG = {
@@ -133,7 +154,7 @@ DATA_CONFIG = {
             "nucleus_gradient_strong",
             "membrane_gradient_strong",
         ],
-        "radius": STRUCTURE_RADIUS_DICT["SLC25A17"],
+        "radius": STRUCTURE_RADIUS["SLC25A17"],
         "label": "Peroxisome",
         "structure_id": "SLC25A17",
         "color": "green",
@@ -145,7 +166,7 @@ DATA_CONFIG = {
             "membrane_gradient_strong",
             "struct_gradient",
         ],
-        "radius": STRUCTURE_RADIUS_DICT["SLC25A17"],
+        "radius": STRUCTURE_RADIUS["SLC25A17"],
         "label": "ER Peroxisome",
         "structure_id": "SEC61B",
         "color": "C0",
@@ -156,7 +177,7 @@ DATA_CONFIG = {
             "nucleus_gradient_strong",
             "membrane_gradient_strong",
         ],
-        "radius": STRUCTURE_RADIUS_DICT["SLC25A17"],
+        "radius": STRUCTURE_RADIUS["SLC25A17"],
         "label": "ER Peroxisome no struct",
         "structure_id": "SEC61B",
         "color": "C1",
@@ -169,7 +190,7 @@ DATA_CONFIG = {
             "membrane_gradient_strong",
             "apical_gradient",
         ],
-        "radius": STRUCTURE_RADIUS_DICT["RAB5A"],
+        "radius": STRUCTURE_RADIUS["RAB5A"],
         "label": "Endosome",
         "structure_id": "RAB5A",
         "color": "gold",
@@ -181,7 +202,7 @@ DATA_CONFIG = {
             "membrane_gradient_strong",
             "struct_gradient",
         ],
-        "radius": STRUCTURE_RADIUS_DICT["RAB5A"],
+        "radius": STRUCTURE_RADIUS["RAB5A"],
         "label": "Golgi Endosome",
         "structure_id": "ST6GAL1",
         "color": "C2",
@@ -192,7 +213,7 @@ DATA_CONFIG = {
             "nucleus_gradient_strong",
             "membrane_gradient_strong",
         ],
-        "radius": STRUCTURE_RADIUS_DICT["RAB5A"],
+        "radius": STRUCTURE_RADIUS["RAB5A"],
         "label": "Golgi Endosome no struct",
         "structure_id": "ST6GAL1",
         "color": "C3",
