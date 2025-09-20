@@ -1,14 +1,8 @@
 {
-    "analysis_type": "biological_variation",
+    "name": "biological_variation",
     "structure_id": "SLC25A17",
     "packing_id": "peroxisome",
     "structure_name": "peroxisome",
-    "packing_modes": [
-        "mean_count_and_size",
-        "variable_count",
-        "variable_size",
-        "shape"
-    ],
     "channel_map": {
         "mean_count_and_size": "mean",
         "variable_count": "mean",
@@ -26,5 +20,9 @@
     "normalization": null,
     "save_format": "svg",
     "bandwidth": 0.4,
-    "recalculate": false
+    "recalculate": false,
+    "analysis_steps": [
+        "plot_distance_distributions",
+        "run_emd_analysis"
+    ]
 }

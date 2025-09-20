@@ -116,7 +116,7 @@ for structure_id in all_structures:
     combined_mesh_information_dict[structure_id] = mesh_information_dict
 # %% [markdown]
 # ### Calculate distance measures and normalize
-all_distance_dict = distance.get_distance_dictionary(
+all_distance_dict = distance.get_distances_from_positions(
     all_positions=all_positions,
     distance_measures=distance_measures,
     mesh_information_dict=combined_mesh_information_dict,
@@ -129,7 +129,7 @@ all_distance_dict = distance.filter_invalids_from_distance_distribution_dict(
     distance_distribution_dict=all_distance_dict,
 )
 all_distance_dict = normalize_distances(
-    all_distance_dict=all_distance_dict,
+    occupied_distance_dict=all_distance_dict,
     mesh_information_dict=combined_mesh_information_dict,
     channel_map=channel_map,
     normalization=normalization,
@@ -230,7 +230,7 @@ df_ks_bootstrap = distance.bootstrap_ks_tests(
 )
 # %% [markdown]
 # ### Plot KS observed results
-fig_list, ax_list = visualization.plot_ks_observed_barplots(
+fig_list, ax_list = visualization.plot_ks_test_barplots(
     df_ks_bootstrap=df_ks_bootstrap,
     distance_measures=distance_measures,
     figures_dir=ks_figures_dir,
@@ -271,8 +271,8 @@ occupancy_distance_measure = "z"
 occupancy_distance_figures_dir = occupancy_figures_dir / occupancy_distance_measure
 occupancy_distance_figures_dir.mkdir(exist_ok=True, parents=True)
 log.info(f"Starting occupancy analysis for distance measure: {occupancy_distance_measure}")
-distance_kde_dict = distance.get_distance_distribution_kde(
-    all_distance_dict=all_distance_dict,
+distance_kde_dict = distance.get_occupied_and_available_distance_distribution(
+    occupied_distance_dict=all_distance_dict,
     mesh_information_dict=combined_mesh_information_dict,
     channel_map=channel_map,
     packing_modes=packing_modes,
@@ -289,7 +289,7 @@ distance_kde_dict = distance.get_distance_distribution_kde(
 kde_distance, kde_available_space, xvals, yvals, fig_ill, axs_ill = (
     visualization.plot_occupancy_illustration(
         distance_dict=all_distance_dict[occupancy_distance_measure],
-        kde_dict=distance_kde_dict,
+        occupancy_dict=distance_kde_dict,
         baseline_mode="random",
         suffix=suffix,
         distance_measure=occupancy_distance_measure,
@@ -305,9 +305,9 @@ kde_distance, kde_available_space, xvals, yvals, fig_ill, axs_ill = (
 
 # %% [markdown]
 # ### Plot individual occupancy ratio
-figs_ind, axs_ind = visualization.plot_individual_occupancy_ratio(
+figs_ind, axs_ind = visualization.plot_occupancy_ratio(
     distance_dict=all_distance_dict[occupancy_distance_measure],
-    kde_dict=distance_kde_dict,
+    occupancy_dict=distance_kde_dict,
     packing_modes=packing_modes,
     suffix=suffix,
     method="pdf",

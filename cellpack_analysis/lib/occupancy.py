@@ -1,7 +1,7 @@
 import logging
 import pickle
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 import numpy as np
 from scipy.stats import gaussian_kde, ks_2samp, wasserstein_distance
@@ -9,7 +9,6 @@ from tqdm import tqdm
 
 from cellpack_analysis.lib.distance import filter_invalid_distances, get_normalization_factor
 from cellpack_analysis.lib.label_tables import GRID_DISTANCE_LABELS
-from cellpack_analysis.lib.stats_functions import sample_cell_ids_from_distance_dict
 
 log = logging.getLogger(__name__)
 
@@ -259,127 +258,3 @@ def get_occupancy_ks_test_dict(
             pickle.dump(ks_occupancy_dict, f)
 
     return ks_occupancy_dict
-
-
-def get_occupancy_file_path(
-    figures_dir: Path,
-    distance_measure: str,
-    mode: str,
-    normalization: str | None = None,
-    method: Literal["pdf", "cumulative"] = "pdf",
-    suffix: str = "",
-) -> Path:
-    """
-    Generate the file path for saving occupancy ratio data.
-
-    Parameters
-    ----------
-    figures_dir
-        Directory to save the figures
-    distance_measure
-        Distance measure used
-    mode
-        Packing mode
-    normalization
-        Normalization method used
-    method
-        Method used for occupancy ratio calculation
-    suffix
-        Suffix to add to the file name
-
-    Returns
-    -------
-    :
-        Path to the .npz file
-    """
-    if normalization is None:
-        normalization_str = ""
-    else:
-        normalization_str = f"_{normalization}"
-
-    file_name = f"{distance_measure}_{mode}_{method}_occupancy_ratio{normalization_str}{suffix}.npz"
-    return figures_dir / file_name
-
-
-def save_occupancy_ratio_to_file(
-    save_dir: Path,
-    xvals: np.ndarray | Any,
-    yvals: np.ndarray | Any,
-    distance_measure: str,
-    mode: str,
-    normalization: str | None = None,
-    method: Literal["pdf", "cumulative"] = "pdf",
-    suffix: str = "",
-) -> Path:
-    """
-    Save occupancy ratio data to a .npz file.
-
-    Parameters
-    ----------
-    figures_dir
-        Directory to save the figures
-    xvals
-        X values for the occupancy ratio
-    yvals
-        Y values for the occupancy ratio
-    distance_measure
-        Distance measure used
-    mode
-        Packing mode
-    normalization
-        Normalization method used
-    method
-        Method used for occupancy ratio calculation
-    suffix
-        Suffix to add to the file name
-
-    Returns
-    -------
-    :
-        Path to the saved .npz file
-    """
-    file_path = get_occupancy_file_path(
-        save_dir, distance_measure, mode, normalization, method, suffix
-    )
-
-    np.savez(
-        file_path,
-        xvals=xvals,
-        yvals=yvals,
-        distance_measure=distance_measure,
-        mode=mode,
-        normalization=normalization if normalization is not None else "none",
-        method=method,
-        suffix=suffix,
-    )
-    log.info(f"Saved occupancy ratio to {file_path}")
-    return file_path
-
-
-def load_occupancy_ratio_from_file(file_path: Path) -> dict[str, Any]:
-    """
-    Load occupancy ratio data from a .npz file.
-
-    Parameters
-    ----------
-    file_path
-        Path to the .npz file
-
-    Returns
-    -------
-    :
-        Dictionary containing the loaded data
-    """
-    if not file_path.exists():
-        raise FileNotFoundError(f"File {file_path} does not exist")
-
-    data = np.load(file_path, allow_pickle=True)
-    return {
-        "xvals": data["xvals"],
-        "yvals": data["yvals"],
-        "distance_measure": str(data["distance_measure"]),
-        "mode": str(data["mode"]),
-        "normalization": str(data["normalization"]),
-        "method": str(data["method"]),
-        "suffix": str(data["suffix"]),
-    }

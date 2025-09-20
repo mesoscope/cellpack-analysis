@@ -1,17 +1,9 @@
 # %% [markdown]
-# # Punctate Analysis Workflow
-# Combined workflow for distance and occupancy analysis of punctate structures
+# # Occupancy workflow for punctate structures
 #
-# Distance analysis compares distributions of various measures of distance using:
-# 1. Pairwise EMD
-# 2. KS test
-# 3. Ripley's K
-#
-# Occupancy analysis plots occupancy ratio for observed and simulated data
+# Calculate and plot the occupancy ratio for different observed and simulated data
 import logging
 import time
-
-import matplotlib.pyplot as plt
 
 from cellpack_analysis.lib import distance, occupancy, visualization
 from cellpack_analysis.lib.file_io import get_project_root
@@ -21,12 +13,11 @@ from cellpack_analysis.lib.stats_functions import normalize_distances
 
 log = logging.getLogger(__name__)
 
-plt.rcParams.update({"font.size": 14})
 start_time = time.time()
 # %% [markdown]
 # ## Set up parameters
 # %% [markdown]
-# ### Set structure ID and radius
+# ### Set structure ID
 # SLC25A17: peroxisomes
 # RAB5A: early endosomes
 # SEC61B: ER
@@ -35,7 +26,7 @@ STRUCTURE_ID = "SLC25A17"
 PACKING_ID = "peroxisome"
 STRUCTURE_NAME = "peroxisome"
 # %% [markdown]
-# ### Set packing modes to analyze
+# ### Set packing modes and channel map
 save_format = "svg"
 packing_modes = [
     STRUCTURE_ID,
@@ -67,20 +58,17 @@ project_root = get_project_root()
 base_datadir = project_root / "data"
 base_results_dir = project_root / "results"
 
-results_dir = base_results_dir / f"punctate_analysis/{PACKING_ID}/data"
+results_dir = base_results_dir / f"occupancy_analysis/{PACKING_ID}"
 results_dir.mkdir(exist_ok=True, parents=True)
 
-figures_dir = results_dir.parent / "figures/"
+figures_dir = results_dir / "figures/"
 figures_dir.mkdir(exist_ok=True, parents=True)
 # %% [markdown]
 # ### Distance measures to use
-distance_measures = [
-    "nearest",
-    "pairwise",
+# Options are "nucleus", "z", "scaled_nucleus", "membrane"
+occupancy_distance_measures = [
     "nucleus",
-    # "scaled_nucleus",
     "z",
-    # "membrane",
 ]
 # %% [markdown]
 # ### Set normalization
@@ -117,7 +105,7 @@ for structure_id in all_structures:
 # ### Calculate distance measures and normalize
 all_distance_dict = distance.get_distance_dictionary(
     all_positions=all_positions,
-    distance_measures=distance_measures,
+    distance_measures=occupancy_distance_measures,
     mesh_information_dict=combined_mesh_information_dict,
     channel_map=channel_map,
     results_dir=results_dir,
@@ -136,14 +124,6 @@ all_distance_dict = normalize_distances(
 # %% [markdown]
 # ## Occupancy Analysis
 # %% [markdown]
-# ### Choose distance measure to use for occupancy analysis
-# Options are "pairwise", "nucleus", "nearest", "z", "scaled_nucleus", "membrane"
-occupancy_distance_measures = ["nucleus", "z"]
-# %% [markdown]
-# ### Create occupancy analysis folders
-occupancy_figures_dir = figures_dir / "occupancy"
-occupancy_figures_dir.mkdir(exist_ok=True, parents=True)
-# %% [markdown]
 # ### Set limits and bandwidths for plotting
 xlim = {
     "nucleus": 6,
@@ -152,21 +132,19 @@ xlim = {
 # %% [markdown]
 # ### Create kde dictionary for individual distance distributions
 # for occupancy_distance_measure in occupancy_distance_measures:
-occupancy_distance_measure = "z"
-occupancy_distance_figures_dir = occupancy_figures_dir / occupancy_distance_measure
+occupancy_distance_measure = "nucleus"
+occupancy_distance_figures_dir = figures_dir / occupancy_distance_measure
 occupancy_distance_figures_dir.mkdir(exist_ok=True, parents=True)
 log.info(f"Starting occupancy analysis for distance measure: {occupancy_distance_measure}")
 distance_kde_dict = distance.get_distance_distribution_kde(
     all_distance_dict=all_distance_dict,
     mesh_information_dict=combined_mesh_information_dict,
     channel_map=channel_map,
-    packing_modes=packing_modes,
     save_dir=results_dir,
     recalculate=True,
     suffix=suffix,
     normalization=normalization,
     distance_measure=occupancy_distance_measure,
-    bandwidth=0.4,
 )
 
 # %% [markdown]
@@ -185,12 +163,13 @@ kde_distance, kde_available_space, xvals, yvals, fig_ill, axs_ill = (
         # xlim=3,
         figures_dir=occupancy_distance_figures_dir,
         save_format=save_format,
+        bandwidth=0.4,
     )
 )
 
 # %% [markdown]
-# ### Plot individual occupancy ratio
-figs_ind, axs_ind = visualization.plot_individual_occupancy_ratio(
+# ### Plot occupancy ratio
+fig, ax = visualization.plot_occupancy_ratio(
     distance_dict=all_distance_dict[occupancy_distance_measure],
     kde_dict=distance_kde_dict,
     packing_modes=packing_modes,
@@ -199,13 +178,12 @@ figs_ind, axs_ind = visualization.plot_individual_occupancy_ratio(
     normalization=normalization,
     distance_measure=occupancy_distance_measure,
     xlim=xlim[occupancy_distance_measure],
-    # xlim=6,
-    # ylim=3,
-    num_cells=5,
-    bandwidth=0.4,
+    ylim=4,
+    # num_cells=5,
+    bandwidth=0.2,
     figures_dir=occupancy_distance_figures_dir,
     save_format=save_format,
-    num_points=100,
+    num_points=250,
 )
 # %% [markdown]
 # ### plot mean and std of occupancy ratio

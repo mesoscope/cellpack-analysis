@@ -1,14 +1,8 @@
 {
-    "analysis_type": "distance_analysis",
+    "name": "distance_analysis",
     "structure_id": "SLC25A17",
     "packing_id": "peroxisome",
     "structure_name": "peroxisome",
-    "packing_modes": [
-        "SLC25A17",
-        "random",
-        "nucleus_gradient_strong",
-        "membrane_gradient_strong"
-    ],
     "channel_map": {
         "SLC25A17": "SLC25A17",
         "random": "SLC25A17",
@@ -27,5 +21,12 @@
     "n_bootstrap": 1000,
     "bandwidth": 0.4,
     "ingredient_key": "membrane_interior_peroxisome",
-    "recalculate": false
+    "recalculate": false,
+    "analysis_steps": [
+        "load_common_data",
+        "calculate_distances",
+        "plot_distance_distributions",
+        "run_emd_analysis",
+        "run_ks_analysis"
+    ]
 }

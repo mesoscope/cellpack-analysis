@@ -1,12 +1,30 @@
 #!/usr/bin/env python3
 """
-Unified workflow runner for cellpack analysis.
+Workflow runner for cellpack analysis.
 
-This script runs different types of analysis workflows based on configuration files.
-Supported analysis types:
-- distance_analysis: Distance analysis with EMD and KS tests
+This script runs configurable analysis workflows based on configuration files.
+The workflow is controlled by the 'analysis_steps' field in the config, which
+specifies which steps to execute in order.
+
+Example analyses:
 - biological_variation: Analysis of biological variation factors
+- distance_analysis: Distance analysis with EMD and KS tests
 - occupancy_analysis: Occupancy analysis with spatial statistics
+
+Available analysis steps:
+- load_common_data: Load position data and mesh information
+- calculate_distances: Calculate distance measures and normalize
+- plot_distance_distributions: Plot distance distributions with KDE
+- run_emd_analysis: Run Earth Mover's Distance analysis
+- run_ks_analysis: Run Kolmogorov-Smirnov test analysis
+- run_occupancy_analysis: Run occupancy analysis with spatial statistics
+
+Example workflows:
+- Biological variation: ["load_common_data", "calculate_distances",
+  "plot_distance_distributions", "run_emd_analysis"]
+- Distance analysis: ["load_common_data", "calculate_distances",
+  "plot_distance_distributions", "run_emd_analysis", "run_ks_analysis"]
+- Occupancy analysis: ["load_common_data", "calculate_distances", "run_occupancy_analysis"]
 
 Usage:
     python run_analysis_workflow.py --config_file path/to/config.json
@@ -22,8 +40,7 @@ import time
 from pathlib import Path
 from typing import Dict
 
-import matplotlib.pyplot as plt
-
+from cellpack_analysis import setup_logging
 from cellpack_analysis.lib import distance, occupancy, visualization
 from cellpack_analysis.lib.file_io import get_project_root
 from cellpack_analysis.lib.label_tables import DISTANCE_LIMITS
@@ -40,8 +57,8 @@ class AnalysisConfig:
     def __init__(self, config_file: str):
         self.config_file = Path(config_file)
         self.config = self._load_config()
-        self._setup_paths()
         self._setup_parameters()
+        self._setup_paths()
 
     def _load_config(self) -> Dict:
         """Load configuration from JSON file."""
@@ -57,24 +74,12 @@ class AnalysisConfig:
         self.base_datadir = self.project_root / "data"
         self.base_results_dir = self.project_root / "results"
 
-        # Setup analysis-specific directories
-        analysis_type = self.config.get("analysis_type", "analysis")
-        structure_name = self.config.get("structure_name", "structure")
-
-        if analysis_type == "occupancy_analysis":
-            self.results_dir = self.base_results_dir / f"punctate_analysis/{structure_name}/data"
-        elif analysis_type == "biological_variation":
-            self.results_dir = self.base_results_dir / f"biological_variation/{structure_name}"
-        else:
-            self.results_dir = self.base_results_dir / f"punctate_analysis/{structure_name}/data"
-
+        # Setup results directory
+        self.results_dir = self.base_results_dir / self.name / self.packing_id
         self.results_dir.mkdir(exist_ok=True, parents=True)
 
-        if analysis_type == "biological_variation":
-            self.figures_dir = self.results_dir / "figures"
-        else:
-            self.figures_dir = self.results_dir.parent / "figures/"
-
+        # Setup figures directory
+        self.figures_dir = self.results_dir / "figures"
         self.figures_dir.mkdir(exist_ok=True, parents=True)
 
     def _setup_parameters(self):
@@ -85,9 +90,9 @@ class AnalysisConfig:
         self.structure_name = self.config.get("structure_name", "peroxisome")
 
         # Analysis parameters
-        self.analysis_type = self.config.get("analysis_type", "distance_analysis")
-        self.packing_modes = self.config.get("packing_modes", [self.structure_id])
+        self.name = self.config.get("name", "analysis")
         self.channel_map = self.config.get("channel_map", {self.structure_id: self.structure_id})
+        self.packing_modes = list(self.channel_map.keys())
         self.packing_output_folder = self.config.get(
             "packing_output_folder", "packing_outputs/8d_sphere_data/rules_shape/"
         )
@@ -124,93 +129,57 @@ class AnalysisConfig:
         # Recalculation flags
         self.recalculate = self.config.get("recalculate", False)
 
+        # Analysis steps
+        self.analysis_steps = self.config.get("analysis_steps", [])
+
 
 class AnalysisRunner:
     """Main class for running different types of analysis workflows."""
 
     def __init__(self):
-        plt.rcParams.update({"font.size": 14})
+        self.shared_data = {}
 
     def run_analysis(self, config_file: str):
         """Run analysis based on the configuration file."""
         config = AnalysisConfig(config_file)
 
-        log.info(f"Starting {config.analysis_type} analysis")
+        log.info(f"Starting {config.name} analysis")
         start_time = time.time()
 
-        if config.analysis_type == "distance_analysis":
-            self.distance_analysis(config)
-        elif config.analysis_type == "biological_variation":
-            self.biological_variation(config)
-        elif config.analysis_type == "occupancy_analysis":
-            self.occupancy_analysis(config)
+        # Execute each step in the analysis_steps list
+        for step in config.analysis_steps:
+            self._execute_step(step, config)
+
+        log.info(f"Workflow completed in {time.time() - start_time:.2f} seconds")
+
+    def _execute_step(self, step: str, config: AnalysisConfig):
+        """Execute a single analysis step."""
+        log.info(f"Executing step: {step}")
+
+        step_method_map = {
+            "load_common_data": self._load_common_data,
+            "calculate_distances": self._calculate_distances,
+            "plot_distance_distributions": self._plot_distance_distributions,
+            "run_emd_analysis": self._run_emd_analysis,
+            "run_ks_analysis": self._run_ks_analysis,
+            "run_occupancy_analysis": self._run_occupancy_analysis,
+        }
+
+        if step in step_method_map:
+            step_method_map[step](config)
         else:
-            raise ValueError(f"Unknown analysis type: {config.analysis_type}")
-
-        log.info(f"Analysis completed in {time.time() - start_time:.2f} seconds")
-
-    def distance_analysis(self, config: AnalysisConfig):
-        """Run distance analysis workflow."""
-        log.info("Running distance analysis workflow")
-
-        # Load position data and mesh information
-        all_positions, combined_mesh_information_dict = self._load_common_data(config)
-
-        # Calculate distance measures
-        all_distance_dict = self._calculate_distances(
-            config, all_positions, combined_mesh_information_dict
-        )
-
-        # Distance distributions
-        self._plot_distance_distributions(config, all_distance_dict)
-
-        # EMD Analysis
-        self._run_emd_analysis(config, all_distance_dict)
-
-        # KS Test Analysis
-        self._run_ks_analysis(config, all_distance_dict)
-
-    def biological_variation(self, config: AnalysisConfig):
-        """Run biological variation analysis workflow."""
-        log.info("Running biological variation analysis workflow")
-
-        # Load position data and mesh information
-        all_positions, combined_mesh_information_dict = self._load_common_data(config)
-
-        # Calculate distance measures
-        all_distance_dict = self._calculate_distances(
-            config, all_positions, combined_mesh_information_dict
-        )
-
-        # Distance distributions
-        self._plot_distance_distributions(config, all_distance_dict)
-
-        # EMD Analysis
-        self._run_emd_analysis(config, all_distance_dict)
-
-    def occupancy_analysis(self, config: AnalysisConfig):
-        """Run occupancy analysis workflow."""
-        log.info("Running occupancy analysis workflow")
-
-        # Load position data and mesh information
-        all_positions, combined_mesh_information_dict = self._load_common_data(config)
-
-        # Calculate distance measures
-        all_distance_dict = self._calculate_distances(
-            config, all_positions, combined_mesh_information_dict
-        )
-
-        # Run occupancy analysis for each specified distance measure
-        for occupancy_distance_measure in config.occupancy_distance_measures:
-            self._run_single_occupancy_analysis(
-                config,
-                all_distance_dict,
-                combined_mesh_information_dict,
-                occupancy_distance_measure,
-            )
+            log.warning(f"Unknown step: {step}")
 
     def _load_common_data(self, config: AnalysisConfig):
         """Load position data and mesh information common to all analyses."""
+        if (
+            "all_positions" in self.shared_data
+            and "combined_mesh_information_dict" in self.shared_data
+            and not config.recalculate
+        ):
+            log.info("Using cached position data and mesh information")
+            return
+
         log.info("Loading position data")
         all_positions = get_position_data_from_outputs(
             structure_id=config.structure_id,
@@ -234,17 +203,27 @@ class AnalysisRunner:
             )
             combined_mesh_information_dict[structure_id] = mesh_information_dict
 
-        return all_positions, combined_mesh_information_dict
+        self.shared_data["all_positions"] = all_positions
+        self.shared_data["combined_mesh_information_dict"] = combined_mesh_information_dict
 
-    def _calculate_distances(
-        self, config: AnalysisConfig, all_positions, combined_mesh_information_dict
-    ):
+    def _calculate_distances(self, config: AnalysisConfig):
         """Calculate distance measures and normalize."""
+        if "all_distance_dict" in self.shared_data and not config.recalculate:
+            log.info("Using cached distance calculations")
+            return
+
+        if (
+            "all_positions" not in self.shared_data
+            or "combined_mesh_information_dict" not in self.shared_data
+        ):
+            log.warning("Position data not loaded. Loading common data first.")
+            self._load_common_data(config)
+
         log.info("Calculating distance measures")
-        all_distance_dict = distance.get_distance_dictionary(
-            all_positions=all_positions,
+        all_distance_dict = distance.get_distances_from_positions(
+            all_positions=self.shared_data["all_positions"],
             distance_measures=config.distance_measures,
-            mesh_information_dict=combined_mesh_information_dict,
+            mesh_information_dict=self.shared_data["combined_mesh_information_dict"],
             channel_map=config.channel_map,
             results_dir=config.results_dir,
             recalculate=config.recalculate,
@@ -255,29 +234,32 @@ class AnalysisRunner:
         )
 
         all_distance_dict = normalize_distances(
-            all_distance_dict=all_distance_dict,
-            mesh_information_dict=combined_mesh_information_dict,
+            occupied_distance_dict=all_distance_dict,
+            mesh_information_dict=self.shared_data["combined_mesh_information_dict"],
             channel_map=config.channel_map,
             normalization=config.normalization,
         )
 
-        return all_distance_dict
+        self.shared_data["all_distance_dict"] = all_distance_dict
 
-    def _plot_distance_distributions(self, config: AnalysisConfig, all_distance_dict):
+    def _plot_distance_distributions(self, config: AnalysisConfig):
         """Plot distance distributions."""
+        if "all_distance_dict" not in self.shared_data:
+            log.warning("Distance data not calculated. Calculating distances first.")
+            self._calculate_distances(config)
+
         log.info("Plotting distance distributions")
         distance_figures_dir = config.figures_dir / "distance_distributions"
         distance_figures_dir.mkdir(exist_ok=True, parents=True)
 
         # Plot KDE distributions
-        fig, axs = visualization.plot_distance_distributions_kde(
+        _ = visualization.plot_distance_distributions_kde(
             distance_measures=config.distance_measures,
             packing_modes=config.packing_modes,
-            all_distance_dict=all_distance_dict,
+            all_distance_dict=self.shared_data["all_distance_dict"],
             figures_dir=distance_figures_dir,
             suffix=config.suffix,
             normalization=config.normalization,
-            overlay=True,
             distance_limits=DISTANCE_LIMITS,
             bandwidth=config.bandwidth,
             save_format=config.save_format,
@@ -289,21 +271,25 @@ class AnalysisRunner:
             / f"{config.structure_name}_distance_distribution_central_tendencies{config.suffix}.log"
         )
         distance.log_central_tendencies_for_distance_distributions(
-            all_distance_dict=all_distance_dict,
+            all_distance_dict=self.shared_data["all_distance_dict"],
             distance_measures=config.distance_measures,
             packing_modes=config.packing_modes,
             file_path=log_file_path,
         )
 
-    def _run_emd_analysis(self, config: AnalysisConfig, all_distance_dict):
+    def _run_emd_analysis(self, config: AnalysisConfig):
         """Run EMD analysis."""
+        if "all_distance_dict" not in self.shared_data:
+            log.warning("Distance data not calculated. Calculating distances first.")
+            self._calculate_distances(config)
+
         log.info("Running EMD analysis")
         emd_figures_dir = config.figures_dir / "emd"
         emd_figures_dir.mkdir(exist_ok=True, parents=True)
 
         # Get EMD distances
         df_emd = distance.get_distance_distribution_emd_df(
-            all_distance_dict=all_distance_dict,
+            all_distance_dict=self.shared_data["all_distance_dict"],
             packing_modes=config.packing_modes,
             distance_measures=config.distance_measures,
             results_dir=config.results_dir,
@@ -311,33 +297,21 @@ class AnalysisRunner:
             suffix=config.suffix,
         )
 
-        # Plot intra-mode EMD
-        _ = visualization.plot_intra_mode_emd(
-            df_emd=df_emd,
-            distance_measures=config.distance_measures,
-            figures_dir=emd_figures_dir,
-            suffix=config.suffix,
-            save_format=config.save_format,
-            baseline_mode=config.baseline_mode,
-            annotate_significance=False,
-        )
-
-        # Plot baseline comparison EMD
-        _ = visualization.plot_baseline_mode_emd(
-            df_emd=df_emd,
-            distance_measures=config.distance_measures,
-            baseline_mode=config.baseline_mode,
-            figures_dir=emd_figures_dir,
-            suffix=config.suffix,
-            save_format=config.save_format,
-            annotate_significance=False,
-        )
-
-        # Log EMD statistics
+        # Plot EMD comparisons
         emd_log_file_path = (
             config.results_dir / f"{config.packing_id}_emd_central_tendencies{config.suffix}.log"
         )
-        for comparison_type in ["within_rule", "baseline"]:
+        for comparison_type in ["intra_mode", "baseline"]:
+            _ = visualization.plot_emd_comparisons(
+                df_emd=df_emd,
+                distance_measures=config.distance_measures,
+                comparison_type=comparison_type,  # type: ignore
+                baseline_mode=config.baseline_mode,
+                figures_dir=emd_figures_dir,
+                suffix=config.suffix,
+                save_format=config.save_format,
+                annotate_significance=False,
+            )
             distance.log_central_tendencies_for_emd(
                 df_emd=df_emd,
                 distance_measures=config.distance_measures,
@@ -347,8 +321,14 @@ class AnalysisRunner:
                 comparison_type=comparison_type,
             )
 
-    def _run_ks_analysis(self, config: AnalysisConfig, all_distance_dict):
+        self.shared_data["df_emd"] = df_emd
+
+    def _run_ks_analysis(self, config: AnalysisConfig):
         """Run KS test analysis."""
+        if "all_distance_dict" not in self.shared_data:
+            log.warning("Distance data not calculated. Calculating distances first.")
+            self._calculate_distances(config)
+
         log.info("Running KS test analysis")
         ks_figures_dir = config.figures_dir / "ks_test"
         ks_figures_dir.mkdir(exist_ok=True, parents=True)
@@ -357,7 +337,7 @@ class AnalysisRunner:
         ks_test_df = distance.get_ks_test_df(
             distance_measures=config.distance_measures,
             packing_modes=config.packing_modes,
-            all_distance_dict=all_distance_dict,
+            all_distance_dict=self.shared_data["all_distance_dict"],
             baseline_mode=config.baseline_mode,
             significance_level=config.ks_significance_level,
             save_dir=config.results_dir,
@@ -373,7 +353,7 @@ class AnalysisRunner:
         )
 
         # Plot KS results
-        fig_list, ax_list = visualization.plot_ks_observed_barplots(
+        _ = visualization.plot_ks_test_barplots(
             df_ks_bootstrap=df_ks_bootstrap,
             distance_measures=config.distance_measures,
             figures_dir=ks_figures_dir,
@@ -392,11 +372,33 @@ class AnalysisRunner:
             file_path=ks_log_file_path,
         )
 
+        self.shared_data["ks_test_df"] = ks_test_df
+        self.shared_data["df_ks_bootstrap"] = df_ks_bootstrap
+
+    def _run_occupancy_analysis(self, config: AnalysisConfig):
+        """Run occupancy analysis workflow."""
+        if (
+            "all_distance_dict" not in self.shared_data
+            or "combined_mesh_information_dict" not in self.shared_data
+        ):
+            log.warning(
+                "Required data not available. Loading common data and calculating distances first."
+            )
+            self._load_common_data(config)
+            self._calculate_distances(config)
+
+        log.info("Running occupancy analysis")
+
+        # Run occupancy analysis for each specified distance measure
+        for occupancy_distance_measure in config.occupancy_distance_measures:
+            self._run_single_occupancy_analysis(
+                config,
+                occupancy_distance_measure,
+            )
+
     def _run_single_occupancy_analysis(
         self,
         config: AnalysisConfig,
-        all_distance_dict,
-        combined_mesh_information_dict,
         occupancy_distance_measure: str,
     ):
         """Run occupancy analysis for a single distance measure."""
@@ -409,40 +411,36 @@ class AnalysisRunner:
         occupancy_distance_figures_dir.mkdir(exist_ok=True, parents=True)
 
         # Create KDE dictionary
-        distance_kde_dict = distance.get_distance_distribution_kde(
-            all_distance_dict=all_distance_dict,
-            mesh_information_dict=combined_mesh_information_dict,
+        distance_kde_dict = distance.get_occupied_and_available_distance_distribution(
+            occupied_distance_dict=self.shared_data["all_distance_dict"],
+            mesh_information_dict=self.shared_data["combined_mesh_information_dict"],
             channel_map=config.channel_map,
-            packing_modes=config.packing_modes,
             save_dir=config.results_dir,
             recalculate=config.recalculate,
             suffix=config.suffix,
             normalization=config.normalization,
             distance_measure=occupancy_distance_measure,
-            bandwidth=config.bandwidth,
         )
 
         # Plot illustration for occupancy distribution
-        kde_distance, kde_available_space, xvals, yvals, fig_ill, axs_ill = (
-            visualization.plot_occupancy_illustration(
-                distance_dict=all_distance_dict[occupancy_distance_measure],
-                kde_dict=distance_kde_dict,
-                baseline_mode="random",
-                suffix=config.suffix,
-                distance_measure=occupancy_distance_measure,
-                normalization=config.normalization,
-                method="pdf",
-                seed_index=0,
-                xlim=config.xlim.get(occupancy_distance_measure, 6),
-                figures_dir=occupancy_distance_figures_dir,
-                save_format=config.save_format,
-            )
+        _ = visualization.plot_occupancy_illustration(
+            distance_dict=self.shared_data["all_distance_dict"][occupancy_distance_measure],
+            occupancy_dict=distance_kde_dict,
+            baseline_mode="random",
+            suffix=config.suffix,
+            distance_measure=occupancy_distance_measure,
+            normalization=config.normalization,
+            method="pdf",
+            seed_index=0,
+            xlim=config.xlim.get(occupancy_distance_measure, 6),
+            figures_dir=occupancy_distance_figures_dir,
+            save_format=config.save_format,
         )
 
         # Plot individual occupancy ratio
-        figs_ind, axs_ind = visualization.plot_individual_occupancy_ratio(
-            distance_dict=all_distance_dict[occupancy_distance_measure],
-            kde_dict=distance_kde_dict,
+        figs_ind, axs_ind = visualization.plot_occupancy_ratio(
+            distance_dict=self.shared_data["all_distance_dict"][occupancy_distance_measure],
+            occupancy_dict=distance_kde_dict,
             packing_modes=config.packing_modes,
             suffix=config.suffix,
             method="pdf",
@@ -458,7 +456,7 @@ class AnalysisRunner:
 
         # Plot mean and std of occupancy ratio
         figs_ci, axs_ci = visualization.plot_mean_and_std_occupancy_ratio_kde(
-            distance_dict=all_distance_dict[occupancy_distance_measure],
+            distance_dict=self.shared_data["all_distance_dict"][occupancy_distance_measure],
             kde_dict=distance_kde_dict,
             packing_modes=config.packing_modes,
             suffix=config.suffix,
@@ -473,8 +471,8 @@ class AnalysisRunner:
 
         # Get combined space corrected KDE
         combined_kde_dict = occupancy.get_combined_occupancy_kde(
-            all_distance_dict=all_distance_dict,
-            mesh_information_dict=combined_mesh_information_dict,
+            all_distance_dict=self.shared_data["all_distance_dict"],
+            mesh_information_dict=self.shared_data["combined_mesh_information_dict"],
             channel_map=config.channel_map,
             packing_modes=config.packing_modes,
             results_dir=config.results_dir,
@@ -502,9 +500,9 @@ class AnalysisRunner:
 
         # Plot binned occupancy ratio
         fig_binned, ax_binned = visualization.plot_binned_occupancy_ratio(
-            distance_dict=all_distance_dict[occupancy_distance_measure],
+            distance_dict=self.shared_data["all_distance_dict"][occupancy_distance_measure],
             packing_modes=config.packing_modes,
-            mesh_information_dict=combined_mesh_information_dict,
+            mesh_information_dict=self.shared_data["combined_mesh_information_dict"],
             channel_map=config.channel_map,
             normalization=config.normalization,
             num_bins=40,
@@ -530,7 +528,7 @@ Examples:
     )
 
     parser.add_argument(
-        "--config_file", type=str, required=True, help="Path to the JSON configuration file"
+        "--config_file", "-c", type=str, required=True, help="Path to the JSON configuration file"
     )
 
     parser.add_argument(
@@ -544,10 +542,14 @@ Examples:
     args = parser.parse_args()
 
     # Setup logging
-    logging.basicConfig(
-        level=getattr(logging, args.log_level),
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    )
+    if args.log_level == "DEBUG":
+        setup_logging(level=logging.DEBUG)
+    elif args.log_level == "INFO":
+        setup_logging(level=logging.INFO)
+    elif args.log_level == "WARNING":
+        setup_logging(level=logging.WARNING)
+    elif args.log_level == "ERROR":
+        setup_logging(level=logging.ERROR)
 
     # Run analysis
     runner = AnalysisRunner()

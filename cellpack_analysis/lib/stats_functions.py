@@ -246,32 +246,3 @@ def create_padded_numpy_array(
                 sublist = np.append(sublist, [padding] * (max_length - len(sublist)))
         padded_array[ct] = sublist[:]
     return padded_array
-
-
-def sample_cell_ids_from_distance_dict(
-    distance_dict: dict[str, np.ndarray], sample_size: int | None, rng_seed: int = 42
-) -> list[str] | Any:
-    """
-    Sample seeds from the distance dictionary.
-
-    Parameters
-    ----------
-    distance_dict
-        A dictionary containing distance information
-    sample_size
-        The number of samples to use
-    rng_seed
-        Random seed for reproducibility
-
-    Returns
-    -------
-    :
-        A list of sampled seeds or all seeds if sample_size is None
-    """
-    rng = np.random.default_rng(rng_seed)
-    if sample_size is not None:
-        cell_ids_to_use = rng.choice(list(distance_dict.keys()), sample_size, replace=False)
-    else:
-        cell_ids_to_use = distance_dict.keys()
-
-    return cell_ids_to_use

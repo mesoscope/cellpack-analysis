@@ -1,5 +1,5 @@
 {
-    "name": "occupancy_analysis",
+    "name": "distance_analysis",
     "structure_id": "SLC25A17",
     "packing_id": "peroxisome",
     "structure_name": "peroxisome",
@@ -12,27 +12,17 @@
     "packing_output_folder": "packing_outputs/8d_sphere_data/rules_shape/",
     "baseline_mode": "SLC25A17",
     "distance_measures": [
-        "nearest",
-        "pairwise",
         "nucleus",
         "z"
     ],
-    "occupancy_distance_measures": [
-        "nucleus",
-        "z"
-    ],
-    "xlim": {
-        "nucleus": 6,
-        "z": 8
-    },
     "normalization": null,
     "save_format": "svg",
+    "ks_significance_level": 0.05,
+    "n_bootstrap": 1000,
     "bandwidth": 0.4,
     "ingredient_key": "membrane_interior_peroxisome",
     "recalculate": false,
     "analysis_steps": [
-        "load_common_data",
-        "calculate_distances",
-        "run_occupancy_analysis"
+        "run_ks_analysis"
     ]
 }

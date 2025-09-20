@@ -8,11 +8,9 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 from matplotlib.axes import Axes
-from matplotlib.collections import PatchCollection
 from matplotlib.figure import Figure
-from matplotlib.patches import Circle
 from matplotlib.ticker import MaxNLocator
-from scipy.spatial.distance import squareform
+from scipy.stats import gaussian_kde
 from statannotations.Annotator import Annotator
 from tqdm import tqdm
 
@@ -29,16 +27,7 @@ from cellpack_analysis.lib.label_tables import (
     MODE_LABELS,
     NORMALIZATION_LABELS,
 )
-from cellpack_analysis.lib.occupancy import (
-    get_occupancy_file_path,
-    load_occupancy_ratio_from_file,
-    save_occupancy_ratio_to_file,
-)
-from cellpack_analysis.lib.stats_functions import (
-    create_padded_numpy_array,
-    get_pdf_ratio,
-    sample_cell_ids_from_distance_dict,
-)
+from cellpack_analysis.lib.stats_functions import create_padded_numpy_array, get_pdf_ratio
 
 log = logging.getLogger(__name__)
 
@@ -118,7 +107,7 @@ def plot_distance_distributions_kde(
         Format to save the figures in
     """
     log.info("Starting distance distribution kde plot")
-    plt.rcParams.update({"font.size": 6})
+    plt.rcParams.update({"font.size": 5})
 
     all_ax_dict = {}
     num_rows = len(packing_modes)
@@ -229,10 +218,10 @@ def plot_distance_distributions_kde(
             # ax.spines["right"].set_visible(False)
 
     if figures_dir is not None:
-        plt.tight_layout()
+        fig.tight_layout()
         plt.show()
         fig.savefig(
-            figures_dir / f"distance_distribution_kdeplot_{suffix}.{save_format}",
+            figures_dir / f"distance_distribution_kdeplot{suffix}.{save_format}",
             dpi=300,
             transparent=True,
             bbox_inches="tight",
@@ -243,509 +232,21 @@ def plot_distance_distributions_kde(
     return fig, all_ax_dict
 
 
-def plot_distance_distributions_kde_vertical(
-    distance_measures: list[str],
-    packing_modes: list[str],
-    all_distance_dict: dict[str, dict[str, dict[str, np.ndarray]]],
-    figures_dir: Path | None = None,
-    suffix: str = "",
-    normalization: str | None = None,
-    overlay: bool = False,
-    distance_limits: dict[str, tuple[float, float]] | None = None,
-    bandwidth: Literal["scott", "silverman"] | float = "scott",
-    save_format: Literal["svg", "png", "pdf"] = "png",
-) -> tuple[list[Figure], list[Axes]]:
-    """
-    Plot distance distributions using kernel density estimation (KDE) in vertical layout.
-
-    Parameters
-    ----------
-    distance_measures
-        List of distance measures to plot
-    packing_modes
-        List of packing modes to plot
-    all_distance_dict
-        Dictionary containing distance distributions for each packing mode and distance measure
-    figures_dir
-        Directory to save the figures. If None, figures will not be saved
-    suffix
-        Suffix to append to the figure filenames
-    normalization
-        Normalization method to apply to the distance measures
-    overlay
-        If True, overlay the pooled KDE
-    distance_limits
-        Dictionary containing limits for each distance measure
-    bandwidth
-        Bandwidth method for KDE. Can be "scott", "silverman", or a float value
-    save_format
-        Format to save the figures in
-
-    Returns
-    -------
-    :
-        Tuple containing lists of figure and axis objects
-    """
-    log.info("Starting distance distribution kde plot")
-    num_rows = len(packing_modes)
-
-    fig_list, ax_list = [], []
-
-    for col, distance_measure in enumerate(distance_measures):
-
-        fig, axs = plt.subplots(
-            num_rows,
-            1,
-            figsize=(6, num_rows * 3),
-            dpi=300,
-            sharex="col",
-            sharey="col",
-        )
-        fig_list.append(fig)
-        ax_list.append(axs)
-
-        # Get unit and label
-        if normalization is not None:
-            unit = ""
-            distance_label = (
-                f"{DISTANCE_MEASURE_LABELS[distance_measure]}"
-                f" / {NORMALIZATION_LABELS[normalization]}"
-            )
-        elif "scaled" in distance_measure:
-            unit = ""
-            distance_label = DISTANCE_MEASURE_LABELS[distance_measure]
-        else:
-            unit = "\u03bcm"
-            distance_label = f"{DISTANCE_MEASURE_LABELS[distance_measure]} (\u03bcm)"
-
-        distance_dict = all_distance_dict[distance_measure]
-
-        for row, mode in enumerate(packing_modes):
-            log.info(f"Plotting distance kde for: {distance_measure}, Mode: {mode}")
-
-            ax = axs[row]
-            mode_dict = distance_dict[mode]
-            mode_color = COLOR_PALETTE.get(mode, "gray")
-            mode_label = MODE_LABELS.get(mode, mode)
-
-            for _, distances in tqdm(mode_dict.items(), total=len(mode_dict)):
-                sns.kdeplot(
-                    distances,
-                    ax=ax,
-                    color=mode_color,
-                    linewidth=1,
-                    alpha=0.05,
-                    bw_method=bandwidth,
-                    cut=0,
-                    label="_nolegend_",
-                )
-
-            # plot combined kde plot of distance distributions
-            combined_mode_distances = np.concatenate(list(mode_dict.values()))
-            combined_mode_distances = filter_invalid_distances(combined_mode_distances)
-            mean_distance = np.nanmean(combined_mode_distances)
-            std_distance = np.nanstd(combined_mode_distances).item()
-            if overlay:
-                sns.kdeplot(
-                    combined_mode_distances,
-                    ax=ax,
-                    color=mode_color,
-                    linewidth=3,
-                    bw_method=bandwidth,
-                    cut=0,
-                    # label=f"{mean_distance:.2f}$\\pm${std_distance:0.2f}{unit}",
-                )
-
-            if distance_limits is not None:
-                ax.set_xlim(distance_limits.get(distance_measure, (0, 1)))
-            else:
-                min_xlim = np.nanmin(combined_mode_distances)
-                max_xlim = np.nanmax(combined_mode_distances)
-                min_xlim = min_xlim - 0.1 * (max_xlim - min_xlim)
-                max_xlim = max_xlim + 0.1 * (max_xlim - min_xlim)
-                ax.set_xlim(min_xlim, max_xlim)
-
-            ax.axvline(mean_distance, color="k", linestyle="--")
-            ax.text(
-                0.95,
-                0.9,
-                f"Mean $\\pm$ SD\n {mean_distance:.2f}$\\pm${std_distance:0.2f}{unit}",
-                transform=ax.transAxes,
-                horizontalalignment="right",
-                verticalalignment="top",
-                fontsize=12,
-            )
-
-            if col == 0:
-                ax.set_ylabel(f"{mode_label}\nPDF")
-            else:
-                ax.set_ylabel("\n\n")
-
-            if row == num_rows - 1:
-                ax.set_xlabel(distance_label)
-
-            # remove top and right spines
-            ax.spines["top"].set_visible(False)
-            ax.spines["right"].set_visible(False)
-
-        fig.tight_layout()
-
-        if figures_dir is not None:
-            distance_kde_dir = figures_dir / distance_measure
-            distance_kde_dir.mkdir(exist_ok=True)
-            fig.savefig(
-                distance_kde_dir
-                / f"distance_distribution_vertical_{distance_measure}{suffix}.{save_format}",
-                dpi=300,
-            )
-
-        plt.show()
-    return fig_list, ax_list
-
-
-def plot_ks_test_distance_distributions_kde(
-    distance_measures: list[str],
-    packing_modes: list[str],
-    all_distance_dict: dict[str, dict[str, dict[str, np.ndarray]]],
-    ks_observed_dict: dict[str, dict[str, dict[str, float]]],
-    figures_dir: Path | None = None,
-    suffix: str = "",
-    normalization: str | None = None,
-    baseline_mode: str | None = None,
-    significance_level: float = 0.05,
-    bandwidth: Literal["scott", "silverman"] | float = "scott",
-    save_format: Literal["svg", "png", "pdf"] = "png",
-) -> None:
-    """
-    Plot distance distributions for packings with significant and non-significant KS test results.
-
-    Parameters
-    ----------
-    distance_measures
-        List of distance measures to plot
-    packing_modes
-        List of packing modes to plot
-    all_distance_dict
-        Dictionary containing distance distributions for each packing mode and distance measure
-    ks_observed_dict
-        Dictionary containing KS test results for each packing mode and distance measure
-    figures_dir
-        Directory to save the figures. If None, figures will not be saved
-    suffix
-        Suffix to append to the figure filenames
-    normalization
-        Normalization method to apply to the distance measures
-    baseline_mode
-        Packing mode to use as baseline for comparison
-    significance_level
-        Significance level for the KS test
-    bandwidth
-        Bandwidth method for KDE. Can be "scott", "silverman", or a float value
-    save_format
-    """
-    log.info("Plotting distance distributions")
-
-    if baseline_mode is not None:
-        packing_modes = [mode for mode in packing_modes if mode != baseline_mode]
-
-    num_cols = len(packing_modes)
-
-    for i, distance_measure in enumerate(distance_measures):
-        distance_dict = all_distance_dict[distance_measure]
-        ks_measure_dict = ks_observed_dict[distance_measure]
-        fig, axs = plt.subplots(
-            2,
-            num_cols,
-            figsize=(num_cols * 4, 8),
-            dpi=300,
-            sharex="row",
-            sharey="row",
-        )
-        for j, mode in enumerate(packing_modes):
-            mode_dict = distance_dict[mode]
-            ks_mode_dict = ks_measure_dict[mode]
-            log.info(f"Distance measure: {distance_measure}, Mode: {mode}")
-
-            sig_ax = axs[0, j]
-            ns_ax = axs[1, j]
-
-            # get significant and non-significant seeds
-            all_seeds = list(mode_dict.keys())
-            significant_seeds = [
-                seed for seed, p_value in ks_mode_dict.items() if p_value < significance_level
-            ]
-            ns_seeds = [seed for seed in all_seeds if seed not in significant_seeds]
-
-            # kde plots for significant seeds
-            for seed in tqdm(significant_seeds):
-                distances = mode_dict[seed]
-                sns.kdeplot(
-                    distances,
-                    ax=sig_ax,
-                    color="r",
-                    linewidth=1,
-                    alpha=0.2,
-                    bw_method=bandwidth,
-                    cut=0,
-                )
-            # plot combined kde plot of distance distributions
-            if len(significant_seeds) > 0:
-                combined_sig_distances = np.concatenate(
-                    [distance for seed, distance in mode_dict.items() if seed in significant_seeds]
-                )
-                sns.kdeplot(
-                    combined_sig_distances,
-                    ax=sig_ax,
-                    color="k",
-                    linewidth=2,
-                    bw_method=bandwidth,
-                    cut=0,
-                )
-                # plot mean distance and add title
-                mean_distance = combined_sig_distances.mean()
-                title_str = f"Mean: {mean_distance:.2f}\nKS p-value < {significance_level}"
-                sig_ax.axvline(mean_distance, color="k", linestyle="--")
-            else:
-                title_str = "No significant obs."
-            if i == 0:
-                sig_ax.set_title(f"{MODE_LABELS.get(mode, mode)}\n{title_str}")
-            else:
-                sig_ax.set_title(title_str)
-
-            # kde plots for non-significant seeds
-            for seed in tqdm(ns_seeds):
-                distances = mode_dict[seed]
-                sns.kdeplot(
-                    distances,
-                    ax=ns_ax,
-                    color="g",
-                    linewidth=1,
-                    alpha=0.2,
-                    bw_method=bandwidth,
-                    cut=0,
-                )
-            # plot combined kde plot of distance distributions
-            if len(ns_seeds) > 0:
-                combined_ns_distances = np.concatenate(
-                    [distance for seed, distance in mode_dict.items() if seed in ns_seeds]
-                )
-                sns.kdeplot(
-                    combined_ns_distances,
-                    ax=ns_ax,
-                    color="k",
-                    linewidth=2,
-                    bw_method=bandwidth,
-                    cut=0,
-                )
-                # plot mean distance and add title
-                mean_distance = combined_ns_distances.mean()
-                title_str = f"Mean: {mean_distance:.2f}\nKS p-value >= {significance_level}"
-                ns_ax.axvline(mean_distance, color="k", linestyle="--")
-            else:
-                title_str = "No non-significant obs."
-            ns_ax.set_title(title_str)
-
-        distance_label = "distance"
-        if normalization is not None:
-            distance_label = f"{distance_label} / {NORMALIZATION_LABELS[normalization]}"
-        else:
-            distance_label = f"{distance_label} (\u03bcm)"
-        fig.supylabel(f"{distance_measure} PDF")
-        fig.supxlabel(distance_label)
-        fig.tight_layout()
-
-        if figures_dir is not None:
-            fig.savefig(
-                figures_dir
-                / f"distance_distributions_ks_test_{distance_measure}{suffix}.{save_format}",
-                dpi=300,
-            )
-
-    plt.show()
-
-
-def plot_distance_distributions_overlay(
-    distance_measures: list[str],
-    packing_modes: list[str],
-    all_distance_dict: dict[str, dict[str, dict[str, np.ndarray]]],
-    figures_dir: Path | None = None,
-    suffix: str = "",
-    normalization: str | None = None,
-    bandwidth: Literal["scott", "silverman"] | float = "scott",
-    save_format: Literal["svg", "png", "pdf"] = "png",
-) -> None:
-    """
-    Plot overlaid distance distributions using kernel density estimation (KDE).
-
-    Parameters
-    ----------
-    distance_measures
-        List of distance measures to plot
-    packing_modes
-        List of packing modes to plot
-    all_distance_dict
-        Dictionary containing distance distributions for each packing mode and distance measure
-    figures_dir
-        Directory to save the figures. If None, figures will not be saved
-    suffix
-        Suffix to append to the figure filenames
-    normalization
-        Normalization method to apply to the distance measures
-    bandwidth
-        Bandwidth method for KDE. Can be "scott", "silverman", or a float value
-    save_format
-        Format to save the figures in
-    """
-    log.info("Plotting overlaid distance distributions")
-
-    for distance_measure in distance_measures:
-        distance_dict = all_distance_dict[distance_measure]
-        fig, ax = plt.subplots(dpi=300, figsize=(6, 6))
-        cmap = plt.get_cmap("tab10")
-        for j, mode in enumerate(packing_modes):
-            mode_dict = distance_dict[mode]
-            log.info(f"Distance measure: {distance_measure}, Mode: {mode}")
-
-            # plot combined kde plot of distance distributions
-            combined_mode_distances = np.concatenate(list(mode_dict.values()))
-            sns.kdeplot(
-                combined_mode_distances,
-                ax=ax,
-                color=cmap(j),
-                linewidth=2,
-                label=MODE_LABELS.get(mode, mode),
-                bw_method=bandwidth,
-                cut=0,
-            )
-
-            # plot mean distance
-            mean_distance = combined_mode_distances.mean()
-            ax.axvline(mean_distance, color=cmap(j), linestyle="--", label="_nolegend_")
-
-        distance_label = "distance"
-        if normalization is not None:
-            distance_label = f"{distance_label} / {NORMALIZATION_LABELS[normalization]}"
-        else:
-            distance_label = f"{distance_label} (\u03bcm)"
-
-        ax.set_xlabel(distance_label)
-        ax.set_title(f"{distance_measure} distance")
-        ax.legend()
-        fig.tight_layout()
-
-        if figures_dir is not None:
-            fig.savefig(
-                figures_dir / f"distance_distributions_{distance_measure}{suffix}.{save_format}",
-                dpi=300,
-            )
-
-        plt.show()
-
-
-def plot_distance_distributions_histogram(
-    distance_measures: list[str],
-    packing_modes: list[str],
-    all_distance_dict: dict[str, dict[str, dict[str, np.ndarray]]],
-    figures_dir: Path | None = None,
-    suffix: str = "",
-    normalization: str | None = None,
-    save_format: str = "png",
-) -> None:
-    """
-    Plot distance distributions using histograms.
-
-    Parameters
-    ----------
-    distance_measures
-        List of distance measures to plot
-    packing_modes
-        List of packing modes to plot
-    all_distance_dict
-        Dictionary containing distance distributions for each packing mode and distance measure
-    figures_dir
-        Directory to save the figures. If None, figures will not be saved
-    suffix
-        Suffix to append to the figure filenames
-    normalization
-        Normalization method to apply to the distance measures
-    save_format
-        Format to save the figures in
-    """
-    num_cols = len(packing_modes)
-
-    for _i, distance_measure in enumerate(distance_measures):
-        fig, axs = plt.subplots(
-            1,
-            num_cols,
-            figsize=(num_cols * 3, 4),
-            dpi=300,
-            sharex=True,
-            sharey=True,
-        )
-        distance_dict = all_distance_dict[distance_measure]
-        for j, mode in enumerate(packing_modes):
-            mode_dict = distance_dict[mode]
-
-            combined_mode_distances = np.concatenate(list(mode_dict.values()))
-
-            # plot histogram
-            axs[j].hist(
-                combined_mode_distances,
-                bins=50,
-            )
-
-            # plot mean distance and add title
-            unit = ""
-            if normalization is None and "scaled" not in distance_measure:
-                unit = "(\u03bcm)"
-            mean_distance = combined_mode_distances.mean()
-            title_str = f"Mean: {mean_distance:.2f}"
-            axs[j].set_title(f"{MODE_LABELS.get(mode, mode)}\n{title_str}{unit}")
-
-            axs[j].axvline(mean_distance, color="k", linestyle="--")
-
-            # add x and y labels
-
-        if normalization is not None:
-            distance_label = (
-                f"{DISTANCE_MEASURE_LABELS[distance_measure]}"
-                f" / {NORMALIZATION_LABELS[normalization]}"
-            )
-        elif "scaled" in distance_measure:
-            distance_label = DISTANCE_MEASURE_LABELS[distance_measure]
-        else:
-            distance_label = f"{DISTANCE_MEASURE_LABELS[distance_measure]} (\u03bcm)"
-
-        fig.supylabel("Count")
-        fig.supxlabel(distance_label)
-        fig.tight_layout()
-
-        if figures_dir is not None:
-            hist_dir = figures_dir / "distance_histogram"
-            hist_dir.mkdir(exist_ok=True)
-            fig.savefig(
-                hist_dir
-                / f"distance_distributions_histogram_{distance_measure}{suffix}.{save_format}",
-                dpi=300,
-            )
-
-        plt.show()
-
-
-def plot_ks_observed_barplots(
+def plot_ks_test_barplots(
     df_ks_bootstrap: pd.DataFrame,
     distance_measures: list[str],
     suffix: str = "",
     figures_dir: Path | None = None,
     baseline_mode: str | None = None,
     save_format: str = "png",
-) -> tuple[list[Figure], list[Axes]]:
+    annotate_significance: bool = False,
+) -> tuple[Figure, np.ndarray]:
     """
-    Plot KS observed results as bar plots.
+    Plot KS test results as bar plots.
 
     Parameters
     ----------
-    df_ks
+    df_ks_bootstrap
         DataFrame containing KS test results
     distance_measures
         List of distance measures to plot
@@ -763,15 +264,23 @@ def plot_ks_observed_barplots(
     :
         Tuple containing lists of figure and axis objects for each distance measure
     """
-    log.info("Plotting KS observed barplots")
-    fig_list = []
-    ax_list = []
+    log.info("Plotting KS test barplots")
+    plt.rcParams.update({"font.size": 6})
 
-    for distance_measure in distance_measures:
+    num_cols = len(distance_measures)
+    fig, axs = plt.subplots(
+        1,
+        num_cols,
+        figsize=(1.25 * num_cols, 2.5),
+        dpi=300,
+        squeeze=False,
+    )
+
+    for col, distance_measure in enumerate(distance_measures):
         df_distance_measure = df_ks_bootstrap.query(f"distance_measure == '{distance_measure}'")
 
-        n_plots = df_distance_measure["packing_mode"].nunique()
-        fig, ax = plt.subplots(figsize=(2, 2 * n_plots), dpi=300)
+        ax = axs[0, col]
+
         plot_params = {
             "data": df_distance_measure,
             "x": "similar_fraction",
@@ -781,367 +290,49 @@ def plot_ks_observed_barplots(
             "orient": "h",
             "palette": COLOR_PALETTE,
         }
-        sns.barplot(
-            ax=ax,
-            **plot_params,
-        )
+        sns.barplot(ax=ax, **plot_params)
+        sns.despine(ax=ax)
         ax.set_xlim((0, 1))
         ax.set_xlabel("Similar fraction")
         ax.set_ylabel("")
-        ax.set_yticks(
-            ax.get_yticks(),
-            labels=[
-                MODE_LABELS.get(label.get_text(), label.get_text())
-                for label in ax.get_yticklabels()
-            ],
-        )
-        ax.set_title(f"{DISTANCE_MEASURE_LABELS[distance_measure]} KS test")
-        ax.spines["top"].set_visible(False)
-        ax.spines["right"].set_visible(False)
-
-        packing_modes = df_distance_measure["packing_mode"].unique()
-        pairs = list(combinations(packing_modes, 2))
-        if baseline_mode is not None:
-            pairs = [(mode, baseline_mode) for mode in packing_modes if mode != baseline_mode]
-        annotator = Annotator(ax=ax, pairs=pairs, plot="barplot", **plot_params)
-        annotator.configure(
-            test="Mann-Whitney",
-            verbose=False,
-            comparisons_correction="Bonferroni",
-        ).apply_and_annotate()
-
-        fig_list.append(fig)
-        ax_list.append(ax)
-
-        if figures_dir is not None:
-            fig.savefig(
-                figures_dir / f"{distance_measure}_ks_test_vs_baseline{suffix}.{save_format}",
-                dpi=300,
-                bbox_inches="tight",
+        if col == 0:
+            ax.set_yticks(
+                ax.get_yticks(),
+                labels=[
+                    MODE_LABELS.get(label.get_text(), label.get_text())
+                    for label in ax.get_yticklabels()
+                ],
             )
-        plt.show()
-    return fig_list, ax_list
+        else:
+            ax.set_yticks([])
 
-
-def plot_emd_heatmaps(
-    distance_measures: list[str],
-    all_pairwise_emd: dict[str, dict[str, dict[str, dict[tuple[str, str], float]]]],
-    figures_dir: Path | None = None,
-    suffix: str = "",
-    save_format: str = "png",
-) -> None:
-    """
-    Plot EMD values as heatmaps.
-
-    Parameters
-    ----------
-    distance_measures
-        List of distance measures to plot
-    all_pairwise_emd
-        Dictionary containing pairwise EMD values
-    figures_dir
-        Directory to save the figures
-    suffix
-        Suffix to append to the figure filenames
-    save_format
-        Format to save the figures in
-    """
-    log.info("Plotting pairwise EMD heatmaps")
-    for distance_measure in distance_measures:
-        emd_dict = all_pairwise_emd[distance_measure]
-        fig, axs = plt.subplots(len(emd_dict), len(emd_dict), figsize=(6, 6), dpi=300)
-        for rt, (mode_1, mode_1_dict) in enumerate(emd_dict.items()):
-            mode_1_label = MODE_LABELS[mode_1]
-            for ct, (mode_2, emd) in enumerate(mode_1_dict.items()):
-                log.info(f"{distance_measure}, {mode_1}, {mode_2}")
-                mode_2_label = MODE_LABELS[mode_2]
-                if mode_1 == mode_2:
-                    values = squareform(list(emd.values()))
-                else:
-                    values = list(emd.values())
-                    values = np.array(values)
-                    dim_len = int(np.sqrt(len(values)))
-                    values = values.reshape((dim_len, -1))
-                ax = axs[rt, ct]
-                if ct == len(emd_dict) - 1:
-                    cbar = True
-                    cbar_kws = {"label": "EMD"}
-                else:
-                    cbar = False
-                    cbar_kws = None
-                sns.heatmap(
-                    values,
-                    ax=ax,
-                    cmap="PuOr",
-                    # vmin=0,
-                    # vmax=0.05,
-                    square=True,
-                    cbar=cbar,
-                    cbar_kws=cbar_kws,
-                )
-                ax.set_xticks([])
-                ax.set_yticks([])
-                if rt == 0:
-                    ax.set_title(mode_2_label)
-                if ct == 0:
-                    ax.set_ylabel(mode_1_label)
-        fig.suptitle(f"{distance_measure} EMD")
-        fig.tight_layout()
-
-        if figures_dir is not None:
-            fig.savefig(figures_dir / f"{distance_measure}_emd{suffix}.{save_format}", dpi=300)
-
-        plt.show()
-
-
-def plot_average_emd_correlation_heatmap(
-    distance_measures: list[str],
-    corr_df_dict: dict[str, dict[str, pd.DataFrame]],
-    emd_figures_dir: Path | None = None,
-    suffix: str = "",
-) -> None:
-    """
-    Plot the correlation heatmap for Earth Mover's Distance (EMD) values.
-
-    Parameters
-    ----------
-    distance_measures
-        List of distance measures
-    corr_df_dict
-        Dictionary containing correlation DataFrames
-    emd_figures_dir
-        Directory to save the heatmap images
-    suffix
-        Suffix to add to the heatmap image filenames
-    """
-    for distance_measure in distance_measures:
-        fig, ax = plt.subplots(dpi=300)
-        df_corr = corr_df_dict[distance_measure]["mean"]
-        sns.heatmap(df_corr, cmap="PuOr", annot=True, ax=ax)
-        plt.tight_layout()
-        ax.set_title(f"{distance_measure} EMD")
-        if emd_figures_dir is not None:
-            distance_measure_dir = emd_figures_dir / distance_measure
-            distance_measure_dir.mkdir(exist_ok=True)
-            fig.savefig(
-                distance_measure_dir / f"{distance_measure}_emd_heatmap{suffix}.png",
-                dpi=300,
-            )
-
-
-def plot_emd_correlation_circles(
-    distance_measures: list[str],
-    corr_df_dict: dict[str, dict[str, pd.DataFrame]],
-    figures_dir: Path | None = None,
-    suffix: str = "",
-    save_format: str = "png",
-) -> None:
-    """
-    Plot EMD correlation as circles with size indicating variation.
-
-    Parameters
-    ----------
-    distance_measures
-        List of distance measures to plot
-    corr_df_dict
-        Dictionary containing correlation and standard deviation DataFrames
-    figures_dir
-        Directory to save the figures
-    suffix
-        Suffix to append to the figure filenames
-    save_format
-        Format to save the figures in
-    """
-    log.info("Plotting EMD variation circles")
-
-    for distance_measure in distance_measures:
-        corr_dict = corr_df_dict[distance_measure]
-        df_corr = corr_dict["mean"]
-        df_std = corr_dict["std"]
-
-        N = M = len(df_corr)
-        xlabels = ylabels = [MODE_LABELS.get(col, col) for col in df_corr.columns]
-
-        xvals = np.arange(M)
-        yvals = np.arange(N)
-
-        x, y = np.meshgrid(xvals, yvals)
-        stdev = df_std.to_numpy()
-        corr = df_corr.to_numpy()
-
-        fig, ax = plt.subplots(dpi=300)
-
-        R = stdev / stdev.max() / 2.5
-        circles = [
-            Circle((j, i), radius=r) for r, j, i in zip(R.flat, x.flat, y.flat, strict=False)
-        ]
-        col = PatchCollection(
-            circles,
-            array=corr.flatten(),
-            cmap="PuOr",
-        )
-        ax.add_collection(col)
-
-        ax.set(
-            xticks=np.arange(M),
-            yticks=np.arange(N),
-            xticklabels=xlabels,
-            yticklabels=ylabels,
-        )
-        ax.set_xticklabels(ax.get_xticklabels(), rotation=45)
-        ax.set_xlim(-0.5, M - 0.5)
-        ax.set_ylim(-0.5, N - 0.5)
-        ax.invert_yaxis()
-
-        ax.set(
-            xticks=np.arange(M),
-            yticks=np.arange(N),
-            xticklabels=xlabels,
-            yticklabels=ylabels,
-        )
-        ax.set_xticks(np.arange(M + 1) - 0.5, minor=True)
-        ax.set_yticks(np.arange(N + 1) - 0.5, minor=True)
-        ax.grid(which="minor")
-        # ax.grid(which="minor")
-        # for item in ax.spines.__dict__["_dict"].values():
-        #     item.set_visible(False)
-        # ax.tick_params(which="both", length=0)
-
-        # for i in range(N):
-        #     for j in range(M):
-        #         ax.text(j, i, f"{corr[i, j]:.3g}", ha="center", va="center", color="black")
-
-        cbar = fig.colorbar(col)
-        cbar.set_label(f"EMD for {DISTANCE_MEASURE_LABELS[distance_measure]}")
-        # ax.set_frame_on(False)
-        # ax.set_title(f"{distance_measure} EMD")
-
-        if figures_dir is not None:
-            fig.savefig(
-                figures_dir / f"{distance_measure}_emd_heatmap_circ{suffix}.{save_format}",
-                dpi=300,
-            )
-        plt.show()
-
-
-def plot_intra_mode_emd(
-    df_emd: pd.DataFrame,
-    distance_measures: list[str],
-    suffix: str = "",
-    figures_dir: Path | None = None,
-    save_format: Literal["svg", "png", "pdf"] = "png",
-    baseline_mode: str | None = "SLC25A17",
-    annotate_significance: bool = False,
-) -> tuple[Figure, np.ndarray, Figure, np.ndarray]:
-    """
-    Plot violinplots and barplots of Earth Mover's Distance (EMD) values within each rule.
-
-    Parameters
-    ----------
-    df_emd
-        DataFrame containing EMD values with columns 'distance_measure', 'packing_mode', and 'emd'
-    distance_measures
-        List of distance measures to plot
-    suffix
-        Suffix to append to the figure filenames
-    figures_dir
-        Directory to save the figures. If None, figures will not be saved
-    save_format
-        Format to save the figures in
-    """
-    log.info("Plotting within rule EMD plots")
-    plt.rcParams.update({"font.size": 6})
-
-    num_cols = len(distance_measures)
-    fig_bar, axs_bar = plt.subplots(
-        1,
-        num_cols,
-        figsize=(num_cols * 0.85, 2.5),
-        dpi=300,
-        squeeze=False,
-    )
-    fig_violin, axs_violin = plt.subplots(
-        1,
-        num_cols,
-        figsize=(num_cols * 0.85, 2.5),
-        dpi=300,
-        squeeze=False,
-    )
-
-    for col, distance_measure in enumerate(distance_measures):
-        df_plot = df_emd.query(
-            f"distance_measure == '{distance_measure}' and " "packing_mode_1 == packing_mode_2"
-        )
-
-        ax_bar = axs_bar[0, col]
-        ax_violin = axs_violin[0, col]
-
-        plot_params = {
-            "data": df_plot,
-            "x": "emd",
-            "y": "packing_mode_1",
-            "hue": "packing_mode_1",
-            "legend": False,
-            "orient": "h",
-            "palette": COLOR_PALETTE,
-            "linewidth": 0.5,
-        }
-        sns.barplot(ax=ax_bar, **plot_params)
-        sns.violinplot(ax=ax_violin, **plot_params)
-
-        for ax, plot_type in zip([ax_bar, ax_violin], ["barplot", "violinplot"]):
-            sns.despine(ax=ax)
-            # ax.set_title(f"{DISTANCE_MEASURE_TITLES[distance_measure]}")
-            ax.set_xlabel("EMD")
-            ax.set_ylabel("")
-            ax.xaxis.set_major_locator(MaxNLocator(3, integer=True))
-            if col == 0:
-                ax.set_yticks(
-                    ax.get_yticks(),
-                    labels=[
-                        MODE_LABELS.get(label.get_text(), label.get_text())
-                        for label in ax.get_yticklabels()
-                    ],
-                )
-            else:
-                ax.set_yticks([])
-
-            if annotate_significance:
-                packing_modes = df_plot["packing_mode_1"].unique()
-                pairs = list(combinations(packing_modes, 2))
-                if baseline_mode is not None:
-                    pairs = [pair for pair in pairs if baseline_mode in pair]
-                annotator = Annotator(ax=ax, pairs=pairs, plot=plot_type, **plot_params)
-                annotator.configure(
-                    test="Mann-Whitney",
-                    verbose=False,
-                    comparisons_correction="Bonferroni",
-                    loc="outside",
-                ).apply_and_annotate()
-
-    if figures_dir is not None:
         if annotate_significance:
-            suffix += "_annotated"
+            packing_modes = df_distance_measure["packing_mode"].unique()
+            pairs = list(combinations(packing_modes, 2))
+            if baseline_mode is not None:
+                pairs = [(mode, baseline_mode) for mode in packing_modes if mode != baseline_mode]
+            annotator = Annotator(ax=ax, pairs=pairs, plot="barplot", **plot_params)
+            annotator.configure(
+                test="Mann-Whitney",
+                verbose=False,
+                comparisons_correction="Bonferroni",
+            ).apply_and_annotate()
 
-        for fig, label in zip(
-            [fig_bar, fig_violin],
-            ["barplot", "violinplot"],
-        ):
-            fig.tight_layout(pad=0)
-            fig.savefig(
-                figures_dir / f"intra_mode_emd_{label}{suffix}.{save_format}",
-                dpi=300,
-                bbox_inches="tight",
-            )
-            plt.show()
-            plt.close(fig)
-
-    return fig_bar, axs_bar, fig_violin, axs_violin
+    fig.tight_layout()
+    if figures_dir is not None:
+        fig.savefig(
+            figures_dir / f"ks_test_vs_baseline{suffix}.{save_format}",
+            dpi=300,
+            bbox_inches="tight",
+        )
+    plt.show()
+    return fig, axs
 
 
-def plot_baseline_mode_emd(
+def plot_emd_comparisons(
     df_emd: pd.DataFrame,
     distance_measures: list[str],
+    comparison_type: Literal["intra_mode", "baseline"] = "intra_mode",
     baseline_mode: str = "SLC25A17",
     suffix: str = "",
     figures_dir: Path | None = None,
@@ -1149,7 +340,7 @@ def plot_baseline_mode_emd(
     annotate_significance: bool = False,
 ) -> tuple[Figure, np.ndarray, Figure, np.ndarray]:
     """
-    Plot violinplots and barplots of Earth Mover's Distance (EMD) values within each rule.
+    Plot violinplots and barplots of Earth Mover's Distance (EMD) values.
 
     Parameters
     ----------
@@ -1157,23 +348,46 @@ def plot_baseline_mode_emd(
         DataFrame containing EMD values with columns 'distance_measure', 'packing_mode', and 'emd'
     distance_measures
         List of distance measures to plot
+    comparison_type
+        Type of comparison to plot:
+        - "intra_mode": Compare EMD values within each packing mode
+          (packing_mode_1 == packing_mode_2)
+        - "baseline": Compare EMD values against a baseline mode
+          (packing_mode_1 == baseline_mode)
     baseline_mode
-        The baseline packing mode to use for comparison
+        The baseline packing mode to use for comparison (used for both comparison types)
     suffix
         Suffix to append to the figure filenames
     figures_dir
         Directory to save the figures. If None, figures will not be saved
     save_format
         Format to save the figures in
+    annotate_significance
+        Whether to add statistical significance annotations to the plots
+
+    Returns
+    -------
+    :
+        Tuple containing (bar_figure, bar_axes, violin_figure, violin_axes)
     """
-    log.info("Plotting baseline mode EMD plots")
+    if comparison_type == "intra_mode":
+        log.info("Plotting within rule EMD plots")
+        file_prefix = "intra_mode_emd"
+    elif comparison_type == "baseline":
+        log.info("Plotting baseline mode EMD plots")
+        file_prefix = "baseline_mode_emd"
+    else:
+        raise ValueError(
+            f"Invalid comparison_type: {comparison_type}. Must be 'intra_mode' or 'baseline'"
+        )
+
     plt.rcParams.update({"font.size": 6})
 
     num_cols = len(distance_measures)
     fig_bar, axs_bar = plt.subplots(
         1,
         num_cols,
-        figsize=(num_cols * 0.85, 2.5),
+        figsize=(0.85 * num_cols, 2.5),
         dpi=300,
         squeeze=False,
     )
@@ -1186,10 +400,20 @@ def plot_baseline_mode_emd(
     )
 
     for col, distance_measure in enumerate(distance_measures):
-        df_plot = df_emd.query(
-            f"distance_measure == '{distance_measure}' and "
-            f"packing_mode_1 == '{baseline_mode}' and packing_mode_2 != '{baseline_mode}'"
-        )
+        # Build query and plot parameters based on comparison type
+        if comparison_type == "intra_mode":
+            query_str = (
+                f"distance_measure == '{distance_measure}' and " "packing_mode_1 == packing_mode_2"
+            )
+            y_column = "packing_mode_1"
+        else:  # baseline comparison
+            query_str = (
+                f"distance_measure == '{distance_measure}' and "
+                f"packing_mode_1 == '{baseline_mode}' and packing_mode_2 != '{baseline_mode}'"
+            )
+            y_column = "packing_mode_2"
+
+        df_plot = df_emd.query(query_str)
 
         ax_bar = axs_bar[0, col]
         ax_violin = axs_violin[0, col]
@@ -1197,8 +421,8 @@ def plot_baseline_mode_emd(
         plot_params = {
             "data": df_plot,
             "x": "emd",
-            "y": "packing_mode_2",
-            "hue": "packing_mode_2",
+            "y": y_column,
+            "hue": y_column,
             "legend": False,
             "orient": "h",
             "palette": COLOR_PALETTE,
@@ -1209,7 +433,6 @@ def plot_baseline_mode_emd(
 
         for ax, plot_type in zip([ax_bar, ax_violin], ["barplot", "violinplot"]):
             sns.despine(ax=ax)
-            # ax.set_title(f"{DISTANCE_MEASURE_TITLES[distance_measure]}")
             ax.set_xlabel("EMD")
             ax.set_ylabel("")
             ax.xaxis.set_major_locator(MaxNLocator(3, integer=True))
@@ -1225,26 +448,34 @@ def plot_baseline_mode_emd(
                 ax.set_yticks([])
 
             if annotate_significance:
-                packing_modes = [
-                    mode for mode in df_plot["packing_mode_2"].unique() if mode != baseline_mode
-                ]
-                pairs = list(combinations(packing_modes, 2))
-                annotator = Annotator(ax=ax, pairs=pairs, plot=plot_type, **plot_params)
-                annotator.configure(
-                    test="Mann-Whitney",
-                    verbose=False,
-                    comparisons_correction="Bonferroni",
-                ).apply_and_annotate()
-                suffix += "_annotated"
+                if comparison_type == "intra_mode":
+                    packing_modes = df_plot[y_column].unique()
+                    pairs = list(combinations(packing_modes, 2))
+                    pairs = [pair for pair in pairs if baseline_mode in pair]
+                else:  # baseline comparison
+                    packing_modes = [
+                        mode for mode in df_plot[y_column].unique() if mode != baseline_mode
+                    ]
+                    pairs = list(combinations(packing_modes, 2))
+
+                if pairs:  # Only annotate if there are pairs to compare
+                    annotator = Annotator(ax=ax, pairs=pairs, plot=plot_type, **plot_params)
+                    annotator.configure(
+                        test="Mann-Whitney",
+                        verbose=False,
+                        comparisons_correction="Bonferroni",
+                        loc="outside",
+                    ).apply_and_annotate()
 
     if figures_dir is not None:
-        for fig, label in zip(
-            [fig_bar, fig_violin],
-            ["barplot", "violinplot"],
-        ):
+        final_suffix = suffix
+        if annotate_significance:
+            final_suffix += "_annotated"
+
+        for fig, label in zip([fig_bar, fig_violin], ["barplot", "violinplot"]):
             fig.tight_layout()
             fig.savefig(
-                figures_dir / f"baseline_mode_emd_{label}{suffix}.{save_format}",
+                figures_dir / f"{file_prefix}_{label}{final_suffix}.{save_format}",
                 dpi=300,
                 bbox_inches="tight",
             )
@@ -1252,106 +483,6 @@ def plot_baseline_mode_emd(
             plt.close(fig)
 
     return fig_bar, axs_bar, fig_violin, axs_violin
-
-
-def plot_emd_kdeplots(
-    distance_measures: list[str],
-    all_pairwise_emd: dict[str, dict[str, dict[str, dict[tuple[str, str], float]]]],
-    baseline_mode: str = "SLC25A17",
-    emd_figures_dir: Path | None = None,
-    suffix: str = "",
-    bandwidth: Literal["scott", "silverman"] | float = "scott",
-    save_format: str = "png",
-) -> None:
-    """
-    Plot KDE plots of EMD variation.
-
-    Parameters
-    ----------
-    distance_measures
-        List of distance measures to plot
-    all_pairwise_emd
-        Dictionary containing pairwise EMD values
-    baseline_mode
-        Baseline packing mode for comparison
-    emd_figures_dir
-        Directory to save the figures
-    suffix
-        Suffix to append to the figure filenames
-    bandwidth
-        Bandwidth method for KDE
-    save_format
-        Format to save the figures in
-    """
-    log.info("Plotting EMD variation kde plots")
-
-    for distance_measure in distance_measures:
-        emd_dict = all_pairwise_emd[distance_measure][baseline_mode]
-        emd_df = pd.DataFrame.from_dict(emd_dict)
-        fig, ax = plt.subplots(dpi=300, figsize=(6, 6))
-        for col in emd_df.columns:
-            sns.kdeplot(
-                x=emd_df[col],
-                ax=ax,
-                label=MODE_LABELS[col],
-                bw_method=bandwidth,  # type:ignore
-                cut=0,
-            )
-        ax.set_xlabel(f"{distance_measure} EMD")
-        ax.legend()
-        fig.tight_layout()
-
-        if emd_figures_dir is not None:
-            distance_measure_dir = emd_figures_dir / distance_measure
-            distance_measure_dir.mkdir(exist_ok=True)
-            fig.savefig(
-                distance_measure_dir / f"{distance_measure}_emd_kdeplot{suffix}.{save_format}",
-                dpi=300,
-            )
-
-
-def plot_ripley_k(
-    mean_ripleyK: dict[str, np.ndarray],
-    ci_ripleyK: dict[str, np.ndarray],
-    r_values: np.ndarray,
-    figures_dir: Path | None = None,
-    suffix: str = "",
-    save_format: str = "png",
-) -> None:
-    """
-    Plot Ripley's K function results.
-
-    Parameters
-    ----------
-    mean_ripleyK
-        Dictionary containing mean Ripley K values for each mode
-    ci_ripleyK
-        Dictionary containing confidence intervals for each mode
-    r_values
-        Array of r values used in calculation
-    figures_dir
-        Directory to save the figures
-    suffix
-        Suffix to append to the figure filenames
-    save_format
-        Format to save the figures in
-    """
-    log.info("Plotting Ripley K")
-    fig, ax = plt.subplots(dpi=300, figsize=(6, 6))
-    for mode, mode_values in mean_ripleyK.items():
-        mode_values = mode_values - np.pi * r_values**2
-        err_values = ci_ripleyK[mode] - np.pi * r_values**2
-
-        ax.plot(r_values, mode_values, label=MODE_LABELS.get(mode, mode))
-        ax.fill_between(r_values, err_values[0], err_values[1], alpha=0.2)
-    ax.set_xlabel("r")
-    ax.set_ylabel("$K(r) - \\pi r^2$")
-    ax.legend(loc="center", bbox_to_anchor=(0.5, 1.15), ncol=2, fontsize=14)
-
-    if figures_dir is not None:
-        fig.savefig(figures_dir / f"ripleyK{suffix}.{save_format}", dpi=300)
-
-    plt.show()
 
 
 def plot_occupancy_illustration(
@@ -1402,7 +533,8 @@ def plot_occupancy_illustration(
     :
         Tuple containing KDE objects, x-values, y-values, figure, and axes
     """
-    fig, axs = plt.subplots(nrows=3, ncols=1, dpi=300, figsize=(6, 6))
+    plt.rcParams.update({"font.size": 6})
+    fig, axs = plt.subplots(nrows=3, ncols=1, dpi=300, figsize=(2.5, 2.5), sharex=True)
     mode_dict = distance_dict[baseline_mode]
     all_cell_ids = list(mode_dict.keys())
     if seed_index is not None:
@@ -1430,37 +562,33 @@ def plot_occupancy_illustration(
 
     # plot occupied distance values
     ax = axs[0]
-    ax.plot(xvals, distance_kde_values, c="r")
+    sns.lineplot(x=xvals, y=distance_kde_values, ax=ax, color="r")
     if xlim is None:
         xlim = ax.get_xlim()[1]
     ax.set_xlim([0, xlim])
-    ax.set_ylabel("Probability Density")
-    ax.set_title("Occupied Space")
+    ax.set_ylabel("Occupied \nPDF")
+    # ax.set_title("Occupied Space")
 
     # plot available space values
     ax = axs[1]
-    ax.plot(xvals, available_space_kde_values, label="available space", c="b")
+    sns.lineplot(x=xvals, y=available_space_kde_values, ax=ax, color="b")
     ax.set_xlim([0, xlim])
-    ax.set_ylabel("Probability Density")
-    ax.set_title("Available Space")
+    ax.set_ylabel("Available \nPDF")
+    # ax.set_title("Available Space")
 
     ylims = [axs[i].get_ylim() for i in range(2)]
-    ylim = [min([y[0] for y in ylims]), max([y[1] for y in ylims])]
+    ylim = [0, max([y[1] for y in ylims])]
 
     for i in range(2):
         axs[i].set_ylim(ylim)
 
     # plot ratio
     ax = axs[2]
-    ax.plot(xvals, yvals, label="Occupancy Ratio", c="g")
+    sns.lineplot(x=xvals, y=yvals, ax=ax, color="g")
     ax.set_ylim([0, 2])
     ax.set_xlim([0, xlim])
-    ax.axhline(1, color="k", linestyle="--")
-    ax.set_ylabel("Ratio")
-    title_str = "Occupancy Ratio"
-    if method == "cumulative":
-        title_str = "Cumulative Ratio"
-    ax.set_title(title_str)
+    ax.axhline(1, color="gray", linestyle="--")
+    ax.set_ylabel("Occupancy ratio")
 
     for ax in axs:
         distance_label = DISTANCE_MEASURE_LABELS[distance_measure]
@@ -1471,6 +599,7 @@ def plot_occupancy_illustration(
         ax.xaxis.set_major_locator(MaxNLocator(4, integer=True))
         ax.set_xlabel(distance_label)
 
+    sns.despine(fig=fig)
     plt.tight_layout()
     plt.show()
 
@@ -1479,6 +608,7 @@ def plot_occupancy_illustration(
             figures_dir
             / f"{distance_measure}_{method}_occupancy_ratio_illustration{suffix}.{save_format}",
             dpi=300,
+            bbox_inches="tight",
         )
     plt.show()
 
@@ -1526,7 +656,7 @@ def add_struct_radius_to_plot(
     return ax
 
 
-def plot_individual_occupancy_ratio(
+def plot_occupancy_ratio(
     distance_dict: dict[str, dict[str, np.ndarray]],
     kde_dict: dict[str, dict[str, dict[str, Any]]],
     packing_modes: list[str],
@@ -1535,15 +665,16 @@ def plot_individual_occupancy_ratio(
     normalization: str | None = None,
     distance_measure: str = "nucleus",
     method: Literal["pdf", "cumulative"] = "pdf",
+    overlay: bool = True,
     xlim: float | None = None,
     ylim: float | None = None,
     num_cells: int | None = None,
     save_format: str = "png",
     num_points: int = 250,
     bandwidth: Literal["scott", "silverman"] | float | None = None,
-) -> tuple[list[Any], list[Any]]:
+) -> tuple[Figure, Axes]:
     """
-    Plot the individual occupancy ratio based on the given parameters.
+    Plot the occupancy ratio based on the given parameters.
 
     Parameters
     ----------
@@ -1578,25 +709,38 @@ def plot_individual_occupancy_ratio(
         Tuple containing lists of figure and axis objects
     """
     log.info("Plotting individual occupancy values")
-    cmap = plt.get_cmap("tab10")
-    figs = []
-    axs = []
 
-    for ct, mode in enumerate(packing_modes):
-        fig, ax = plt.subplots(
-            dpi=300,
-            figsize=(6, 3),
-        )
+    plt.rcParams.update({"font.size": 8})
+
+    fig, ax = plt.subplots(dpi=300, figsize=(2.5, 2.5))
+
+    # determine which cells to use
+    all_cell_ids = list(kde_dict.keys())
+    if num_cells is None or num_cells > len(all_cell_ids):
+        cell_ids_to_use = all_cell_ids
+        num_cells = len(cell_ids_to_use)
+        log.info(f"Using all {num_cells} cells for individual occupancy plot")
+    else:
+        log.info(f"Using {num_cells} cells for individual occupancy plot")
+        cell_ids_to_use = np.random.choice(all_cell_ids, num_cells, replace=False)
+
+    # get all available distances for combined plot
+    all_available_distances = []
+    for cell_id in cell_ids_to_use:
+        all_available_distances.extend(kde_dict[cell_id]["available_distance"]["distances"])
+    all_available_distances = np.array(all_available_distances)
+
+    for mode in packing_modes:
         log.info(f"Calculating occupancy for {mode}")
-        mode_dict = distance_dict[mode]
-        cell_ids_to_use = sample_cell_ids_from_distance_dict(mode_dict, num_cells)
 
+        mode_dict = distance_dict[mode]
+
+        all_mode_distances = []
         for cell_id in tqdm(cell_ids_to_use):
+
             distances = mode_dict[cell_id]
-            distances = filter_invalid_distances(distances)
-            if len(distances) == 0:
-                log.warning(f"No valid distances found for cell_id {cell_id} and mode {mode}")
-                continue
+            all_mode_distances.extend(distances)
+
             kde_distance = kde_dict[cell_id][mode]["kde"]
             kde_available_space = kde_dict[cell_id]["available_distance"]["kde"]
             if bandwidth is not None:
@@ -1610,43 +754,72 @@ def plot_individual_occupancy_ratio(
 
             yvals, _, _ = get_pdf_ratio(xvals, density_distance, density_available_space, method)
 
-            ax.plot(xvals, yvals, c=cmap(ct), alpha=0.25)
-
-        ax.xaxis.set_major_locator(MaxNLocator(5, integer=True))
-        if xlim is not None:
-            ax.set_xlim((0, xlim))
-        if ylim is not None:
-            ax.set_ylim((0, ylim))
-        ax.axhline(1, color="gray", linestyle="--")
-        distance_label = DISTANCE_MEASURE_LABELS[distance_measure]
-        if normalization is not None:
-            distance_label = f"{distance_label} / {NORMALIZATION_LABELS[normalization]}"
-        else:
-            distance_label = f"{distance_label} (\u03bcm)"
-        ax.set_xlabel(distance_label)
-        ylabel = "Occupancy Ratio"
-        if method == "cumulative":
-            ylabel = "Cumulative Ratio"
-        ax.set_ylabel(ylabel)
-        ax.set_title(f"{MODE_LABELS.get(mode, mode)}")
-
-        fig.tight_layout()
-        if figures_dir is not None:
-            fig.savefig(
-                figures_dir
-                / (
-                    f"{distance_measure}_{mode}_individual_{method}_occupancy_ratio"
-                    f"{suffix}.{save_format}"
-                ),
-                dpi=300,
+            sns.lineplot(
+                x=xvals,
+                y=yvals,
+                ax=ax,
+                color=COLOR_PALETTE.get(mode, "gray"),
+                alpha=0.1,
+                linewidth=0.1,
+                label="_nolegend_",
             )
 
-        plt.show()
+        # overlay occupancy for combined cells
+        if overlay:
+            log.info(f"Calculating combined occupancy for {mode}")
+            all_mode_distances = np.array(all_mode_distances)
+            combined_xvals = np.linspace(0, np.nanmax(all_mode_distances), num_points)
+            combined_kde_distance = gaussian_kde(all_mode_distances)
+            combined_kde_available_space = gaussian_kde(all_available_distances)
+            if bandwidth is not None:
+                combined_kde_distance.set_bandwidth(bandwidth)
+                combined_kde_available_space.set_bandwidth(bandwidth)
+            combined_density_distance = combined_kde_distance(combined_xvals)
+            combined_density_available_space = combined_kde_available_space(combined_xvals)
+            combined_yvals, _, _ = get_pdf_ratio(
+                combined_xvals, combined_density_distance, combined_density_available_space, method
+            )
+            sns.lineplot(
+                x=combined_xvals,
+                y=combined_yvals,
+                ax=ax,
+                color=COLOR_PALETTE.get(mode, "gray"),
+                alpha=1.0,
+                linewidth=1.5,
+                label=MODE_LABELS.get(mode, mode),
+                zorder=-2,
+            )
 
-        figs.append(fig)
-        axs.append(ax)
+    ax.xaxis.set_major_locator(MaxNLocator(4, integer=True))
+    ax.yaxis.set_major_locator(MaxNLocator(3, integer=True))
+    if xlim is not None:
+        ax.set_xlim((0, xlim))
+    if ylim is not None:
+        ax.set_ylim((0, ylim))
+    ax.axhline(1, color="gray", linestyle="--", zorder=-1)
+    distance_label = DISTANCE_MEASURE_LABELS[distance_measure]
+    if normalization is not None:
+        distance_label = f"{distance_label} / {NORMALIZATION_LABELS[normalization]}"
+    else:
+        distance_label = f"{distance_label} (\u03bcm)"
+    ax.set_xlabel(distance_label)
 
-    return figs, axs
+    ylabel = "Occupancy Ratio"
+    if method == "cumulative":
+        ylabel = "Cumulative Ratio"
+    ax.set_ylabel(ylabel)
+    sns.despine(fig=fig)
+    fig.tight_layout()
+    if figures_dir is not None:
+        fig.savefig(
+            figures_dir
+            / (f"{distance_measure}_{method}_occupancy_ratio" f"{suffix}.{save_format}"),
+            dpi=300,
+        )
+
+    plt.show()
+
+    return fig, ax
 
 
 def plot_mean_and_std_occupancy_ratio_kde(
@@ -1795,16 +968,14 @@ def plot_mean_and_std_occupancy_ratio_kde(
     ax.set_ylabel(ylabel)
 
     fig.tight_layout()
-    fname = f"{distance_measure}_individual_{method}_occupancy_ratio_withCI{suffix}"
     if figures_dir is not None:
+        fname = f"{distance_measure}_individual_{method}_occupancy_ratio_withCI{suffix}"
         fig.savefig(
             figures_dir / f"{fname}.{save_format}",
             dpi=300,
         )
 
     plt.show()
-    # figs.append(fig)
-    # axs.append(ax)
 
     return fig, ax
 
@@ -1917,8 +1088,6 @@ def plot_binned_occupancy_ratio(
         available_space_counts = np.vstack(list(available_space_counts.values()))
         available_space_counts = available_space_counts + 1e-16
 
-        # return occupied_space_counts, available_space_counts, bin_centers
-
         normalized_occupied_space_counts = (
             occupied_space_counts / np.sum(occupied_space_counts, axis=1)[:, np.newaxis]
         )
@@ -1967,7 +1136,7 @@ def plot_binned_occupancy_ratio(
     ax.set_xlabel(xlabel)
     ax.set_ylabel("Occupancy Ratio")
     ax.legend()
-    plt.tight_layout()
+    fig.tight_layout()
     plt.show()
 
     if figures_dir is not None:
@@ -1977,343 +1146,3 @@ def plot_binned_occupancy_ratio(
         )
 
     return fig, ax
-
-
-def _load_occupancy_data_from_file(
-    figures_dir, distance_measure, mode, normalization, method, suffix
-) -> tuple[np.ndarray | None, np.ndarray | None, bool]:
-    """Load occupancy data from file if it exists."""
-    file_path = get_occupancy_file_path(
-        figures_dir, distance_measure, mode, normalization, method, suffix
-    )
-    if file_path.exists():
-        try:
-            data_dict = load_occupancy_ratio_from_file(file_path)
-            xvals = data_dict["xvals"]
-            yvals = data_dict["yvals"]
-            return xvals, yvals, True
-        except Exception as e:
-            # Log warning and fall back to computation
-            print(f"Warning: Failed to load occupancy data from {file_path}: {e}")
-    return None, None, False
-
-
-def _compute_occupancy_data_from_kde(
-    combined_kde_dict: dict[str, dict[str, Any]],
-    mode: str,
-    num_points: int = 100,
-    method: Literal["pdf", "cumulative"] = "pdf",
-    bandwidth: Literal["scott", "silverman"] | float | None = None,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Compute occupancy data from KDE distributions."""
-    kde_mode_dict = combined_kde_dict[mode]
-
-    kde_distance = kde_mode_dict["kde_distance"]
-    kde_available_space = kde_mode_dict["kde_available_space"]
-    if bandwidth is not None:
-        kde_distance.set_bandwidth(bandwidth)
-        kde_available_space.set_bandwidth(bandwidth)
-
-    xvals = np.linspace(kde_mode_dict["xmin"], kde_mode_dict["xmax"], num_points)
-
-    distance_density = kde_distance(xvals)
-    available_space_density = kde_available_space(xvals)
-
-    yvals, _, _ = get_pdf_ratio(xvals, distance_density, available_space_density, method)
-
-    return xvals, yvals
-
-
-def plot_combined_occupancy_ratio(
-    combined_kde_dict: dict[str, dict[str, Any]],
-    packing_modes: list[str],
-    figures_dir: Path | None = None,
-    suffix: str = "",
-    normalization: str | None = None,
-    aspect: float | None = None,
-    save_format: str = "png",
-    save_intermediates: bool = False,
-    distance_measure: str = "nucleus",
-    num_points: int = 100,
-    bandwidth: Literal["scott", "silverman"] | float | None = None,
-    method: Literal["pdf", "cumulative"] = "pdf",
-    xlim: float | None = None,
-    ylim: float | None = None,
-    recalculate: bool = False,
-) -> tuple[Any, Any]:
-    """
-    Plot combined occupancy ratio for all packing modes.
-
-    Parameters
-    ----------
-    combined_kde_dict
-        Dictionary containing combined KDE information
-    packing_modes
-        List of packing modes to plot
-    figures_dir
-        Directory to save the figures
-    suffix
-        Suffix to append to the figure filenames
-    normalization
-        Normalization method applied
-    aspect
-        Aspect ratio for the plot
-    save_format
-        Format to save the figures in
-    save_intermediates
-        Whether to save intermediate plots
-    distance_measure
-        Distance measure being plotted
-    num_points
-        Number of points for KDE evaluation
-    method
-        Method for ratio calculation
-    xlim
-        X-axis limit for plots
-    ylim
-        Y-axis limit for plots
-
-    Returns
-    -------
-    :
-        Tuple containing figure and axis objects
-    """
-    log.info("Plotting combined occupancy ratio")
-
-    fig, ax = plt.subplots(dpi=300, figsize=(6, 6))
-    ax.axhline(1, color="gray", linestyle="--")
-
-    for ct, mode in enumerate(packing_modes):
-        log.info(f"Calculating combined occupancy ratio for: {mode}")
-
-        if not recalculate and figures_dir is not None:
-            xvals, yvals, loaded_successfully = _load_occupancy_data_from_file(
-                figures_dir=figures_dir,
-                distance_measure=distance_measure,
-                mode=mode,
-                normalization=normalization,
-                method=method,
-                suffix=suffix,
-            )
-            if not loaded_successfully:
-                xvals, yvals = _compute_occupancy_data_from_kde(
-                    combined_kde_dict=combined_kde_dict,
-                    mode=mode,
-                    num_points=num_points,
-                    method=method,
-                    bandwidth=bandwidth,
-                )
-        else:
-            xvals, yvals = _compute_occupancy_data_from_kde(
-                combined_kde_dict=combined_kde_dict,
-                mode=mode,
-                num_points=num_points,
-                method=method,
-                bandwidth=bandwidth,
-            )
-
-        if xvals is not None and yvals is not None:
-            ax.plot(xvals, yvals, label=MODE_LABELS.get(mode, mode))
-
-        if xlim is not None:
-            ax.set_xlim((0, xlim))
-        else:
-            cur_xlim = ax.get_xlim()
-            ax.set_xlim((0, cur_xlim[1]))
-
-        if ylim is not None:
-            ax.set_ylim((0, ylim))
-
-        xlabel = DISTANCE_MEASURE_LABELS[distance_measure]
-        if normalization:
-            xlabel = f"{xlabel} / {NORMALIZATION_LABELS[normalization]}"
-        else:
-            xlabel = f"{xlabel} (\u03bcm)"
-        ax.set_xlabel(xlabel)
-        ylabel = "Occupancy Ratio"
-        if method == "cumulative":
-            ylabel = "Cumulative Ratio"
-        ax.set_ylabel(ylabel)
-        ax.xaxis.set_major_locator(MaxNLocator(integer=True))
-        ax.yaxis.set_major_locator(MaxNLocator(integer=True))
-        ax.legend()
-        plt.tight_layout()
-
-        if figures_dir is not None:
-            if save_intermediates:
-                used_suffix = f"{suffix}_{ct}"
-                fig.savefig(
-                    figures_dir
-                    / (
-                        f"{distance_measure}_combined_{method}_occupancy_ratio"
-                        f"{used_suffix}.{save_format}"
-                    ),
-                    dpi=300,
-                )
-            save_occupancy_ratio_to_file(
-                save_dir=figures_dir,
-                xvals=xvals,
-                yvals=yvals,
-                distance_measure=distance_measure,
-                mode=mode,
-                normalization=normalization,
-                method=method,
-                suffix=suffix,
-            )
-    if aspect is not None:
-        ax.set_aspect(aspect)
-        suffix = f"_aspect{suffix}"
-        ax.legend(loc="lower center", bbox_to_anchor=(0.5, 1.15), ncol=2)
-    plt.tight_layout()
-    plt.show()
-    if figures_dir is not None:
-        fig.savefig(
-            figures_dir
-            / f"{distance_measure}_combined_{method}_occupancy_ratio{suffix}.{save_format}",
-            dpi=300,
-        )
-    return fig, ax
-
-
-def plot_occupancy_emd_kdeplot(
-    emd_occupancy_dict: dict[str, dict[str, float]],
-    packing_modes: list[str],
-    figures_dir: Path | None = None,
-    suffix: str = "",
-    distance_measure: str = "nucleus",
-    bandwidth: Literal["scott", "silverman"] | float = "scott",
-    save_format: Literal["svg", "png", "pdf"] = "png",
-) -> None:
-    """
-    Plot EMD occupancy distributions using kernel density estimation (KDE).
-
-    Parameters
-    ----------
-    emd_occupancy_dict
-        Dictionary containing EMD occupancy values for each packing mode and seed
-    packing_modes
-        List of packing modes to plot
-    figures_dir
-        Directory to save the figures. If None, figures will not be saved
-    suffix
-        Suffix to append to the figure filenames
-    distance_measure
-        Distance measure used for the EMD calculation
-    bandwidth
-        Bandwidth method for KDE. Can be "scott", "silverman", or a float value
-    save_format
-        Format to save the figures in
-    """
-    fig, ax = plt.subplots(dpi=300, figsize=(6, 6))
-    cmap = plt.get_cmap("tab10")
-    for ct, mode in enumerate(packing_modes):
-        emd_values = list(emd_occupancy_dict[mode].values())
-        mean_emd = np.mean(emd_values).item()
-        sns.kdeplot(
-            emd_values,
-            ax=ax,
-            label=MODE_LABELS.get(mode, mode),
-            c=cmap(ct),
-            bw_method=bandwidth,
-            cut=0,
-        )
-        ax.axvline(mean_emd, color=cmap(ct), linestyle="--", label="_nolegend_")
-    ax.set_xlabel("EMD")
-    ax.legend()
-    fig.tight_layout()
-    if figures_dir is not None:
-        fig.savefig(
-            figures_dir / f"{distance_measure}_occupancy_emd{suffix}.{save_format}",
-            dpi=300,
-        )
-    plt.show()
-
-
-def plot_occupancy_emd_boxplot(
-    emd_occupancy_dict: dict[str, dict[str, float]],
-    figures_dir: Path | None = None,
-    suffix: str = "",
-    distance_measure: str = "nucleus",
-    save_format: str = "png",
-) -> None:
-    """
-    Create and display a boxplot of Earth Mover's Distance (EMD) values for occupancy analysis.
-
-    This function generates a boxplot visualization showing the distribution of EMD values
-    across different modes/conditions for occupancy analysis. The plot can be saved to disk
-    if a figures directory is provided.
-
-    Parameters
-    ----------
-    emd_occupancy_dict
-        Dictionary containing EMD values for each mode/condition, where keys are mode names
-        and values are lists of EMD measurements
-    figures_dir
-        Directory path where the figure should be saved. If None, the figure is not saved
-    suffix
-        Additional suffix to append to the saved filename
-    distance_measure
-        Type of distance measurement used, incorporated into the filename when saving
-    save_format
-        File format for saving the figure
-
-    Returns
-    -------
-    """
-    fig, ax = plt.subplots(dpi=300, figsize=(6, 6))
-    emd_df = pd.DataFrame(emd_occupancy_dict)
-    sns.boxplot(data=emd_df, ax=ax)
-    xticks = ax.get_xticks()
-    ax.set_xticks(xticks)
-    xticklabels = [MODE_LABELS[mode.get_text()] for mode in ax.get_xticklabels()]
-    ax.set_xticklabels(xticklabels, rotation=45)
-    ax.set_ylabel("EMD")
-    fig.tight_layout()
-    if figures_dir is not None:
-        fig.savefig(
-            figures_dir / f"{distance_measure}_occupancy_emd_boxplot{suffix}.{save_format}",
-            dpi=300,
-        )
-    plt.show()
-
-
-def plot_occupancy_ks_test(
-    ks_occupancy_dict: dict[str, dict[str, float]],
-    figures_dir: Path | None = None,
-    suffix: str = "",
-    distance_measure: str = "nucleus",
-    significance_level: float = 0.05,
-    save_format: str = "png",
-) -> None:
-    """
-    Plot results of KS test for occupancy analysis.
-
-    Parameters
-    ----------
-    ks_occupancy_dict
-        Dictionary containing KS test results
-    figures_dir
-        Directory to save the figures
-    suffix
-        Suffix to append to the figure filenames
-    distance_measure
-        Distance measure analyzed
-    significance_level
-        Significance level for the test
-    save_format
-        Format to save the figures in
-    """
-    fig, ax = plt.subplots(dpi=300, figsize=(6, 6))
-    ks_df = pd.DataFrame(ks_occupancy_dict)
-    ks_df_test = ks_df < significance_level
-    ax = sns.barplot(data=ks_df_test, ax=ax)
-    xticklabels = [MODE_LABELS[mode.get_text()] for mode in ax.get_xticklabels()]
-    ax.set_xticklabels(xticklabels, rotation=45)
-    ax.set_ylabel(f"Fraction with non space-filling occupancy\n(p < {significance_level})")
-    plt.tight_layout()
-    if figures_dir is not None:
-        fig.savefig(
-            figures_dir / f"{distance_measure}_occupancy_ks_test{suffix}.{save_format}",
-            dpi=300,
-        )
-    plt.show()

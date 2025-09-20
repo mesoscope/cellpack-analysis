@@ -1,7 +1,7 @@
 import logging
 import pickle
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -404,7 +404,7 @@ def get_distance_distribution_emd_df(
 
     record_list = []
     for distance_measure in distance_measures:
-        log.info("Calculating pairwise EMD for %s", distance_measure)
+        log.info("Calculating EMD for %s", distance_measure)
 
         # Collect all (mode, seed) combinations
         all_pairs = []
@@ -548,13 +548,11 @@ def get_distance_distribution_kde(
     all_distance_dict: dict[str, dict[str, dict[str, np.ndarray]]],
     mesh_information_dict: dict[str, dict[str, Any]],
     channel_map: dict[str, str],
-    packing_modes: list[str],
     save_dir: Path | None = None,
     recalculate: bool = False,
     suffix: str = "",
     normalization: str | None = None,
     distance_measure: str = "nucleus",
-    bandwidth: Literal["scott", "silverman"] | float = "scott",
 ) -> dict[str, dict[str, dict[str, Any]]]:
     """
     Obtain KDE for distance distribution measures
@@ -625,10 +623,10 @@ def get_distance_distribution_kde(
     # Initialize the KDE dictionary
     distance_dict = all_distance_dict[distance_measure]
     kde_dict = {}
-    for mode in packing_modes:
+    for mode, structure_id in channel_map.items():
         log.info(f"Calculating distance distribution kde for {mode}")
 
-        mode_mesh_dict = mesh_information_dict.get(channel_map.get(mode, mode), {})
+        mode_mesh_dict = mesh_information_dict.get(structure_id, {})
         mode_distances_dict = distance_dict[mode]
 
         for seed, distances in tqdm(mode_distances_dict.items(), total=len(mode_distances_dict)):
@@ -642,7 +640,7 @@ def get_distance_distribution_kde(
                 continue
 
             # Calculate the KDE for the distances
-            kde_distance = gaussian_kde(distances, bw_method=bandwidth)
+            kde_distance = gaussian_kde(distances)
             kde_dict[seed][mode] = {
                 "distances": distances,
                 "kde": kde_distance,
@@ -666,7 +664,7 @@ def get_distance_distribution_kde(
                 )
                 available_distances /= normalization_factor
 
-                kde_available_space = gaussian_kde(available_distances, bw_method=bandwidth)
+                kde_available_space = gaussian_kde(available_distances)
                 kde_dict[seed]["available_distance"] = {
                     "distances": available_distances,
                     "kde": kde_available_space,
@@ -730,7 +728,7 @@ def log_central_tendencies_for_emd(
     distance_measures: list[str],
     packing_modes: list[str],
     baseline_mode: str = "mean_count_and_size",
-    comparison_type: str = "within_rule",
+    comparison_type: str = "intra_mode",
     log_file_path: Path | None = None,
 ):
     """
@@ -775,7 +773,7 @@ def log_central_tendencies_for_emd(
                     ),
                     "emd",
                 ]
-            elif comparison_type == "within_rule":
+            elif comparison_type == "intra_mode":
                 label = packing_mode
                 sub_df = df_emd.loc[
                     (df_emd["distance_measure"] == distance_measure)

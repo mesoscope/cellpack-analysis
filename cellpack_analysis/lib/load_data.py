@@ -111,8 +111,8 @@ def get_position_data_from_outputs(
         The ID of the structure.
     structure_name : str
         The name of the structure.
-    packing_modes : list
-        List of packing modes.
+    packing_modes : list of str
+        The packing modes to retrieve data for.
     base_datadir : str
         The base directory for data.
     results_dir : str
