@@ -7,133 +7,201 @@ import numpy as np
 from scipy.stats import gaussian_kde, ks_2samp, wasserstein_distance
 from tqdm import tqdm
 
-from cellpack_analysis.lib.distance import filter_invalid_distances, get_normalization_factor
-from cellpack_analysis.lib.label_tables import GRID_DISTANCE_LABELS
+from cellpack_analysis.lib.stats_functions import density_ratio, normalize_density
 
 log = logging.getLogger(__name__)
 
 
-def get_combined_occupancy_kde(
-    all_distance_dict: dict[str, dict[str, dict[str, np.ndarray]]],
-    mesh_information_dict: dict[str, dict[str, Any]],
+def get_occupancy_dict(
+    all_distance_dict: dict[str, dict[str, Any]],
     channel_map: dict[str, str],
-    packing_modes: list[str],
+    num_cells: int | None = None,
     results_dir: Path | None = None,
     recalculate: bool = False,
-    normalization: str | None = None,
     suffix: str = "",
     distance_measure: str = "nucleus",
-    num_cells: int | None = None,
-    num_available_points: int | None = None,
-) -> dict[str, dict[str, Any]]:
+    bandwidth: float = 0.1,
+    num_points: int = 250,
+):
     """
-    Calculate the combined distance distribution using kernel density estimation (KDE).
+    Calculate occupancy dictionary based on distance distributions.
 
     Parameters
     ----------
     all_distance_dict
-        A dictionary containing distance information
-    mesh_information_dict
-        A dictionary containing mesh information
+        Dictionary containing all distance distributions with structure:
+        {
+            seed:: {
+                "occupied": {
+                    mode:: np.ndarray (distances of occupied points)
+                },
+            "available": {
+                mode:: np.ndarray (distances of available points)
+            }
+        }
     channel_map
-        Dictionary mapping packing modes to channels
-    packing_modes
-        A list of packing modes
+        Mapping between modes and channel names
+    num_cells
+        Number of cells to consider
     results_dir
-        The directory to save the results
+        Directory to save or load results
     recalculate
-        Whether to recalculate the results
-    normalization
-        Normalization method to apply
+        Whether to recalculate the occupancy
     suffix
-        A suffix to add to the saved file name
+        Suffix to add to the saved file name
     distance_measure
-        The distance measure to use
-    sample_size
-        The fraction of samples to use
+        Distance measure to use
     bandwidth
-        Bandwidth method for KDE
+        Bandwidth for KDE
 
     Returns
     -------
     :
-        A dictionary containing the combined KDE values
+        Occupancy dictionary with structure:
+        {
+            "individual": {
+                seed_1: {
+                    "occupied": {
+                        mode_1: {
+                            "density": np.ndarray,
+                            "occupancy": np.ndarray,
+                        },
+                        ...
+                    },
+                    "available": {
+                        "xvals": np.ndarray,
+                        "density": np.ndarray,
+                    },
+                },
+                ...
+            },
+            "combined": {
+                "occupied": {
+                    mode_1: {
+                        "density": np.ndarray,
+                        "occupancy": np.ndarray,
+                    },
+                    ...
+                },
+                "available": {
+                    "xvals": np.ndarray,
+                    "density": np.ndarray,
+                },
+            },
+        }
+
     """
+    # Set up file path for saving/loading
     file_path = None
     if results_dir is not None:
-        filename = f"{distance_measure}_combined_occupancy_kde{suffix}.dat"
-        if normalization is not None:
-            filename = f"{distance_measure}_combined_occupancy_kde{suffix}.dat"
-        file_path = results_dir / filename
+        file_path = results_dir / f"{distance_measure}_occupancy{suffix}.dat"
 
+    # Check if we can load existing results
     if not recalculate and file_path is not None and file_path.exists():
-        # load combined space corrected kde values
         with open(file_path, "rb") as f:
-            combined_kde_dict = pickle.load(f)
-        return combined_kde_dict
+            occupancy_dict = pickle.load(f)
+        return occupancy_dict
 
-    distance_dict = all_distance_dict[distance_measure]
+    # Get cell id mapping
+    cell_id_map = {}
+    for cell_id, cell_id_dict in all_distance_dict.items():
+        for mode in cell_id_dict["occupied"].keys():
+            structure_id = channel_map.get(mode, mode)
+            if structure_id not in cell_id_map:
+                cell_id_map[structure_id] = []
+            if cell_id not in cell_id_map[structure_id]:
+                cell_id_map[structure_id].append(cell_id)
 
-    combined_kde_dict = {}
-    for mode in packing_modes:
-        log.info(f"Calculating combined occupancy kde for: {mode}")
-        mode_dict = distance_dict[mode]
+    # Check if num_cells is specified and limit the number of cells
+    if num_cells is not None:
+        for structure_id, cell_ids in cell_id_map.items():
+            cell_id_map[structure_id] = cell_ids[:num_cells]
 
-        mode_mesh_dict = mesh_information_dict.get(channel_map.get(mode, mode), {})
-
-        cell_ids_to_use = sample_cell_ids_from_distance_dict(mode_dict, num_cells)
-
-        if len(cell_ids_to_use) == 0:
-            log.warning(f"No valid seeds found for mode {mode}")
-            continue
-
-        mode_dict = {
-            cell_id: mode_dict[cell_id] for cell_id in cell_ids_to_use if cell_id in mode_mesh_dict
-        }
-        log.info(f"Using {len(mode_dict)} seeds for mode {mode}")
-
-        combined_mode_distances = np.concatenate(list(mode_dict.values()))
-        combined_mode_distances = filter_invalid_distances(combined_mode_distances)
-        if num_available_points is not None:
-            num_available_points = min(num_available_points, len(combined_mode_distances))
-            combined_mode_distances = np.random.choice(
-                combined_mode_distances, size=num_available_points, replace=False
-            )
-        kde_distance = gaussian_kde(combined_mode_distances)
+    occupancy_dict = {"individual": {}, "combined": {}}
+    for mode, structure_id in channel_map.items():
+        log.info(f"Calculating occupancy for {mode}")
 
         combined_available_distances = []
-        for seed in mode_mesh_dict:
-            available_distances = mode_mesh_dict[seed][
-                GRID_DISTANCE_LABELS[distance_measure]
-            ].flatten()
-            available_distances = filter_invalid_distances(available_distances)
-            normalization_factor = get_normalization_factor(
-                normalization=normalization,
-                mesh_information_dict=mode_mesh_dict,
-                cell_id=seed,
-                distance_measure=distance_measure,
-                distances=available_distances,
+        combined_occupied_distances = []
+        for cell_id in tqdm(cell_id_map[structure_id]):
+
+            # Add available distances if not already added
+            if cell_id not in occupancy_dict["individual"]:
+                cell_available_distances = all_distance_dict[cell_id]["available"]
+                xvals = np.linspace(
+                    np.min(cell_available_distances), np.max(cell_available_distances), num_points
+                )
+                available_kde = gaussian_kde(cell_available_distances, bw_method=bandwidth)
+                available_density = available_kde(xvals)
+                available_density = normalize_density(xvals, available_density)
+                occupancy_dict["individual"][cell_id] = {
+                    "occupied": {},
+                    "available": {
+                        "xvals": xvals,
+                        "density": available_density,
+                    },
+                }
+                combined_available_distances.extend(cell_available_distances)
+
+            # Get occupied distances for the current mode
+            cell_occupied_distances = all_distance_dict[cell_id]["occupied"].get(mode)
+            if cell_occupied_distances is None:
+                log.warning(f"No occupied distances found for cell {cell_id} and mode {mode}")
+                continue
+            combined_occupied_distances.extend(cell_occupied_distances)
+
+            # Calculate occupancy
+            xvals = occupancy_dict["individual"][cell_id]["available"]["xvals"]
+            occupied_kde = gaussian_kde(cell_occupied_distances, bw_method=bandwidth)
+            occupied_density = occupied_kde(xvals)
+            occupied_density = normalize_density(xvals, occupied_density)
+            occupancy = density_ratio(
+                xvals,
+                occupied_density,
+                occupancy_dict["individual"][cell_id]["available"]["density"],
+            )[0]
+
+            # Update individual occupancy dict
+            occupancy_dict["individual"][cell_id]["occupied"][mode] = {
+                "density": occupied_density,
+                "occupancy": occupancy,
+            }
+
+        # Add combined available distances if not already added
+        if "available" not in occupancy_dict["combined"]:
+            xvals = np.linspace(
+                np.min(combined_available_distances),
+                np.max(combined_available_distances),
+                num_points,
             )
-            available_distances /= normalization_factor
-            combined_available_distances.append(available_distances)
+            available_kde = gaussian_kde(combined_available_distances, bw_method=bandwidth)
+            available_density = available_kde(xvals)
+            available_density = normalize_density(xvals, available_density)
+            occupancy_dict["combined"]["available"] = {
+                "xvals": xvals,
+                "density": available_density,
+            }
 
-        combined_available_distances = np.concatenate(combined_available_distances)
-
-        kde_available_space = gaussian_kde(combined_available_distances)
-
-        combined_kde_dict[mode] = {
-            "xmin": np.nanmin(combined_mode_distances),
-            "xmax": np.nanmax(combined_mode_distances),
-            "n_points": len(combined_mode_distances),
-            "n_cells": len(mode_dict),
-            "kde_distance": kde_distance,
-            "kde_available_space": kde_available_space,
+        # Calculate combined occupancy for mode
+        xvals = occupancy_dict["combined"]["available"]["xvals"]
+        occupied_kde = gaussian_kde(combined_occupied_distances, bw_method=bandwidth)
+        occupied_density = occupied_kde(xvals)
+        occupied_density = normalize_density(xvals, occupied_density)
+        available_density = occupancy_dict["combined"]["available"]["density"]
+        occupancy = density_ratio(xvals, occupied_density, available_density)[0]
+        if "occupied" not in occupancy_dict["combined"]:
+            occupancy_dict["combined"]["occupied"] = {}
+        occupancy_dict["combined"]["occupied"][mode] = {
+            "density": occupied_density,
+            "occupancy": occupancy,
         }
+
+    # Save occupancy dictionary
     if file_path is not None:
         with open(file_path, "wb") as f:
-            pickle.dump(combined_kde_dict, f)
+            pickle.dump(occupancy_dict, f, protocol=pickle.HIGHEST_PROTOCOL)
 
-    return combined_kde_dict
+    return occupancy_dict
 
 
 def get_occupancy_emd(

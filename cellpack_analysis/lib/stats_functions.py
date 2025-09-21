@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from typing import Any, Literal
+from typing import Literal
 
 import numpy as np
 from scipy import integrate
@@ -14,7 +14,7 @@ def cohens_d(x: np.ndarray, y: np.ndarray) -> float:
 
 
 def normalize_distances(
-    all_distance_dict: dict,
+    occupied_distance_dict: dict,
     mesh_information_dict: dict,
     normalization: str | None = None,
     channel_map: dict | None = None,
@@ -36,7 +36,7 @@ def normalize_distances(
     """
     if channel_map is None:
         channel_map = {}
-    for measure, mode_distance_dict in all_distance_dict.items():
+    for measure, mode_distance_dict in occupied_distance_dict.items():
         if "scaled" in measure:
             continue
         for mode, distance_dict in mode_distance_dict.items():
@@ -58,7 +58,7 @@ def normalize_distances(
 
                 distance_dict[cell_id] = distance / normalization_factor
 
-    return all_distance_dict
+    return occupied_distance_dict
 
 
 def ripley_k(positions, volume, r_values, norm_factor=1, edge_correction=True):
@@ -152,7 +152,11 @@ def density_ratio(
     density1 = normalize_density(xvals, density1)
     density2 = normalize_density(xvals, density2)
 
-    return density1 / density2, density1, density2
+    # calculate ratio and normalize
+    ratio = density1 / density2
+    ratio = normalize_density(xvals, ratio)
+
+    return ratio, density1, density2
 
 
 def cumulative_ratio(

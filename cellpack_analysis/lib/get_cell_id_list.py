@@ -1,5 +1,6 @@
 import logging
 
+import numpy as np
 import pandas as pd
 
 from cellpack_analysis.lib.file_io import get_datadir_path
@@ -7,16 +8,14 @@ from cellpack_analysis.lib.file_io import get_datadir_path
 log = logging.getLogger(__name__)
 
 
-def get_cell_id_df(load_local: bool = False, save_local: bool = False) -> pd.DataFrame:
+def get_cell_id_df(load_local: bool = True) -> pd.DataFrame:
     """
     Retrieves the cell ID DataFrame from the specified parquet file.
 
     Parameters
     ----------
-    load_local : bool, default False
-        If True, load from local file. If False, load from S3.
-    save_local : bool, default False
-        If True, save the DataFrame to local storage after loading.
+    load_local
+        If True, attempt to load from local file first. If False, load from S3.
 
     Returns
     -------
@@ -26,7 +25,7 @@ def get_cell_id_df(load_local: bool = False, save_local: bool = False) -> pd.Dat
     Raises
     ------
     FileNotFoundError
-        If load_local is True but the local file doesn't exist.
+        If load_local is True but the local file doesn't exist and S3 loading fails.
     ValueError
         If the loaded DataFrame is empty or malformed.
     Exception
@@ -35,11 +34,18 @@ def get_cell_id_df(load_local: bool = False, save_local: bool = False) -> pd.Dat
     s3_path = "s3://cellpack-analysis-data/all_cell_ids.parquet"
     local_path = get_datadir_path() / "all_cell_ids.parquet"
 
-    if load_local and not local_path.exists():
-        raise FileNotFoundError(f"Local file {local_path} not found.")
+    # Determine data source
+    loaded_from_s3 = False
 
-    df_path = local_path if load_local else s3_path
-    log.info(f"Loading cell ID data from: {df_path}")
+    if load_local and local_path.exists():
+        df_path = local_path
+        log.info(f"Loading cell ID data from local file: {df_path}")
+    else:
+        if load_local and not local_path.exists():
+            log.warning(f"Local file {local_path} not found, loading from S3.")
+        df_path = s3_path
+        loaded_from_s3 = True
+        log.info(f"Loading cell ID data from S3: {df_path}")
 
     try:
         df_cell_id = pd.read_parquet(df_path)
@@ -54,7 +60,8 @@ def get_cell_id_df(load_local: bool = False, save_local: bool = False) -> pd.Dat
 
         log.info(f"Successfully loaded {len(df_cell_id)} cell records")
 
-        if save_local and not load_local:
+        # Save to local if we loaded from S3
+        if loaded_from_s3:
             try:
                 local_path.parent.mkdir(parents=True, exist_ok=True)
                 df_cell_id.to_parquet(local_path, index=False)
@@ -73,8 +80,8 @@ def get_cell_id_list_for_structure(
     structure_id: str,
     df_cell_id: pd.DataFrame | None = None,
     dsphere: bool = False,
-    load_local: bool = False,
-    save_local: bool = False,
+    load_local: bool = True,
+    save_local: bool = True,
 ) -> list:
     """
     Get a list of cell IDs for a given structure ID.
@@ -99,7 +106,7 @@ def get_cell_id_list_for_structure(
         An array of cell IDs.
     """
     if df_cell_id is None:
-        df_cell_id = get_cell_id_df(load_local=load_local, save_local=save_local)
+        df_cell_id = get_cell_id_df(load_local=load_local)
 
     condition = df_cell_id.structure_name == structure_id
     if dsphere:
@@ -107,3 +114,42 @@ def get_cell_id_list_for_structure(
 
     cell_id_list = df_cell_id.loc[condition, "CellId"].astype(str).tolist()
     return cell_id_list
+
+
+def sample_cell_ids_for_structure(
+    structure_id: str,
+    num_cells: int | None = None,
+    dsphere: bool = True,
+) -> list:
+    """
+    Sample a specified number of cell IDs for a given structure ID.
+
+    Parameters
+    ----------
+    structure_id
+        The gene id of the structure.
+    num_cells
+        The number of cell IDs to sample.
+    dsphere
+        If True, filter for 8D sphere data only.
+    load_local
+        If True, load the cell ID DataFrame from a local file.
+
+    Returns
+    -------
+    :
+        A list of sampled cell IDs.
+    """
+    all_cell_ids = get_cell_id_list_for_structure(
+        structure_id=structure_id,
+        dsphere=dsphere,
+    )
+
+    if len(all_cell_ids) == 0:
+        log.warning(f"No cell IDs found for structure_id={structure_id} with dsphere={dsphere}")
+        return []
+
+    if num_cells is None or num_cells >= len(all_cell_ids):
+        return all_cell_ids
+
+    return np.random.choice(all_cell_ids, size=num_cells, replace=False).tolist()
