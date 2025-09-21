@@ -12,7 +12,7 @@ from cellpack_analysis.lib.stats_functions import normalize_pdf, pdf_ratio
 log = logging.getLogger(__name__)
 
 
-def get_occupancy_dict(
+def get_distance_kde_dict(
     all_distance_dict: dict[str, dict[str, Any]],
     channel_map: dict[str, str],
     num_cells: int | None = None,
@@ -20,8 +20,6 @@ def get_occupancy_dict(
     recalculate: bool = False,
     suffix: str = "",
     distance_measure: str = "nucleus",
-    bandwidth: float = 0.1,
-    num_points: int = 250,
 ):
     """
     Calculate occupancy dictionary based on distance distributions.
@@ -57,39 +55,26 @@ def get_occupancy_dict(
     Returns
     -------
     :
-        Occupancy dictionary with structure:
+        KDE dictionary with structure:
         {
             "individual": {
                 seed_1: {
                     "occupied": {
-                        mode_1: {
-                            "xvals": np.ndarray,
-                            "pdf": np.ndarray,
-                            "occupancy": np.ndarray,
-                        },
+                        mode_1: gaussian_kde object,
                         ...
                     },
-                    "available": {
-                        "xvals": np.ndarray,
-                        "pdf": np.ndarray,
-                    },
+                    "available": gaussian_kde object,
                 },
                 ...
             },
             "combined": {
                 "occupied": {
-                    mode_1: {
-                        "pdf": np.ndarray,
-                        "occupancy": np.ndarray,
-                    },
+                    mode_1: gaussian_kde object,
                     ...
                 },
                 "available": {
                 # available distances are same for all modes of a structure
-                    structure_id_1: {
-                        "xvals": np.ndarray,
-                        "pdf": np.ndarray,
-                    },
+                    structure_id_1: gaussian_kde object,
                     ...
                 },
             },
@@ -104,8 +89,8 @@ def get_occupancy_dict(
     # Check if we can load existing results
     if not recalculate and file_path is not None and file_path.exists():
         with open(file_path, "rb") as f:
-            occupancy_dict = pickle.load(f)
-        return occupancy_dict
+            kde_dict = pickle.load(f)
+        return kde_dict
 
     # Get cell id mapping
     cell_id_map = {}
@@ -122,7 +107,7 @@ def get_occupancy_dict(
         for structure_id, cell_ids in cell_id_map.items():
             cell_id_map[structure_id] = cell_ids[:num_cells]
 
-    occupancy_dict = {"individual": {}, "combined": {"occupied": {}, "available": {}}}
+    kde_dict = {"individual": {}, "combined": {"occupied": {}, "available": {}}}
     combined_available_distances = {}  # per structure_id
     combined_occupied_distances = {}  # per mode
     # Loop through packing modes
@@ -151,84 +136,40 @@ def get_occupancy_dict(
             # 1. Add to the individual dictionary if not already added for the cell
             # 2. Extend the combined available distances for the structure
             # The check makes sure each cell only gets counted once across all modes
-            if cell_id not in occupancy_dict["individual"]:
+            if cell_id not in kde_dict["individual"]:
                 cell_available_distances = all_distance_dict[cell_id]["available"]
-                xvals = np.linspace(
-                    np.min(cell_available_distances), np.max(cell_available_distances), num_points
+                kde_dict["individual"][cell_id]["available"] = gaussian_kde(
+                    cell_available_distances
                 )
-                available_kde = gaussian_kde(cell_available_distances, bw_method=bandwidth)
-                available_pdf = available_kde(xvals)
-                available_pdf = normalize_pdf(xvals, available_pdf)
-                occupancy_dict["individual"][cell_id] = {
-                    "occupied": {},
-                    "available": {
-                        "xvals": xvals,
-                        "pdf": available_pdf,
-                    },
-                }
                 combined_available_distances[structure_id].extend(cell_available_distances)
 
             # Get occupied distances for the current mode
-            # 1. Extend the combined occupied distances for the mode
-            # 2. Calculate individual occupied pdf and occupancy
-            #    and add to individual occupancy dict
             cell_occupied_distances = all_distance_dict[cell_id]["occupied"][mode]
             combined_occupied_distances[mode].extend(cell_occupied_distances)
 
-            # Calculate indicidual occupancy for the current cell and mode
-            xvals = occupancy_dict["individual"][cell_id]["available"]["xvals"]
-            occupied_kde = gaussian_kde(cell_occupied_distances, bw_method=bandwidth)
-            occupied_pdf = occupied_kde(xvals)
-            occupied_pdf = normalize_pdf(xvals, occupied_pdf)
-            occupancy = pdf_ratio(
-                xvals,
-                occupied_pdf,
-                occupancy_dict["individual"][cell_id]["available"]["pdf"],
-            )[0]
-
-            # Update individual occupancy dict
-            occupancy_dict["individual"][cell_id]["occupied"][mode] = {
-                "pdf": occupied_pdf,
-                "occupancy": occupancy,
-            }
+            # Update individual KDE
+            kde_dict["individual"][cell_id]["occupied"][mode] = gaussian_kde(
+                cell_occupied_distances
+            )
 
         # Add combined available distances if not already added
         # in the first loop across all cellids for the structure. the available distances
         # were calculated
-        if structure_id not in occupancy_dict["combined"]["available"]:
+        if structure_id not in kde_dict["combined"]["available"]:
             structure_available_distances = combined_available_distances[structure_id]
-            xvals = np.linspace(
-                np.min(structure_available_distances),
-                np.max(structure_available_distances),
-                num_points,
+            kde_dict["combined"]["available"][structure_id] = gaussian_kde(
+                structure_available_distances
             )
-            available_kde = gaussian_kde(structure_available_distances, bw_method=bandwidth)
-            available_pdf = available_kde(xvals)
-            available_pdf = normalize_pdf(xvals, available_pdf)
-            occupancy_dict["combined"]["available"][structure_id] = {
-                "xvals": xvals,
-                "pdf": available_pdf,
-            }
-
         # Calculate combined occupancy for mode
-        xvals = occupancy_dict["combined"]["available"][structure_id]["xvals"]
         mode_occupied_distances = combined_occupied_distances[mode]
-        occupied_kde = gaussian_kde(mode_occupied_distances, bw_method=bandwidth)
-        occupied_pdf = occupied_kde(xvals)
-        occupied_pdf = normalize_pdf(xvals, occupied_pdf)
-        available_pdf = occupancy_dict["combined"]["available"][structure_id]["pdf"]
-        occupancy = pdf_ratio(xvals, occupied_pdf, available_pdf)[0]
-        occupancy_dict["combined"]["occupied"][mode] = {
-            "pdf": occupied_pdf,
-            "occupancy": occupancy,
-        }
+        kde_dict["combined"]["occupied"][mode] = gaussian_kde(mode_occupied_distances)
 
     # Save occupancy dictionary
     if file_path is not None:
         with open(file_path, "wb") as f:
-            pickle.dump(occupancy_dict, f, protocol=pickle.HIGHEST_PROTOCOL)
+            pickle.dump(kde_dict, f, protocol=pickle.HIGHEST_PROTOCOL)
 
-    return occupancy_dict
+    return kde_dict
 
 
 def get_occupancy_emd(

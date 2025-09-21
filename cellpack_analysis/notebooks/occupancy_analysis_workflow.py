@@ -149,20 +149,19 @@ all_distance_dict = distance.get_occupied_available_distances(
 )
 # %% [markdown]
 # ## Calculate occupancy ratio
-occupancy_dict = occupancy.get_occupancy_dict(
+distance_kde_dict = occupancy.get_distance_kde_dict(
     all_distance_dict=all_distance_dict,
     channel_map=channel_map,
-    num_cells=5,
     recalculate=True,
+    results_dir=results_dir,
+    suffix=suffix,
     distance_measure=occupancy_distance_measure,
-    bandwidth=0.4,
-    num_points=100,
 )
 
 # %% [markdown]
 # ### Plot illustration for occupancy distribution
 fig_ill, axs_ill = visualization.plot_occupancy_illustration(
-    occupancy_dict=occupancy_dict,
+    occupancy_dict=distance_kde_dict,
     baseline_mode=baseline_mode,
     figures_dir=occupancy_distance_figures_dir,
     suffix=suffix,
