@@ -7,7 +7,7 @@ import numpy as np
 from scipy.stats import gaussian_kde, ks_2samp, wasserstein_distance
 from tqdm import tqdm
 
-from cellpack_analysis.lib.stats_functions import density_ratio, normalize_density
+from cellpack_analysis.lib.stats_functions import normalize_pdf, pdf_ratio
 
 log = logging.getLogger(__name__)
 
@@ -63,14 +63,15 @@ def get_occupancy_dict(
                 seed_1: {
                     "occupied": {
                         mode_1: {
-                            "density": np.ndarray,
+                            "xvals": np.ndarray,
+                            "pdf": np.ndarray,
                             "occupancy": np.ndarray,
                         },
                         ...
                     },
                     "available": {
                         "xvals": np.ndarray,
-                        "density": np.ndarray,
+                        "pdf": np.ndarray,
                     },
                 },
                 ...
@@ -78,14 +79,18 @@ def get_occupancy_dict(
             "combined": {
                 "occupied": {
                     mode_1: {
-                        "density": np.ndarray,
+                        "pdf": np.ndarray,
                         "occupancy": np.ndarray,
                     },
                     ...
                 },
                 "available": {
-                    "xvals": np.ndarray,
-                    "density": np.ndarray,
+                # available distances are same for all modes of a structure
+                    structure_id_1: {
+                        "xvals": np.ndarray,
+                        "pdf": np.ndarray,
+                    },
+                    ...
                 },
             },
         }
@@ -117,82 +122,104 @@ def get_occupancy_dict(
         for structure_id, cell_ids in cell_id_map.items():
             cell_id_map[structure_id] = cell_ids[:num_cells]
 
-    occupancy_dict = {"individual": {}, "combined": {}}
+    occupancy_dict = {"individual": {}, "combined": {"occupied": {}, "available": {}}}
+    combined_available_distances = {}  # per structure_id
+    combined_occupied_distances = {}  # per mode
+    # Loop through packing modes
+    # Random, Nucleus bias, etc.
     for mode, structure_id in channel_map.items():
         log.info(f"Calculating occupancy for {mode}")
 
-        combined_available_distances = []
-        combined_occupied_distances = []
+        # Keep track of available distances for the mode
+        # Combined available only needs to be done once per structure_id
+        if structure_id not in combined_available_distances:
+            combined_available_distances[structure_id] = []
+
+        # Keep track of occupied distances for the mode
+        if mode not in combined_occupied_distances:
+            combined_occupied_distances[mode] = []
+
         for cell_id in tqdm(cell_id_map[structure_id]):
 
-            # Add available distances if not already added
+            # Check if this mode has occupied distances for this cell
+            # This can happen if a mode was not simuated for this cell ID
+            # e.g., ER  struct gradient mode if not available for the observed peroxisome data
+            if mode not in all_distance_dict[cell_id]["occupied"]:
+                continue
+
+            # Add individual available distances if not already added
+            # 1. Add to the individual dictionary if not already added for the cell
+            # 2. Extend the combined available distances for the structure
+            # The check makes sure each cell only gets counted once across all modes
             if cell_id not in occupancy_dict["individual"]:
                 cell_available_distances = all_distance_dict[cell_id]["available"]
                 xvals = np.linspace(
                     np.min(cell_available_distances), np.max(cell_available_distances), num_points
                 )
                 available_kde = gaussian_kde(cell_available_distances, bw_method=bandwidth)
-                available_density = available_kde(xvals)
-                available_density = normalize_density(xvals, available_density)
+                available_pdf = available_kde(xvals)
+                available_pdf = normalize_pdf(xvals, available_pdf)
                 occupancy_dict["individual"][cell_id] = {
                     "occupied": {},
                     "available": {
                         "xvals": xvals,
-                        "density": available_density,
+                        "pdf": available_pdf,
                     },
                 }
-                combined_available_distances.extend(cell_available_distances)
+                combined_available_distances[structure_id].extend(cell_available_distances)
 
             # Get occupied distances for the current mode
-            cell_occupied_distances = all_distance_dict[cell_id]["occupied"].get(mode)
-            if cell_occupied_distances is None:
-                log.warning(f"No occupied distances found for cell {cell_id} and mode {mode}")
-                continue
-            combined_occupied_distances.extend(cell_occupied_distances)
+            # 1. Extend the combined occupied distances for the mode
+            # 2. Calculate individual occupied pdf and occupancy
+            #    and add to individual occupancy dict
+            cell_occupied_distances = all_distance_dict[cell_id]["occupied"][mode]
+            combined_occupied_distances[mode].extend(cell_occupied_distances)
 
-            # Calculate occupancy
+            # Calculate indicidual occupancy for the current cell and mode
             xvals = occupancy_dict["individual"][cell_id]["available"]["xvals"]
             occupied_kde = gaussian_kde(cell_occupied_distances, bw_method=bandwidth)
-            occupied_density = occupied_kde(xvals)
-            occupied_density = normalize_density(xvals, occupied_density)
-            occupancy = density_ratio(
+            occupied_pdf = occupied_kde(xvals)
+            occupied_pdf = normalize_pdf(xvals, occupied_pdf)
+            occupancy = pdf_ratio(
                 xvals,
-                occupied_density,
-                occupancy_dict["individual"][cell_id]["available"]["density"],
+                occupied_pdf,
+                occupancy_dict["individual"][cell_id]["available"]["pdf"],
             )[0]
 
             # Update individual occupancy dict
             occupancy_dict["individual"][cell_id]["occupied"][mode] = {
-                "density": occupied_density,
+                "pdf": occupied_pdf,
                 "occupancy": occupancy,
             }
 
         # Add combined available distances if not already added
-        if "available" not in occupancy_dict["combined"]:
+        # in the first loop across all cellids for the structure. the available distances
+        # were calculated
+        if structure_id not in occupancy_dict["combined"]["available"]:
+            structure_available_distances = combined_available_distances[structure_id]
             xvals = np.linspace(
-                np.min(combined_available_distances),
-                np.max(combined_available_distances),
+                np.min(structure_available_distances),
+                np.max(structure_available_distances),
                 num_points,
             )
-            available_kde = gaussian_kde(combined_available_distances, bw_method=bandwidth)
-            available_density = available_kde(xvals)
-            available_density = normalize_density(xvals, available_density)
-            occupancy_dict["combined"]["available"] = {
+            available_kde = gaussian_kde(structure_available_distances, bw_method=bandwidth)
+            available_pdf = available_kde(xvals)
+            available_pdf = normalize_pdf(xvals, available_pdf)
+            occupancy_dict["combined"]["available"][structure_id] = {
                 "xvals": xvals,
-                "density": available_density,
+                "pdf": available_pdf,
             }
 
         # Calculate combined occupancy for mode
-        xvals = occupancy_dict["combined"]["available"]["xvals"]
-        occupied_kde = gaussian_kde(combined_occupied_distances, bw_method=bandwidth)
-        occupied_density = occupied_kde(xvals)
-        occupied_density = normalize_density(xvals, occupied_density)
-        available_density = occupancy_dict["combined"]["available"]["density"]
-        occupancy = density_ratio(xvals, occupied_density, available_density)[0]
-        if "occupied" not in occupancy_dict["combined"]:
-            occupancy_dict["combined"]["occupied"] = {}
+        xvals = occupancy_dict["combined"]["available"][structure_id]["xvals"]
+        mode_occupied_distances = combined_occupied_distances[mode]
+        occupied_kde = gaussian_kde(mode_occupied_distances, bw_method=bandwidth)
+        occupied_pdf = occupied_kde(xvals)
+        occupied_pdf = normalize_pdf(xvals, occupied_pdf)
+        available_pdf = occupancy_dict["combined"]["available"][structure_id]["pdf"]
+        occupancy = pdf_ratio(xvals, occupied_pdf, available_pdf)[0]
         occupancy_dict["combined"]["occupied"][mode] = {
-            "density": occupied_density,
+            "pdf": occupied_pdf,
             "occupancy": occupancy,
         }
 

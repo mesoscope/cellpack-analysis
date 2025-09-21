@@ -159,26 +159,39 @@ occupancy_dict = occupancy.get_occupancy_dict(
     num_points=100,
 )
 
-
 # %% [markdown]
 # ### Plot illustration for occupancy distribution
-kde_distance, kde_available_space, xvals, yvals, fig_ill, axs_ill = (
-    visualization.plot_occupancy_illustration(
-        distance_dict=occupied_distance_dict[occupancy_distance_measure],
-        kde_dict=distance_kde_dict,
-        baseline_mode="random",
-        suffix=suffix,
-        distance_measure=occupancy_distance_measure,
-        normalization=normalization,
-        method="pdf",
-        seed_index=0,
-        xlim=xlim[occupancy_distance_measure],
-        # xlim=3,
-        figures_dir=occupancy_distance_figures_dir,
-        save_format=save_format,
-        bandwidth=0.4,
-    )
+fig_ill, axs_ill = visualization.plot_occupancy_illustration(
+    occupancy_dict=occupancy_dict,
+    baseline_mode=baseline_mode,
+    figures_dir=occupancy_distance_figures_dir,
+    suffix=suffix,
+    xlim=xlim[occupancy_distance_measure],
+    seed_index=0,
+    save_format=save_format,
+    distance_measure=occupancy_distance_measure,
+    normalization=normalization,
 )
+
+# # %% [markdown]
+# # ### Plot illustration for occupancy distribution
+# kde_distance, kde_available_space, xvals, yvals, fig_ill, axs_ill = (
+#     visualization.plot_occupancy_illustration(
+#         distance_dict=occupied_distance_dict[occupancy_distance_measure],
+#         kde_dict=distance_kde_dict,
+#         baseline_mode="random",
+#         suffix=suffix,
+#         distance_measure=occupancy_distance_measure,
+#         normalization=normalization,
+#         method="pdf",
+#         seed_index=0,
+#         xlim=xlim[occupancy_distance_measure],
+#         # xlim=3,
+#         figures_dir=occupancy_distance_figures_dir,
+#         save_format=save_format,
+#         bandwidth=0.4,
+#     )
+# )
 
 # %% [markdown]
 # ### Plot occupancy ratio
