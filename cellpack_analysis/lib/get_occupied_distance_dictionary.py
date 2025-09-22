@@ -1,1 +1,0 @@
-get_occupied_distance_dictionary

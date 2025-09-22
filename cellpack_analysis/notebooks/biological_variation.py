@@ -100,7 +100,7 @@ for structure_id in all_structures:
     combined_mesh_information_dict[structure_id] = mesh_information_dict
 # %% [markdown]
 # ### Calculate distance measures and normalize
-all_distance_dict = distance.get_occupied_distance_dictionary(
+all_distance_dict = distance.get_distance_dictionary(
     all_positions=all_positions,
     distance_measures=distance_measures,
     mesh_information_dict=combined_mesh_information_dict,
@@ -114,7 +114,7 @@ all_distance_dict = distance.filter_invalids_from_distance_distribution_dict(
 )
 
 all_distance_dict = normalize_distances(
-    distance_dict=all_distance_dict,
+    all_distance_dict=all_distance_dict,
     mesh_information_dict=combined_mesh_information_dict,
     channel_map=channel_map,
     normalization=normalization,

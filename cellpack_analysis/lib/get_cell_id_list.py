@@ -81,7 +81,6 @@ def get_cell_id_list_for_structure(
     df_cell_id: pd.DataFrame | None = None,
     dsphere: bool = False,
     load_local: bool = True,
-    save_local: bool = True,
 ) -> list:
     """
     Get a list of cell IDs for a given structure ID.
@@ -97,8 +96,6 @@ def get_cell_id_list_for_structure(
         If True, filter for 8D sphere data only.
     load_local:
         If True, load the cell ID DataFrame from a local file.
-    save_local:
-        If True, save the cell ID DataFrame to a local file after loading.
 
     Returns
     -------
