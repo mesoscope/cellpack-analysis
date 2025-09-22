@@ -46,7 +46,7 @@ from cellpack_analysis.lib.file_io import get_project_root
 from cellpack_analysis.lib.label_tables import DISTANCE_LIMITS
 from cellpack_analysis.lib.load_data import get_position_data_from_outputs
 from cellpack_analysis.lib.mesh_tools import get_mesh_information_dict_for_structure
-from cellpack_analysis.lib.stats_functions import normalize_distances
+from cellpack_analysis.lib.stats import normalize_distances
 
 log = logging.getLogger(__name__)
 
@@ -220,7 +220,7 @@ class AnalysisRunner:
             self._load_common_data(config)
 
         log.info("Calculating distance measures")
-        all_distance_dict = distance.get_distances_from_positions(
+        all_distance_dict = distance.get_distance_dictionary(
             all_positions=self.shared_data["all_positions"],
             distance_measures=config.distance_measures,
             mesh_information_dict=self.shared_data["combined_mesh_information_dict"],

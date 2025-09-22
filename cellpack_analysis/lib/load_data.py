@@ -128,6 +128,12 @@ def get_position_data_from_outputs(
     -------
     :
         A dictionary containing the position data for each packing mode.
+        Has the structure:
+        {
+            "mode_1": { "cell_id_1": np.ndarray, "cell_id_2": np.ndarray, ... },
+            "mode_2": { "cell_id_1": np.ndarray, "cell_id_2": np.ndarray, ... },
+            ...
+        }
     """
     save_file_name = f"{structure_name}_positions.dat"
     save_file_path = results_dir / save_file_name

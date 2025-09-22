@@ -15,7 +15,7 @@ from cellpack_analysis.lib.file_io import get_project_root
 from cellpack_analysis.lib.label_tables import DISTANCE_LIMITS
 from cellpack_analysis.lib.load_data import get_position_data_from_outputs
 from cellpack_analysis.lib.mesh_tools import get_mesh_information_dict_for_structure
-from cellpack_analysis.lib.stats_functions import normalize_distances
+from cellpack_analysis.lib.stats import normalize_distances
 
 log = logging.getLogger(__name__)
 

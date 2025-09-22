@@ -9,7 +9,7 @@ from cellpack_analysis.lib import distance, occupancy, visualization
 from cellpack_analysis.lib.file_io import get_project_root
 from cellpack_analysis.lib.load_data import get_position_data_from_outputs
 from cellpack_analysis.lib.mesh_tools import get_mesh_information_dict_for_structure
-from cellpack_analysis.lib.stats_functions import normalize_distances
+from cellpack_analysis.lib.stats import normalize_distances
 
 log = logging.getLogger(__name__)
 
@@ -34,17 +34,19 @@ packing_modes = [
     "nucleus_gradient_strong",
     "membrane_gradient_strong",
     # "apical_gradient",
+    # "struct_gradient_weak",
     # "struct_gradient",
 ]
 
 channel_map = {
     "SLC25A17": "SLC25A17",
-    # "RAB5A": "RAB5A",
     "random": "SLC25A17",
     "nucleus_gradient_strong": "SLC25A17",
     "membrane_gradient_strong": "SLC25A17",
     # "apical_gradient": "SLC25A17",
     # "struct_gradient": "SEC61B",
+    # "struct_gradient_weak": "ST6GAL1",
+    # "struct_gradient": "ST6GAL1",
 }
 
 # relative path to packing outputs
@@ -109,7 +111,7 @@ all_distance_dict = distance.get_distance_dictionary(
     mesh_information_dict=combined_mesh_information_dict,
     channel_map=channel_map,
     results_dir=results_dir,
-    recalculate=False,
+    recalculate=True,
 )
 
 all_distance_dict = distance.filter_invalids_from_distance_distribution_dict(
@@ -133,8 +135,8 @@ xlim = {
 # ### Create kde dictionary for individual distance distributions
 # for occupancy_distance_measure in occupancy_distance_measures:
 occupancy_distance_measure = "nucleus"
-occupancy_distance_figures_dir = figures_dir / occupancy_distance_measure
-occupancy_distance_figures_dir.mkdir(exist_ok=True, parents=True)
+occupancy_figures_dir = figures_dir / occupancy_distance_measure
+occupancy_figures_dir.mkdir(exist_ok=True, parents=True)
 log.info(f"Starting occupancy analysis for distance measure: {occupancy_distance_measure}")
 distance_kde_dict = distance.get_distance_distribution_kde(
     all_distance_dict=all_distance_dict,
@@ -160,29 +162,37 @@ kde_distance, kde_available_space, xvals, yvals, fig_ill, axs_ill = (
         seed_index=0,
         xlim=xlim[occupancy_distance_measure],
         # xlim=3,
-        figures_dir=occupancy_distance_figures_dir,
+        figures_dir=occupancy_figures_dir,
         save_format=save_format,
         bandwidth=0.4,
     )
+)
+# %% [markdown]
+# ### Calculate occupancy ratio
+occupancy_dict = occupancy.compute_occupancy_from_kde_dict(
+    kde_dict=distance_kde_dict,
+    channel_map=channel_map,
+    results_dir=results_dir,
+    recalculate=True,
+    suffix=suffix,
+    distance_measure=occupancy_distance_measure,
+    bandwidth=0.4,
+    # num_cells=5,
+    num_points=250,
 )
 
 # %% [markdown]
 # ### Plot occupancy ratio
 fig, ax = visualization.plot_occupancy_ratio(
-    distance_dict=all_distance_dict[occupancy_distance_measure],
-    kde_dict=distance_kde_dict,
-    packing_modes=packing_modes,
+    occupancy_dict=occupancy_dict,
+    channel_map=channel_map,
+    figures_dir=occupancy_figures_dir,
     suffix=suffix,
-    method="pdf",
     normalization=normalization,
     distance_measure=occupancy_distance_measure,
     xlim=xlim[occupancy_distance_measure],
     ylim=4,
-    # num_cells=5,
-    bandwidth=0.2,
-    figures_dir=occupancy_distance_figures_dir,
     save_format=save_format,
-    num_points=250,
 )
 # %%
 log.info(f"Time taken to complete workflow: {time.time() - start_time:.2f} s")

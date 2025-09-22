@@ -27,11 +27,7 @@ from cellpack_analysis.lib.label_tables import (
     MODE_LABELS,
     NORMALIZATION_LABELS,
 )
-from cellpack_analysis.lib.stats_functions import (
-    create_padded_numpy_array,
-    get_pdf_ratio,
-    normalize_pdf,
-)
+from cellpack_analysis.lib.stats import create_padded_numpy_array, get_pdf_ratio, normalize_pdf
 
 log = logging.getLogger(__name__)
 
@@ -548,7 +544,7 @@ def plot_occupancy_illustration(
 
     occupied_kde = kde_dict[seed][baseline_mode]
     available_kde = kde_dict[seed]["available_distance"]
-    xvals = np.linspace(occupied_kde.dataset.min(), occupied_kde.dataset.max(), num_points)
+    xvals = np.linspace(0, occupied_kde.dataset.max(), num_points)
     if bandwidth is not None:
         occupied_kde.set_bandwidth(bandwidth)
         available_kde.set_bandwidth(bandwidth)
@@ -657,21 +653,15 @@ def add_struct_radius_to_plot(
 
 
 def plot_occupancy_ratio(
-    distance_dict: dict[str, dict[str, np.ndarray]],
-    kde_dict: dict[str, dict[str, dict[str, Any]]],
-    packing_modes: list[str],
+    occupancy_dict: dict[str, dict[str, dict[str, Any]]],
+    channel_map: dict[str, str],
     figures_dir: Path | None = None,
     suffix: str = "",
     normalization: str | None = None,
     distance_measure: str = "nucleus",
-    method: Literal["pdf", "cumulative"] = "pdf",
-    overlay: bool = True,
     xlim: float | None = None,
     ylim: float | None = None,
-    num_cells: int | None = None,
     save_format: str = "png",
-    num_points: int = 250,
-    bandwidth: Literal["scott", "silverman"] | float | None = None,
 ) -> tuple[Figure, Axes]:
     """
     Plot the occupancy ratio based on the given parameters.
@@ -714,81 +704,40 @@ def plot_occupancy_ratio(
 
     fig, ax = plt.subplots(dpi=300, figsize=(2.5, 2.5))
 
-    # determine which cells to use
-    all_cell_ids = list(kde_dict.keys())
-    if num_cells is None or num_cells > len(all_cell_ids):
-        cell_ids_to_use = all_cell_ids
-        num_cells = len(cell_ids_to_use)
-        log.info(f"Using all {num_cells} cells for individual occupancy plot")
-    else:
-        log.info(f"Using {num_cells} cells for individual occupancy plot")
-        cell_ids_to_use = np.random.choice(all_cell_ids, num_cells, replace=False)
+    for mode in channel_map.keys():
 
-    # get all available distances for combined plot
-    all_available_distances = []
-    for cell_id in cell_ids_to_use:
-        all_available_distances.extend(kde_dict[cell_id]["available_distance"]["distances"])
-    all_available_distances = np.array(all_available_distances)
+        for _cell_id, cell_id_dict in tqdm(
+            occupancy_dict[mode]["individual"].items(), desc=f"Plotting {mode} occupancy"
+        ):
 
-    for mode in packing_modes:
-        log.info(f"Calculating occupancy for {mode}")
-
-        mode_dict = distance_dict[mode]
-
-        all_mode_distances = []
-        for cell_id in tqdm(cell_ids_to_use):
-
-            distances = mode_dict[cell_id]
-            all_mode_distances.extend(distances)
-
-            kde_distance = kde_dict[cell_id][mode]["kde"]
-            kde_available_space = kde_dict[cell_id]["available_distance"]["kde"]
-            if bandwidth is not None:
-                kde_distance.set_bandwidth(bandwidth)
-                kde_available_space.set_bandwidth(bandwidth)
-            distance_range = np.nanmin(distances), np.nanmax(distances)
-            xvals = np.linspace(distance_range[0], distance_range[1], num_points)
-
-            pdf_occupied = kde_distance(xvals)
-            pdf_available = kde_available_space(xvals)
-
-            yvals, _, _ = get_pdf_ratio(xvals, pdf_occupied, pdf_available, method)
+            xvals = cell_id_dict["xvals"]
+            occupancy = cell_id_dict["occupancy"]
 
             sns.lineplot(
                 x=xvals,
-                y=yvals,
+                y=occupancy,
                 ax=ax,
                 color=COLOR_PALETTE.get(mode, "gray"),
                 alpha=0.1,
                 linewidth=0.1,
                 label="_nolegend_",
+                zorder=1,
             )
 
-        # overlay occupancy for combined cells
-        if overlay:
-            log.info(f"Calculating combined occupancy for {mode}")
-            all_mode_distances = np.array(all_mode_distances)
-            combined_xvals = np.linspace(0, np.nanmax(all_mode_distances), num_points)
-            combined_kde_distance = gaussian_kde(all_mode_distances)
-            combined_kde_available_space = gaussian_kde(all_available_distances)
-            if bandwidth is not None:
-                combined_kde_distance.set_bandwidth(bandwidth)
-                combined_kde_available_space.set_bandwidth(bandwidth)
-            pdf_combined_occupied = combined_kde_distance(combined_xvals)
-            pdf_combined_available = combined_kde_available_space(combined_xvals)
-            combined_yvals, _, _ = get_pdf_ratio(
-                combined_xvals, pdf_combined_occupied, pdf_combined_available, method
-            )
-            sns.lineplot(
-                x=combined_xvals,
-                y=combined_yvals,
-                ax=ax,
-                color=COLOR_PALETTE.get(mode, "gray"),
-                alpha=1.0,
-                linewidth=1.5,
-                label=MODE_LABELS.get(mode, mode),
-                zorder=-2,
-            )
+        # overlay occupancy for combined data
+        combined_xvals = occupancy_dict[mode]["combined"]["xvals"]
+        combined_occupancy = occupancy_dict[mode]["combined"]["occupancy"]
+
+        sns.lineplot(
+            x=combined_xvals,
+            y=combined_occupancy,
+            ax=ax,
+            color=COLOR_PALETTE.get(mode, "gray"),
+            alpha=1.0,
+            linewidth=1.5,
+            label=MODE_LABELS.get(mode, mode),
+            zorder=2,
+        )
 
     ax.xaxis.set_major_locator(MaxNLocator(4, integer=True))
     ax.yaxis.set_major_locator(MaxNLocator(3, integer=True))
@@ -796,7 +745,7 @@ def plot_occupancy_ratio(
         ax.set_xlim((0, xlim))
     if ylim is not None:
         ax.set_ylim((0, ylim))
-    ax.axhline(1, color="gray", linestyle="--", zorder=-1)
+    ax.axhline(1, color="gray", linestyle="--", zorder=0)
     distance_label = DISTANCE_MEASURE_LABELS[distance_measure]
     if normalization is not None:
         distance_label = f"{distance_label} / {NORMALIZATION_LABELS[normalization]}"
@@ -804,16 +753,12 @@ def plot_occupancy_ratio(
         distance_label = f"{distance_label} (\u03bcm)"
     ax.set_xlabel(distance_label)
 
-    ylabel = "Occupancy Ratio"
-    if method == "cumulative":
-        ylabel = "Cumulative Ratio"
-    ax.set_ylabel(ylabel)
+    ax.set_ylabel("Occupancy Ratio")
     sns.despine(fig=fig)
     fig.tight_layout()
     if figures_dir is not None:
         fig.savefig(
-            figures_dir
-            / (f"{distance_measure}_{method}_occupancy_ratio" f"{suffix}.{save_format}"),
+            figures_dir / f"{distance_measure}_occupancy_ratio{suffix}.{save_format}",
             dpi=300,
         )
 
