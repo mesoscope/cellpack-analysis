@@ -553,7 +553,7 @@ def get_distance_distribution_kde(
     suffix: str = "",
     normalization: str | None = None,
     distance_measure: str = "nucleus",
-) -> dict[str, dict[str, dict[str, Any]]]:
+) -> dict[str, dict[str, gaussian_kde]]:
     """
     Obtain KDE for distance distribution measures
 
@@ -592,17 +592,8 @@ def get_distance_distribution_kde(
         {
             seed:
                 {
-                    mode:
-                        {
-                            "distances": distances,
-                            "kde": kde
-                        },
-                    "available_distance":
-                        {
-                            "distances": available_distances,
-                            "kde": kde_available_space
-                        }
-                    }
+                    mode: gaussian_kde_object,
+                    "available_distance": gaussian_kde_object,
                 }
         }
     """
@@ -634,25 +625,21 @@ def get_distance_distribution_kde(
             # These are already normalized
             if seed not in kde_dict:
                 kde_dict[seed] = {}
-            distances = filter_invalid_distances(distances)
+            distances = filter_invalid_distances(distances).astype(np.float32)
             if len(distances) == 0:
                 log.warning(f"No valid distances found for seed {seed} and mode {mode}")
                 continue
 
             # Calculate the KDE for the distances
-            kde_distance = gaussian_kde(distances)
-            kde_dict[seed][mode] = {
-                "distances": distances,
-                "kde": kde_distance,
-                "distance_measure": distance_measure,
-                "mode": mode,
-            }
+            kde_dict[seed][mode] = gaussian_kde(distances)
 
             # Update available distances from mesh information if needed
             if "available_distance" not in kde_dict[seed]:
-                available_distances = mode_mesh_dict[seed][
-                    GRID_DISTANCE_LABELS[distance_measure]
-                ].flatten()
+                available_distances = (
+                    mode_mesh_dict[seed][GRID_DISTANCE_LABELS[distance_measure]]
+                    .flatten()
+                    .astype(np.float32)
+                )
                 available_distances = filter_invalid_distances(available_distances)
 
                 normalization_factor = get_normalization_factor(
@@ -664,13 +651,7 @@ def get_distance_distribution_kde(
                 )
                 available_distances /= normalization_factor
 
-                kde_available_space = gaussian_kde(available_distances)
-                kde_dict[seed]["available_distance"] = {
-                    "distances": available_distances,
-                    "kde": kde_available_space,
-                    "distance_measure": distance_measure,
-                    "normalization_factor": normalization_factor,
-                }
+                kde_dict[seed]["available_distance"] = gaussian_kde(available_distances)
 
     # save kde dictionary
     if save_file_path is not None:

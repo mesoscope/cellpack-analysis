@@ -151,7 +151,6 @@ distance_kde_dict = distance.get_distance_distribution_kde(
 # ### Plot illustration for occupancy distribution
 kde_distance, kde_available_space, xvals, yvals, fig_ill, axs_ill = (
     visualization.plot_occupancy_illustration(
-        distance_dict=all_distance_dict[occupancy_distance_measure],
         kde_dict=distance_kde_dict,
         baseline_mode="random",
         suffix=suffix,
@@ -184,78 +183,6 @@ fig, ax = visualization.plot_occupancy_ratio(
     figures_dir=occupancy_distance_figures_dir,
     save_format=save_format,
     num_points=250,
-)
-# %% [markdown]
-# ### plot mean and std of occupancy ratio
-figs_ci, axs_ci = visualization.plot_mean_and_std_occupancy_ratio_kde(
-    distance_dict=all_distance_dict[occupancy_distance_measure],
-    kde_dict=distance_kde_dict,
-    packing_modes=packing_modes,
-    suffix=suffix,
-    normalization=normalization,
-    distance_measure=occupancy_distance_measure,
-    method="pdf",
-    xlim=xlim[occupancy_distance_measure],
-    # xlim=6,
-    # ylim=3,
-    # sample_size=5,
-    bandwidth=0.4,
-    figures_dir=occupancy_distance_figures_dir,
-    save_format=save_format,
-)
-# %% [markdown]
-# ### get combined space corrected kde
-combined_kde_dict = occupancy.get_combined_occupancy_kde(
-    all_distance_dict=all_distance_dict,
-    mesh_information_dict=combined_mesh_information_dict,
-    channel_map=channel_map,
-    packing_modes=packing_modes,
-    results_dir=results_dir,
-    recalculate=True,
-    suffix=suffix,
-    distance_measure=occupancy_distance_measure,
-    # num_cells=5,
-)
-# %% [markdown]
-# ### plot combined space corrected kde
-# aspect = 0.02
-occupancy_start_time = time.time()
-aspect = None
-method = "pdf"
-fig_combined, ax_combined = visualization.plot_combined_occupancy_ratio(
-    combined_kde_dict=combined_kde_dict,
-    packing_modes=packing_modes,
-    suffix=suffix,
-    normalization=normalization,
-    aspect=aspect,
-    distance_measure=occupancy_distance_measure,
-    num_points=100,
-    method=method,
-    xlim=6,
-    # ylim=3,
-    figures_dir=occupancy_distance_figures_dir,
-    bandwidth=0.4,
-    save_format=save_format,
-    recalculate=True,
-)
-log.info(f"Time taken to plot occupancy ratio: {time.time() - occupancy_start_time:.2f} s")
-# %% [markdown]
-# ### plot binned occupancy ratio
-fig_binned, ax_binned = visualization.plot_binned_occupancy_ratio(
-    distance_dict=all_distance_dict[occupancy_distance_measure],
-    packing_modes=packing_modes,
-    mesh_information_dict=combined_mesh_information_dict,
-    channel_map=channel_map,
-    normalization=normalization,
-    num_bins=40,
-    # bin_width=,
-    suffix=suffix,
-    distance_measure=occupancy_distance_measure,
-    xlim=xlim[occupancy_distance_measure],
-    # ylim=3,
-    # sample_size=10,
-    figures_dir=occupancy_distance_figures_dir,
-    save_format=save_format,
 )
 # %%
 log.info(f"Time taken to complete workflow: {time.time() - start_time:.2f} s")

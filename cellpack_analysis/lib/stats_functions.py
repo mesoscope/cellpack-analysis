@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from typing import Any, Literal
+from typing import Literal
 
 import numpy as np
 from scipy import integrate
@@ -104,7 +104,7 @@ def ripley_k(positions, volume, r_values, norm_factor=1, edge_correction=True):
     return ripley_k_values, r_values
 
 
-def normalize_density(xvals: np.ndarray, density: np.ndarray) -> np.ndarray:
+def normalize_pdf(xvals: np.ndarray, density: np.ndarray) -> np.ndarray:
     """
     Normalize density to integrate to 1.
 
@@ -123,7 +123,7 @@ def normalize_density(xvals: np.ndarray, density: np.ndarray) -> np.ndarray:
     return density / integrate.trapezoid(density, xvals)
 
 
-def density_ratio(
+def pdf_ratio(
     xvals: np.ndarray, density1: np.ndarray, density2: np.ndarray
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
@@ -149,13 +149,13 @@ def density_ratio(
     density2 = np.where(density2 <= min_value, min_value, density2)
 
     # normalize densities
-    density1 = normalize_density(xvals, density1)
-    density2 = normalize_density(xvals, density2)
+    density1 = normalize_pdf(xvals, density1)
+    density2 = normalize_pdf(xvals, density2)
 
     return density1 / density2, density1, density2
 
 
-def cumulative_ratio(
+def cpdf_ratio(
     xvals: np.ndarray, density1: np.ndarray, density2: np.ndarray
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
@@ -176,8 +176,8 @@ def cumulative_ratio(
         Tuple containing the cumulative ratio, normalized density1, and normalized density2
     """
     cumulative_ratio = np.zeros(len(xvals))
-    # density1 = normalize_density(xvals, density1)
-    # density2 = normalize_density(xvals, density2)
+    density1 = normalize_pdf(xvals, density1)
+    density2 = normalize_pdf(xvals, density2)
     for ct in range(len(xvals)):
         cumulative_ratio[ct] = integrate.trapezoid(
             density1[: ct + 1], xvals[: ct + 1]
@@ -211,9 +211,9 @@ def get_pdf_ratio(
         Tuple containing the ratio and normalized densities based on the specified method
     """
     if method == "pdf":
-        return density_ratio(xvals, density_numerator, density_denominator)
+        return pdf_ratio(xvals, density_numerator, density_denominator)
     elif method == "cumulative":
-        return cumulative_ratio(xvals, density_numerator, density_denominator)
+        return cpdf_ratio(xvals, density_numerator, density_denominator)
     else:
         raise ValueError(f"Invalid ratio method: {method}")
 

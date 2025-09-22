@@ -27,7 +27,11 @@ from cellpack_analysis.lib.label_tables import (
     MODE_LABELS,
     NORMALIZATION_LABELS,
 )
-from cellpack_analysis.lib.stats_functions import create_padded_numpy_array, get_pdf_ratio
+from cellpack_analysis.lib.stats_functions import (
+    create_padded_numpy_array,
+    get_pdf_ratio,
+    normalize_pdf,
+)
 
 log = logging.getLogger(__name__)
 
@@ -486,8 +490,7 @@ def plot_emd_comparisons(
 
 
 def plot_occupancy_illustration(
-    distance_dict: dict[str, dict[str, np.ndarray]],
-    kde_dict: dict[str, dict[str, dict[str, Any]]],
+    kde_dict: dict[str, dict[str, gaussian_kde]],
     baseline_mode: str = "random",
     figures_dir: Path | None = None,
     suffix: str = "",
@@ -535,29 +538,26 @@ def plot_occupancy_illustration(
     """
     plt.rcParams.update({"font.size": 6})
     fig, axs = plt.subplots(nrows=3, ncols=1, dpi=300, figsize=(2.5, 2.5), sharex=True)
-    mode_dict = distance_dict[baseline_mode]
-    all_cell_ids = list(mode_dict.keys())
+
+    all_cell_ids = [cell_id for cell_id in kde_dict.keys() if baseline_mode in kde_dict[cell_id]]
     if seed_index is not None:
         seed = all_cell_ids[seed_index]
     else:
         seed = all_cell_ids[0]
     log.info(f"Using seed {seed} for occupancy illustration")
-    distances = mode_dict[seed]
-    distances = filter_invalid_distances(distances)
 
-    xvals = np.linspace(distances.min(), distances.max(), num_points)
-
-    distance_kde = kde_dict[seed][baseline_mode]["kde"]
-    available_space_kde = kde_dict[seed]["available_distance"]["kde"]
+    occupied_kde = kde_dict[seed][baseline_mode]
+    available_kde = kde_dict[seed]["available_distance"]
+    xvals = np.linspace(occupied_kde.dataset.min(), occupied_kde.dataset.max(), num_points)
     if bandwidth is not None:
-        distance_kde.set_bandwidth(bandwidth)
-        available_space_kde.set_bandwidth(bandwidth)
+        occupied_kde.set_bandwidth(bandwidth)
+        available_kde.set_bandwidth(bandwidth)
 
-    density_distance = distance_kde.evaluate(xvals)
-    density_available_space = available_space_kde.evaluate(xvals)
+    pdf_occupied = normalize_pdf(xvals, occupied_kde.evaluate(xvals))
+    pdf_available = normalize_pdf(xvals, available_kde.evaluate(xvals))
 
     yvals, distance_kde_values, available_space_kde_values = get_pdf_ratio(
-        xvals, density_distance, density_available_space, method
+        xvals, pdf_occupied, pdf_available, method
     )
 
     # plot occupied distance values
@@ -612,7 +612,7 @@ def plot_occupancy_illustration(
         )
     plt.show()
 
-    return density_distance, density_available_space, xvals, yvals, fig, axs
+    return pdf_occupied, pdf_available, xvals, yvals, fig, axs
 
 
 def add_struct_radius_to_plot(
@@ -749,10 +749,10 @@ def plot_occupancy_ratio(
             distance_range = np.nanmin(distances), np.nanmax(distances)
             xvals = np.linspace(distance_range[0], distance_range[1], num_points)
 
-            density_distance = kde_distance(xvals)
-            density_available_space = kde_available_space(xvals)
+            pdf_occupied = kde_distance(xvals)
+            pdf_available = kde_available_space(xvals)
 
-            yvals, _, _ = get_pdf_ratio(xvals, density_distance, density_available_space, method)
+            yvals, _, _ = get_pdf_ratio(xvals, pdf_occupied, pdf_available, method)
 
             sns.lineplot(
                 x=xvals,
@@ -774,10 +774,10 @@ def plot_occupancy_ratio(
             if bandwidth is not None:
                 combined_kde_distance.set_bandwidth(bandwidth)
                 combined_kde_available_space.set_bandwidth(bandwidth)
-            combined_density_distance = combined_kde_distance(combined_xvals)
-            combined_density_available_space = combined_kde_available_space(combined_xvals)
+            pdf_combined_occupied = combined_kde_distance(combined_xvals)
+            pdf_combined_available = combined_kde_available_space(combined_xvals)
             combined_yvals, _, _ = get_pdf_ratio(
-                combined_xvals, combined_density_distance, combined_density_available_space, method
+                combined_xvals, pdf_combined_occupied, pdf_combined_available, method
             )
             sns.lineplot(
                 x=combined_xvals,
@@ -857,8 +857,6 @@ def plot_mean_and_std_occupancy_ratio_kde(
         Normalization method applied
     distance_measure
         The distance measure to plot
-    method
-        The ratio to plot ("density" or "ratio")
     xlim
         X-axis limit for plots
     ylim
