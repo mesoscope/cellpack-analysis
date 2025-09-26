@@ -1,5 +1,4 @@
-# cellpack-analysis
-Analysis pipeline for cellPACK
+# cellPACK analysis pipeline
 
 > [!WARNING]
 > This repository is a work in progress and is not yet ready for public use.
