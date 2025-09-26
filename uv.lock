@@ -21,31 +21,14 @@ wheels = [
 [[package]]
 name = "aicscytoparam"
 version = "0.1.10"
-source = { registry = "https://artifactory.corp.alleninstitute.org/artifactory/api/pypi/pypi-virtual/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aicsimageio" },
     { name = "aicsshparam" },
 ]
-sdist = { url = "https://artifactory.corp.alleninstitute.org/artifactory/api/pypi/pypi-virtual/packages/packages/92/97/547026be20dad7230fe4503925bc65f3ec465ff0ea1b82aff36ffa1d0c68/aicscytoparam-0.1.10.tar.gz", hash = "sha256:99afb25a12a0a170ae07e9d26046f59263c9c382fa0f962fd054a358b2b730d1" }
+sdist = { url = "https://files.pythonhosted.org/packages/92/97/547026be20dad7230fe4503925bc65f3ec465ff0ea1b82aff36ffa1d0c68/aicscytoparam-0.1.10.tar.gz", hash = "sha256:99afb25a12a0a170ae07e9d26046f59263c9c382fa0f962fd054a358b2b730d1", size = 146423, upload-time = "2024-03-15T19:18:40.675Z" }
 wheels = [
-    { url = "https://artifactory.corp.alleninstitute.org/artifactory/api/pypi/pypi-virtual/packages/packages/35/f8/cb3445f25fdb786dbae0a051058858221b7ceec8bcd8bf1611bf04c9e50e/aicscytoparam-0.1.10-py2.py3-none-any.whl", hash = "sha256:2bfcea4fefe6c6e8077921d29533219ea5bca3fcfd8212501149d82d26de2714" },
-]
-
-[[package]]
-name = "aicsfiles"
-version = "8.0.1"
-source = { registry = "https://artifactory.corp.alleninstitute.org/artifactory/api/pypi/pypi-virtual/simple" }
-dependencies = [
-    { name = "jsonpickle" },
-    { name = "pandas" },
-    { name = "python-dateutil" },
-    { name = "rehash" },
-    { name = "requests" },
-    { name = "tenacity" },
-]
-sdist = { url = "https://artifactory.corp.alleninstitute.org/artifactory/api/pypi/pypi-virtual/aicsfiles/8.0.1/aicsfiles-8.0.1.tar.gz", hash = "md5:fe3725d86c38d09941df36dc9aacfeb1" }
-wheels = [
-    { url = "https://artifactory.corp.alleninstitute.org/artifactory/api/pypi/pypi-virtual/aicsfiles/8.0.1/aicsfiles-8.0.1-py3-none-any.whl", hash = "md5:6b5ca49d191a15a473c7eb7fd646a6e1" },
+    { url = "https://files.pythonhosted.org/packages/35/f8/cb3445f25fdb786dbae0a051058858221b7ceec8bcd8bf1611bf04c9e50e/aicscytoparam-0.1.10-py2.py3-none-any.whl", hash = "sha256:2bfcea4fefe6c6e8077921d29533219ea5bca3fcfd8212501149d82d26de2714", size = 12224, upload-time = "2024-03-15T19:18:38.493Z" },
 ]
 
 [[package]]
@@ -76,7 +59,7 @@ wheels = [
 [[package]]
 name = "aicsshparam"
 version = "0.1.10"
-source = { registry = "https://artifactory.corp.alleninstitute.org/artifactory/api/pypi/pypi-virtual/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy" },
     { name = "pyshtools" },
@@ -85,9 +68,9 @@ dependencies = [
     { name = "scipy" },
     { name = "vtk" },
 ]
-sdist = { url = "https://artifactory.corp.alleninstitute.org/artifactory/api/pypi/pypi-virtual/packages/packages/cb/17/2cb2cb7b636db144d025ba01933c007e2271e73f41c01e896d5b2170a8c7/aicsshparam-0.1.10.tar.gz", hash = "sha256:89b3a9732dd87631e23e239262d96496b500b22b2f7ed4ba165dd22927129a3b" }
+sdist = { url = "https://files.pythonhosted.org/packages/cb/17/2cb2cb7b636db144d025ba01933c007e2271e73f41c01e896d5b2170a8c7/aicsshparam-0.1.10.tar.gz", hash = "sha256:89b3a9732dd87631e23e239262d96496b500b22b2f7ed4ba165dd22927129a3b", size = 670289, upload-time = "2024-04-06T16:57:25.059Z" }
 wheels = [
-    { url = "https://artifactory.corp.alleninstitute.org/artifactory/api/pypi/pypi-virtual/packages/packages/31/1b/3b8d18855df79ea4f7f6512917b28e9f59f25ec6d0421491d04753bcb0d8/aicsshparam-0.1.10-py2.py3-none-any.whl", hash = "sha256:75f8c9f484cb667f78f1f049f28cf3189ab7f6e6edd241232c343b8a42462867" },
+    { url = "https://files.pythonhosted.org/packages/31/1b/3b8d18855df79ea4f7f6512917b28e9f59f25ec6d0421491d04753bcb0d8/aicsshparam-0.1.10-py2.py3-none-any.whl", hash = "sha256:75f8c9f484cb667f78f1f049f28cf3189ab7f6e6edd241232c343b8a42462867", size = 14652, upload-time = "2024-04-06T16:57:23.545Z" },
 ]
 
 [[package]]
@@ -351,7 +334,7 @@ wheels = [
 [[package]]
 name = "cellpack"
 version = "1.1.1"
-source = { git = "https://github.com/mesoscope/cellpack.git?branch=cellpack-analysis-3.11#4e2f4e3120ccceebd1fe034bb7550aa58a06982c" }
+source = { git = "https://github.com/mesoscope/cellpack.git?branch=cellpack-analysis#11605a9e36af3a63d9dadaa4cf7bfa8d8aabe4a5" }
 dependencies = [
     { name = "aicsimageio" },
     { name = "boto3" },
@@ -359,10 +342,7 @@ dependencies = [
     { name = "fire" },
     { name = "firebase-admin" },
     { name = "grpcio" },
-    { name = "ipykernel" },
     { name = "matplotlib" },
-    { name = "mdutils" },
-    { name = "moto" },
     { name = "numpy" },
     { name = "pandas" },
     { name = "plotly" },
@@ -407,9 +387,6 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
-fms = [
-    { name = "aicsfiles" },
-]
 pilr = [
     { name = "aicscytoparam" },
 ]
@@ -441,11 +418,10 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "aicscytoparam", marker = "extra == 'pilr'", specifier = "==0.1.10", index = "https://artifactory.corp.alleninstitute.org/artifactory/api/pypi/pypi-virtual/simple" },
-    { name = "aicsfiles", marker = "extra == 'fms'", index = "https://artifactory.corp.alleninstitute.org/artifactory/api/pypi/pypi-virtual/simple" },
-    { name = "aicsimageio", specifier = ">=4.14.0", index = "https://artifactory.corp.alleninstitute.org/artifactory/api/pypi/pypi-virtual/simple" },
-    { name = "aicsshparam", specifier = "==0.1.10", index = "https://artifactory.corp.alleninstitute.org/artifactory/api/pypi/pypi-virtual/simple" },
-    { name = "cellpack", git = "https://github.com/mesoscope/cellpack.git?branch=cellpack-analysis-3.11" },
+    { name = "aicscytoparam", marker = "extra == 'pilr'", specifier = "==0.1.10" },
+    { name = "aicsimageio", specifier = ">=4.14.0" },
+    { name = "aicsshparam", specifier = "==0.1.10" },
+    { name = "cellpack", git = "https://github.com/mesoscope/cellpack.git?branch=cellpack-analysis" },
     { name = "fire" },
     { name = "ipykernel" },
     { name = "ipywidgets" },
@@ -467,7 +443,7 @@ requires-dist = [
     { name = "trimesh" },
     { name = "vtk" },
 ]
-provides-extras = ["pilr", "fms"]
+provides-extras = ["pilr"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -1390,15 +1366,6 @@ wheels = [
 ]
 
 [[package]]
-name = "jsonpickle"
-version = "3.4.2"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/eb/d9/05365407d3312653498001adcebe64a14024f7189691b728610209991c46/jsonpickle-3.4.2.tar.gz", hash = "sha256:2efa2778859b6397d5804b0a98d52cd2a7d9a70fcb873bc5a3ca5acca8f499ba", size = 314339, upload-time = "2024-11-06T07:48:25.479Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/c0/a3/e610ae0feba3e7374da08ab6cc9bb76c8bfa84b4e502aa357bda0ef6dcae/jsonpickle-3.4.2-py3-none-any.whl", hash = "sha256:fd6c273278a02b3b66e3405db3dd2f4dbc8f4a4a3123bfcab3045177c6feb9c3", size = 46256, upload-time = "2024-11-06T07:48:22.923Z" },
-]
-
-[[package]]
 name = "jsonschema"
 version = "4.25.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1619,35 +1586,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/d6/54/cfe61301667036ec958cb99bd3efefba235e65cdeb9c84d24a8293ba1d90/mdurl-0.1.2.tar.gz", hash = "sha256:bb413d29f5eea38f31dd4754dd7377d4465116fb207585f97bf925588687c1ba", size = 8729, upload-time = "2022-08-14T12:40:10.846Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b3/38/89ba8ad64ae25be8de66a6d463314cf1eb366222074cfda9ee839c56a4b4/mdurl-0.1.2-py3-none-any.whl", hash = "sha256:84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8", size = 9979, upload-time = "2022-08-14T12:40:09.779Z" },
-]
-
-[[package]]
-name = "mdutils"
-version = "1.8.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/28/4b/df40d441a280f20fa173f224577fbbb2477851a73736080c89a61ff8a4dd/mdutils-1.8.0.tar.gz", hash = "sha256:091b605b4b550465a304f1c66d37647b6008b4a19e7b5154a7d39a148e903f6d", size = 23909, upload-time = "2025-07-10T19:09:41.194Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/9c/6b/d4c6e92daf6123696797e9914e4a3d36e2ba24a2ff1aad00c2d6d2afb82d/mdutils-1.8.0-py3-none-any.whl", hash = "sha256:0d3cf9af4a958f3bbd184c1097985bb1d1f9489887e1f7329942ada14359c7ba", size = 21647, upload-time = "2025-07-10T19:09:40.063Z" },
-]
-
-[[package]]
-name = "moto"
-version = "5.1.11"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "boto3" },
-    { name = "botocore" },
-    { name = "cryptography" },
-    { name = "jinja2" },
-    { name = "python-dateutil" },
-    { name = "requests" },
-    { name = "responses" },
-    { name = "werkzeug" },
-    { name = "xmltodict" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/40/a9/08cbf49888def620dbdf277d4518c92d7a0763ad83b7419c2b08b81f6110/moto-5.1.11.tar.gz", hash = "sha256:1330b6d9b91088e971469dfb67f297595541914b364e0b49047bb82622975ec7", size = 7111584, upload-time = "2025-08-24T22:11:06.556Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/f7/78/434fa680cb9aa51820388f0e86ddf7d0ce542f4865699265f3114b967a0f/moto-5.1.11-py3-none-any.whl", hash = "sha256:d09429ed5f67f8568637700cd525997d6abe7f91439a6f900b4f98a9fe4ecac9", size = 5259621, upload-time = "2025-08-24T22:11:04.369Z" },
 ]
 
 [[package]]
@@ -2539,15 +2477,6 @@ wheels = [
 ]
 
 [[package]]
-name = "rehash"
-version = "1.0.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/0e/4d/d93e8a9d6cefbba25182c2128dee87d3f940bf4ab61bc58ceefbedf8fcdd/rehash-1.0.0.tar.gz", hash = "sha256:8d8d4d4a6848dd75e638d4720e172d95927ed32a4a11e2e8767e95beef881581", size = 5012, upload-time = "2019-10-24T02:22:15.234Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/c9/e4/30db193232d9e9c8e123764d84f0807535677548833ca251556ad6134c24/rehash-1.0.0-py2.py3-none-any.whl", hash = "sha256:2e903ff2c4c7668adaf6cc937b44cbe6b87e7a1c76587b7e0b896714e522f4fa", size = 8669, upload-time = "2019-10-24T02:22:13.274Z" },
-]
-
-[[package]]
 name = "requests"
 version = "2.32.5"
 source = { registry = "https://pypi.org/simple" }
@@ -2585,20 +2514,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/62/80/b8952048ae1772d33b95dbf7d7107cf364c037cc229a2690fc8fa9ee8e48/resource_backed_dask_array-0.1.0.tar.gz", hash = "sha256:8fabcccf5c7e29059b5badd6786dd7675a258a203c58babf10077d9c90ada54f", size = 10300, upload-time = "2022-02-18T02:10:06.981Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/0d/b5/852f619e53fa7fb70d8915fcae66632df3958cac7e926c4ac38458958674/resource_backed_dask_array-0.1.0-py2.py3-none-any.whl", hash = "sha256:ec457fa72d81f0340a67ea6557a5a5919323a11cccc978a950df29fa69fe5679", size = 8044, upload-time = "2022-02-18T02:10:05.559Z" },
-]
-
-[[package]]
-name = "responses"
-version = "0.25.8"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "pyyaml" },
-    { name = "requests" },
-    { name = "urllib3" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/0e/95/89c054ad70bfef6da605338b009b2e283485835351a9935c7bfbfaca7ffc/responses-0.25.8.tar.gz", hash = "sha256:9374d047a575c8f781b94454db5cab590b6029505f488d12899ddb10a4af1cf4", size = 79320, upload-time = "2025-08-08T19:01:46.709Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/1c/4c/cc276ce57e572c102d9542d383b2cfd551276581dc60004cb94fe8774c11/responses-0.25.8-py3-none-any.whl", hash = "sha256:0c710af92def29c8352ceadff0c3fe340ace27cf5af1bbe46fb71275bcd2831c", size = 34769, upload-time = "2025-08-08T19:01:45.018Z" },
 ]
 
 [[package]]
@@ -3213,18 +3128,6 @@ wheels = [
 ]
 
 [[package]]
-name = "werkzeug"
-version = "3.1.3"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "markupsafe" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/9f/69/83029f1f6300c5fb2471d621ab06f6ec6b3324685a2ce0f9777fd4a8b71e/werkzeug-3.1.3.tar.gz", hash = "sha256:60723ce945c19328679790e3282cc758aa4a6040e4bb330f53d30fa546d44746", size = 806925, upload-time = "2024-11-08T15:52:18.093Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/52/24/ab44c871b0f07f491e5d2ad12c9bd7358e527510618cb1b803a88e986db1/werkzeug-3.1.3-py3-none-any.whl", hash = "sha256:54b78bf3716d19a65be4fceccc0d1d7b89e608834989dfae50ea87564639213e", size = 224498, upload-time = "2024-11-08T15:52:16.132Z" },
-]
-
-[[package]]
 name = "widgetsnbextension"
 version = "4.0.14"
 source = { registry = "https://pypi.org/simple" }
@@ -3276,15 +3179,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/dd/cb/dc0236ae209c924c1a7f4d3ae9d3371980beda85d1e0b5bd2d4f07372e48/xmlschema-4.1.0.tar.gz", hash = "sha256:88ac771cf94d5fc6bbd1a763db8c157f3d683ad23120b0d0b8c46fe4537f2adf", size = 633811, upload-time = "2025-06-05T21:17:39.32Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c5/2c/3ba8f8aeb3cb566e88a61ab0b0b767d5398d1e7293a0f7a76df9051e2b08/xmlschema-4.1.0-py3-none-any.whl", hash = "sha256:eabf610f398a58700bc4ac94380ad9ce558297a3f9ca8b7722ed3f7888eb4498", size = 458466, upload-time = "2025-06-05T21:17:35.265Z" },
-]
-
-[[package]]
-name = "xmltodict"
-version = "0.14.2"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/50/05/51dcca9a9bf5e1bce52582683ce50980bcadbc4fa5143b9f2b19ab99958f/xmltodict-0.14.2.tar.gz", hash = "sha256:201e7c28bb210e374999d1dde6382923ab0ed1a8a5faeece48ab525b7810a553", size = 51942, upload-time = "2024-10-16T06:10:29.683Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/d6/45/fc303eb433e8a2a271739c98e953728422fa61a3c1f36077a49e395c972e/xmltodict-0.14.2-py2.py3-none-any.whl", hash = "sha256:20cc7d723ed729276e808f26fb6b3599f786cbc37e06c65e192ba77c40f20aac", size = 9981, upload-time = "2024-10-16T06:10:27.649Z" },
 ]
 
 [[package]]

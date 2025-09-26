@@ -63,9 +63,6 @@ docs = [
 pilr = [
     "aicscytoparam==0.1.10",
 ]
-fms = [
-    "aicsfiles",
-]
 
 [build-system]
 requires = ["uv_build>=0.8.14,<0.9.0"]
@@ -110,17 +107,8 @@ source-exclude = [
 ]
 
 [tool.uv.sources]
-aicscytoparam = {index = "aics"}
-aicsimageio = {index = "aics"}
-aicsshparam = {index = "aics"}
-aicsfiles = {index = "aics"}
 cellpack = {git = "https://github.com/mesoscope/cellpack.git", branch = "cellpack-analysis"}
 
-
-[[tool.uv.index]]
-name = "aics"
-url = "https://artifactory.corp.alleninstitute.org/artifactory/api/pypi/pypi-virtual/simple"
-explicit = true
 
 [tool.black]
 line-length = 100
