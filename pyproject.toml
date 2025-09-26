@@ -109,6 +109,11 @@ source-exclude = [
 [tool.uv.sources]
 cellpack = {git = "https://github.com/mesoscope/cellpack.git", branch = "cellpack-analysis"}
 
+[[tool.uv.index]]
+name = "PyPI"
+url = "https://pypi.org/simple"
+default = true
+
 
 [tool.black]
 line-length = 100
