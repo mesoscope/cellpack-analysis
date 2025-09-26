@@ -14,7 +14,7 @@ from cellpack_analysis.lib.get_cell_id_list import get_cell_id_list_for_structur
 from cellpack_analysis.lib.label_tables import COLOR_PALETTE
 from cellpack_analysis.lib.mesh_tools import get_list_of_grid_points, round_away_from_zero
 
-log = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 # %% [markdown]
 # ## Set parameters and file paths
@@ -31,8 +31,8 @@ figures_dir.mkdir(exist_ok=True, parents=True)
 grid_dir = base_datadir / f"structure_data/{STRUCTURE_ID}/grid_distances"
 grid_dir.mkdir(exist_ok=True, parents=True)
 
-log.info(f"Figures directory: {figures_dir}")
-log.info(f"Grid directory: {grid_dir}")
+logger.info(f"Figures directory: {figures_dir}")
+logger.info(f"Grid directory: {grid_dir}")
 # %% [markdown]
 # ## Select cell_ids to use
 mesh_folder = base_datadir / f"structure_data/{STRUCTURE_ID}/meshes/"
@@ -40,7 +40,7 @@ cell_ids_to_use = get_cell_id_list_for_structure(
     structure_id=STRUCTURE_ID, dsphere=True, load_local=True
 )
 cell_id = cell_ids_to_use[0]
-log.info(f"Using cell id: {cell_id} for grid spacing illustration")
+logger.info(f"Using cell id: {cell_id} for grid spacing illustration")
 # %% [markdown]
 # ## Get meshes for cell_ids used
 nuc_mesh_path = mesh_folder / f"nuc_mesh_{cell_id}.obj"
@@ -57,9 +57,9 @@ all_points = get_list_of_grid_points(bounding_box, SPACING)
 
 # %% [markdown]
 # ## Run inside-outside check
-log.info("Calculating nuc inside check")
+logger.info("Calculating nuc inside check")
 inside_nuc = nuc_mesh.contains(all_points)
-log.info("Calculating mem inside check")
+logger.info("Calculating mem inside check")
 inside_mem = mem_mesh.contains(all_points)
 # %% [markdown]
 # ## Plot grid points

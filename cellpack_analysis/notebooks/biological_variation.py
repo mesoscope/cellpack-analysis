@@ -17,7 +17,7 @@ from cellpack_analysis.lib.load_data import get_position_data_from_outputs
 from cellpack_analysis.lib.mesh_tools import get_mesh_information_dict_for_structure
 from cellpack_analysis.lib.stats import normalize_distances
 
-log = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 start_time = time.time()
 # %% [markdown]
@@ -110,7 +110,7 @@ all_distance_dict = distance.get_distance_dictionary(
 )
 
 all_distance_dict = distance.filter_invalids_from_distance_distribution_dict(
-    distance_distribution_dict=all_distance_dict,
+    distance_distribution_dict=all_distance_dict, minimum_distance=None
 )
 
 all_distance_dict = normalize_distances(

@@ -18,7 +18,7 @@ from tqdm import tqdm
 from cellpack_analysis.lib.file_io import get_project_root
 from cellpack_analysis.lib.mesh_tools import calculate_grid_distances
 
-log = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 # %% set structure id
 STRUCTURE_ID = "SEC61B"  # SLC25A17: peroxisomes, RAB5A: early endosomes
 USE_STRUCT_MESH = True
@@ -26,7 +26,7 @@ USE_STRUCT_MESH = True
 SPACING = 2
 # %% set file paths and setup parameters
 base_datadir = get_project_root() / "data"
-log.info(f"Data directory: {base_datadir}")
+logger.info(f"Data directory: {base_datadir}")
 
 # %% select cell_ids to use
 use_mean_shape = False
@@ -37,9 +37,9 @@ else:
     df_struct = df_cell_id.loc[df_cell_id["structure_name"] == STRUCTURE_ID]
     cell_ids_to_use = df_struct.loc[df_struct["8dsphere"], "CellId"].tolist()
 mesh_folder = base_datadir / f"structure_data/{STRUCTURE_ID}/meshes/"
-log.info(f"Using {len(cell_ids_to_use)} cell_ids")
-# %% get meshes for cell_ids used
-# cell_ids_to_use = [cell_ids_to_use[0]]
+logger.info(f"Using {len(cell_ids_to_use)} cell_ids")
+# %% [markdown]
+# ### Get meshes for cell_ids used
 cell_id_list = []
 nuc_meshes_to_use = []
 mem_meshes_to_use = []
@@ -59,14 +59,14 @@ for cell_id in cell_ids_to_use:
             else:
                 struct_meshes_to_use.append(None)
     else:
-        log.warning(f"Missing mesh for cell_id {cell_id}, skipping")
-log.info(f"Found {len(nuc_meshes_to_use)} meshes")
+        logger.warning(f"Missing mesh for cell_id {cell_id}, skipping")
+logger.info(f"Found {len(nuc_meshes_to_use)} meshes")
 # %% set up grid results directory
 grid_dir = base_datadir / f"structure_data/{STRUCTURE_ID}/grid_distances/"
 grid_dir.mkdir(exist_ok=True, parents=True)
 # %% run the workflow
 save_dir = None
-PARALLEL = False
+PARALLEL = True
 recalculate = True
 calc_nuc_distances = True
 calc_mem_distances = True

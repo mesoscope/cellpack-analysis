@@ -15,21 +15,20 @@ from statannotations.Annotator import Annotator
 from tqdm import tqdm
 
 from cellpack_analysis.lib.default_values import PIXEL_SIZE_IN_UM
-from cellpack_analysis.lib.distance import (
-    filter_invalid_distances,
-    get_normalization_factor,
-    get_scaled_structure_radius,
-)
+from cellpack_analysis.lib.distance import filter_invalid_distances, get_scaled_structure_radius
 from cellpack_analysis.lib.label_tables import (
     COLOR_PALETTE,
     DISTANCE_MEASURE_LABELS,
-    GRID_DISTANCE_LABELS,
     MODE_LABELS,
     NORMALIZATION_LABELS,
 )
+from cellpack_analysis.lib.occupancy import get_cell_id_map_from_distance_kde_dict
 from cellpack_analysis.lib.stats import create_padded_numpy_array, get_pdf_ratio, normalize_pdf
 
-log = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
+
+plt.rcParams["pdf.fonttype"] = 42
+plt.rcParams["ps.fonttype"] = 42
 
 
 def plot_cell_diameter_distribution(
@@ -75,10 +74,11 @@ def plot_distance_distributions_kde(
     figures_dir: Path | None = None,
     suffix: str = "",
     normalization: str | None = None,
-    overlay: bool = False,
+    overlay: bool = True,
     distance_limits: dict[str, tuple[float, float]] | None = None,
     bandwidth: Literal["scott", "silverman"] | float = "scott",
     save_format: Literal["svg", "png", "pdf"] = "png",
+    minimum_distance: float | None = 0,
 ) -> tuple[Figure, dict[str, dict[str, Axes]]]:
     """
     Plot distance distributions using kernel density estimation (KDE).
@@ -106,7 +106,7 @@ def plot_distance_distributions_kde(
     save_format
         Format to save the figures in
     """
-    log.info("Starting distance distribution kde plot")
+    logger.info("Starting distance distribution kde plot")
     plt.rcParams.update({"font.size": 5})
 
     all_ax_dict = {}
@@ -140,7 +140,7 @@ def plot_distance_distributions_kde(
             distance_label = f"{DISTANCE_MEASURE_LABELS[distance_measure]} ({unit})"
 
         for row, mode in enumerate(packing_modes):
-            log.info(f"Plotting distance distribution for: {distance_measure}, Mode: {mode}")
+            logger.info(f"Plotting distance distribution for: {distance_measure}, Mode: {mode}")
 
             ax = axs[row, col]
             mode_dict = distance_dict[mode]
@@ -162,7 +162,9 @@ def plot_distance_distributions_kde(
 
             # kde plot of combined distance distribution
             combined_mode_distances = np.concatenate(list(mode_dict.values()))
-            combined_mode_distances = filter_invalid_distances(combined_mode_distances)
+            combined_mode_distances = filter_invalid_distances(
+                combined_mode_distances, minimum_distance=minimum_distance
+            )
             if overlay:
                 sns.kdeplot(
                     combined_mode_distances,
@@ -264,7 +266,7 @@ def plot_ks_test_barplots(
     :
         Tuple containing lists of figure and axis objects for each distance measure
     """
-    log.info("Plotting KS test barplots")
+    logger.info("Plotting KS test barplots")
     plt.rcParams.update({"font.size": 6})
 
     num_cols = len(distance_measures)
@@ -371,10 +373,10 @@ def plot_emd_comparisons(
         Tuple containing (bar_figure, bar_axes, violin_figure, violin_axes)
     """
     if comparison_type == "intra_mode":
-        log.info("Plotting within rule EMD plots")
+        logger.info("Plotting within rule EMD plots")
         file_prefix = "intra_mode_emd"
     elif comparison_type == "baseline":
-        log.info("Plotting baseline mode EMD plots")
+        logger.info("Plotting baseline mode EMD plots")
         file_prefix = "baseline_mode_emd"
     else:
         raise ValueError(
@@ -537,10 +539,18 @@ def plot_occupancy_illustration(
 
     all_cell_ids = [cell_id for cell_id in kde_dict.keys() if baseline_mode in kde_dict[cell_id]]
     if seed_index is not None:
-        seed = all_cell_ids[seed_index]
+        if str(seed_index) in all_cell_ids:
+            seed = str(seed_index)
+        elif seed_index < len(all_cell_ids):
+            seed = all_cell_ids[seed_index]
+        else:
+            seed = all_cell_ids[0]
+            logger.warning(
+                f"Seed index {seed_index} out of range. Using first cell ID {seed} instead."
+            )
     else:
         seed = all_cell_ids[0]
-    log.info(f"Using seed {seed} for occupancy illustration")
+    logger.info(f"Using seed {seed} for occupancy illustration")
 
     occupied_kde = kde_dict[seed][baseline_mode]
     available_kde = kde_dict[seed]["available_distance"]
@@ -698,7 +708,7 @@ def plot_occupancy_ratio(
     :
         Tuple containing lists of figure and axis objects
     """
-    log.info("Plotting individual occupancy values")
+    logger.info("Plotting individual occupancy values")
 
     plt.rcParams.update({"font.size": 8})
 
@@ -721,7 +731,7 @@ def plot_occupancy_ratio(
                 alpha=0.1,
                 linewidth=0.1,
                 label="_nolegend_",
-                zorder=1,
+                zorder=0,
             )
 
         # overlay occupancy for combined data
@@ -745,7 +755,7 @@ def plot_occupancy_ratio(
         ax.set_xlim((0, xlim))
     if ylim is not None:
         ax.set_ylim((0, ylim))
-    ax.axhline(1, color="gray", linestyle="--", zorder=0)
+    ax.axhline(1, color="gray", linestyle="--", zorder=1)
     distance_label = DISTANCE_MEASURE_LABELS[distance_measure]
     if normalization is not None:
         distance_label = f"{distance_label} / {NORMALIZATION_LABELS[normalization]}"
@@ -759,6 +769,101 @@ def plot_occupancy_ratio(
     if figures_dir is not None:
         fig.savefig(
             figures_dir / f"{distance_measure}_occupancy_ratio{suffix}.{save_format}",
+            dpi=300,
+        )
+
+    plt.show()
+
+    return fig, ax
+
+
+def plot_occupancy_ratio_interpolation(
+    interpolated_occupancy_dict: dict[str, Any],
+    baseline_mode: str = "SLC25A17",
+    figures_dir: Path | None = None,
+    suffix: str = "",
+    distance_measure: str = "nucleus",
+    xlim: float | None = None,
+    ylim: float | None = None,
+    save_format: str = "png",
+) -> tuple[Figure, Axes]:
+    """
+    Plot combined occupancy ratio and interpolated reconstruction.
+
+    Parameters
+    ----------
+    interpolated_occupancy_dict
+        A dictionary containing interpolated occupancy information
+    figures_dir
+        The directory to save the figures
+    suffix
+        A suffix to add to the figure filename
+    distance_measure
+        The distance measure to plot
+    method
+        The ratio to plot ("pdf" or "cumulative")
+    xlim
+        X-axis limit for plots
+    ylim
+        Y-axis limit for plots
+    sample_size
+        Number of samples to plot
+    save_format
+        Format to save the figures in
+
+    Returns
+    -------
+    :
+        Tuple containing lists of figure and axis objects
+    """
+    logger.info("Plotting occupancy interpolation")
+
+    plt.rcParams.update({"font.size": 8})
+
+    fig, ax = plt.subplots(dpi=300, figsize=(2.5, 2.5))
+
+    xvals = interpolated_occupancy_dict["xvals"]
+    occupancy_dict = interpolated_occupancy_dict["occupancy"]
+    for mode, mode_occupancy in occupancy_dict.items():
+
+        sns.lineplot(
+            x=xvals,
+            y=mode_occupancy,
+            ax=ax,
+            color=COLOR_PALETTE.get(mode, "gray"),
+            alpha=1.0,
+            linewidth=1.5,
+            label=MODE_LABELS.get(mode, mode),
+            zorder=1,
+        )
+
+    # Plot interpolated reconstruction
+    sns.lineplot(
+        x=xvals,
+        y=interpolated_occupancy_dict["interpolation"]["occupancy"],
+        ax=ax,
+        color=COLOR_PALETTE.get(baseline_mode, "gray"),
+        alpha=1.0,
+        linewidth=1.5,
+        linestyle="-.",
+        label="Interpolated",
+        zorder=2,
+    )
+
+    ax.xaxis.set_major_locator(MaxNLocator(4, integer=True))
+    ax.yaxis.set_major_locator(MaxNLocator(3, integer=True))
+    if xlim is not None:
+        ax.set_xlim((0, xlim))
+    if ylim is not None:
+        ax.set_ylim((0, ylim))
+    ax.axhline(1, color="gray", linestyle="--", zorder=0)
+    ax.set_xlabel(f"{DISTANCE_MEASURE_LABELS[distance_measure]} (\u03bcm)")
+    ax.set_ylabel("Occupancy Ratio")
+    sns.despine(fig=fig)
+    fig.tight_layout()
+    if figures_dir is not None:
+        fig.savefig(
+            figures_dir / f"{distance_measure}_interpolated_occupancy_ratio{suffix}.{save_format}",
             dpi=300,
         )
 
@@ -816,7 +921,7 @@ def plot_mean_and_std_occupancy_ratio_kde(
     :
         Tuple containing lists of figure and axis objects
     """
-    log.info("Plotting occupancy with confidence intervals")
+    logger.info("Plotting occupancy with confidence intervals")
 
     lines = []
     fig, ax = plt.subplots(dpi=300, figsize=(6, 6))
@@ -824,7 +929,7 @@ def plot_mean_and_std_occupancy_ratio_kde(
 
         color = COLOR_PALETTE.get(mode, "gray")
 
-        log.info(f"Calculating occupancy for {mode}")
+        logger.info(f"Calculating occupancy for {mode}")
         mode_dict = distance_dict[mode]
 
         all_mode_distances = list(mode_dict.values())
@@ -923,20 +1028,18 @@ def plot_mean_and_std_occupancy_ratio_kde(
     return fig, ax
 
 
-def plot_binned_occupancy_ratio(
-    distance_dict: dict[str, dict[str, np.ndarray]],
-    packing_modes: list[str],
-    mesh_information_dict: dict[str, dict[str, Any]],
+def plot_binned_occupancy_ratio_calc(
+    kde_dict: dict[str, dict[str, gaussian_kde]],
     channel_map: dict[str, str],
     figures_dir: Path | None = None,
     normalization: str | None = None,
     suffix: str = "",
     num_bins: int = 64,
+    num_cells: int | None = None,
     bin_width: float | None = None,
     distance_measure: str = "nucleus",
     xlim: float | None = None,
     ylim: float | None = None,
-    sample_size: int | None = None,
     save_format: str = "png",
 ) -> tuple[Any, Any]:
     """
@@ -978,36 +1081,31 @@ def plot_binned_occupancy_ratio(
     :
         Tuple containing figure and axis objects
     """
-    fig, ax = plt.subplots(dpi=300, figsize=(6, 6))
+    plt.rcParams.update({"font.size": 8})
+    fig, ax = plt.subplots(dpi=300, figsize=(2.5, 2.5))
 
-    for mode in packing_modes:
-        log.info(f"Calculating binned occupancy ratio for: {mode}")
+    cell_id_map = get_cell_id_map_from_distance_kde_dict(kde_dict, channel_map)
+    if num_cells is not None:
+        for structure_id, cell_ids in cell_id_map.items():
+            if len(cell_ids) > num_cells:
+                cell_id_map[structure_id] = np.random.choice(
+                    cell_ids, num_cells, replace=False
+                ).tolist()
 
-        mode_dict = distance_dict[mode]
-        cell_ids_to_use = sample_cell_ids_from_distance_dict(mode_dict, sample_size)
-        mode_mesh_dict = mesh_information_dict.get(channel_map.get(mode, mode), {})
-
-        # get max and min distances for this mode
-        combined_available_distance_dict = {}
-        for cell_id in cell_ids_to_use:
-            available_distances = mode_mesh_dict[cell_id][
-                GRID_DISTANCE_LABELS[distance_measure]
-            ].flatten()
-            available_distances = filter_invalid_distances(available_distances)
-            normalization_factor = get_normalization_factor(
-                normalization=normalization,
-                mesh_information_dict=mesh_information_dict,
-                cell_id=cell_id,
-                distance_measure=distance_measure,
-                distances=available_distances,
-            )
-            available_distances /= normalization_factor
-            combined_available_distance_dict[cell_id] = available_distances
-
-        combined_available_distances = np.concatenate(
-            list(combined_available_distance_dict.values())
+    # Get all available distances to use for a combined_plot
+    combined_available_distance_dict = {}
+    for structure_id, cell_ids in cell_id_map.items():
+        combined_available_distances = []
+        for cell_id in cell_ids:
+            combined_available_distances.extend(kde_dict[cell_id]["available_distance"].dataset)
+        combined_available_distance_dict[structure_id] = np.concatenate(
+            combined_available_distances
         )
-        max_distance = np.nanmax(combined_available_distances)
+
+    for mode, structure_id in channel_map.items():
+        logger.info(f"Calculating binned occupancy ratio for: {mode}")
+
+        max_distance = np.nanmax(combined_available_distance_dict[structure_id])
         if bin_width is not None:
             num_bins = int(max_distance / bin_width)
         bins = np.linspace(0, max_distance, num_bins + 1)
@@ -1015,77 +1113,187 @@ def plot_binned_occupancy_ratio(
 
         available_space_counts = {}
         occupied_space_counts = {}
-        for cell_id in tqdm(cell_ids_to_use):
-            distances = mode_dict[cell_id]
-            distances = filter_invalid_distances(distances)
-            if cell_id not in mode_mesh_dict:
-                continue
-            available_distances = combined_available_distance_dict[cell_id]
-            available_space_counts[cell_id] = np.histogram(
-                available_distances, bins=bins, density=False
-            )[0]
-            occupied_space_counts[cell_id] = np.histogram(distances, bins=bins, density=False)[0]
+        for cell_id in tqdm(cell_id_map.get(structure_id, []), desc=f"Processing {mode} cells"):
+            occupied_distances = kde_dict[cell_id][mode].dataset
+            available_distances = kde_dict[cell_id]["available_distance"].dataset
+            available_space_counts[cell_id] = (
+                np.histogram(available_distances, bins=bins, density=True)[0] + 1e-16
+            )
+            occupied_space_counts[cell_id] = (
+                np.histogram(occupied_distances, bins=bins, density=True)[0] + 1e-16
+            )
+            # sns.lineplot(
+            #     x=bin_centers,
+            #     y=occupied_space_counts[cell_id] / available_space_counts[cell_id],
+            #     color=COLOR_PALETTE.get(mode, "gray"),
+            #     alpha=0.1,
+            #     linewidth=0.1,
+            #     ax=ax,
+            #     label="_nolegend_",
+            #     zorder=0,
+            # )
+
         occupied_space_counts = np.vstack(list(occupied_space_counts.values()))
-        occupied_space_counts = occupied_space_counts + 1e-16
-
         available_space_counts = np.vstack(list(available_space_counts.values()))
-        available_space_counts = available_space_counts + 1e-16
 
-        normalized_occupied_space_counts = (
-            occupied_space_counts / np.sum(occupied_space_counts, axis=1)[:, np.newaxis]
-        )
-        normalized_available_space_counts = (
-            available_space_counts / np.sum(available_space_counts, axis=1)[:, np.newaxis]
-        )
-        occupancy_ratio = normalized_occupied_space_counts / normalized_available_space_counts
+        # normalized_occupied_space_counts = (
+        #     occupied_space_counts / np.sum(occupied_space_counts, axis=1)[:, np.newaxis]
+        # )
+        # normalized_available_space_counts = (
+        #     available_space_counts / np.sum(available_space_counts, axis=1)[:, np.newaxis]
+        # )
+        # occupancy_ratio = normalized_occupied_space_counts / normalized_available_space_counts
+        occupancy_ratio = occupied_space_counts / available_space_counts
         mean_occupancy_ratio = np.nanmean(occupancy_ratio, axis=0)
         std_occupancy_ratio = np.nanstd(occupancy_ratio, axis=0)
 
-        ax.plot(
-            bin_centers,
-            mean_occupancy_ratio,
+        sns.lineplot(
+            x=bin_centers,
+            y=mean_occupancy_ratio,
             label=MODE_LABELS.get(mode, mode),
+            color=COLOR_PALETTE.get(mode, "gray"),
+            ax=ax,
+            linewidth=1.5,
             zorder=2,
-            lw=3,
         )
         ax.fill_between(
             bin_centers,
             mean_occupancy_ratio - std_occupancy_ratio,
             mean_occupancy_ratio + std_occupancy_ratio,
-            alpha=0.2,
-            lw=0,
+            alpha=0.1,
+            color=COLOR_PALETTE.get(mode, "gray"),
+            linewidth=0,
             label="_nolegend_",
             zorder=0,
         )
 
-    ax.axhline(1, color="gray", linestyle="--")
-
+    ax.xaxis.set_major_locator(MaxNLocator(4, integer=True))
+    ax.yaxis.set_major_locator(MaxNLocator(3, integer=True))
     if xlim is not None:
         ax.set_xlim((0, xlim))
     else:
         cur_xlim = ax.get_xlim()
         ax.set_xlim((0, cur_xlim[1]))
-
     if ylim is not None:
         ax.set_ylim((0, ylim))
+    ax.axhline(1, color="gray", linestyle="--", zorder=1)
 
-    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
-    ax.yaxis.set_major_locator(MaxNLocator(integer=True))
-    xlabel = DISTANCE_MEASURE_LABELS[distance_measure]
+    distance_label = DISTANCE_MEASURE_LABELS[distance_measure]
     if normalization is not None:
-        xlabel = f"{xlabel} / {NORMALIZATION_LABELS[normalization]}"
+        distance_label = f"{distance_label} / {NORMALIZATION_LABELS[normalization]}"
     else:
-        xlabel = f"{xlabel} (\u03bcm)"
-    ax.set_xlabel(xlabel)
+        distance_label = f"{distance_label} (\u03bcm)"
+    ax.set_xlabel(distance_label)
     ax.set_ylabel("Occupancy Ratio")
-    ax.legend()
+    sns.despine(fig=fig)
     fig.tight_layout()
-    plt.show()
 
     if figures_dir is not None:
         fig.savefig(
             figures_dir / f"{distance_measure}_binned_occupancy_ratio{suffix}.{save_format}",
             dpi=300,
         )
+    plt.show()
+
+    return fig, ax
+
+
+def plot_binned_occupancy_ratio(
+    binned_occupancy_dict: dict[str, dict[str, Any]],
+    channel_map: dict[str, str],
+    figures_dir: Path | None = None,
+    normalization: str | None = None,
+    suffix: str = "",
+    distance_measure: str = "nucleus",
+    xlim: float | None = None,
+    ylim: float | None = None,
+    save_format: str = "png",
+) -> tuple[Any, Any]:
+    """
+    Plot the binned occupancy ratio based on the provided binned occupancy dictionary.
+
+    Parameters
+    ----------
+    binned_occupancy_dict
+        A dictionary containing binned occupancy information for various entities
+    channel_map
+        Dictionary mapping packing modes to channels
+    figures_dir
+        Directory to save the results
+    normalization
+        Method to normalize the data
+    suffix
+        Suffix to append to the result filenames
+    distance_measure
+        The measure of distance to use
+    xlim
+        X-axis limit for plots
+    ylim
+        Y-axis limit for plots
+    sample_size
+        The number of samples to consider
+    save_format
+        Format to save the figures in
+
+    Returns
+    -------
+    :
+        Tuple containing figure and axis objects
+    """
+    logger.info("Plotting binned occupancy ratio")
+    plt.rcParams.update({"font.size": 8})
+    fig, ax = plt.subplots(dpi=300, figsize=(2.5, 2.5))
+
+    for mode in channel_map.keys():
+        combined_xvals = binned_occupancy_dict[mode]["combined"]["xvals"]
+        combined_occupancy = binned_occupancy_dict[mode]["combined"]["occupancy"]
+        std_occupancy = binned_occupancy_dict[mode]["combined"]["std_occupancy"]
+        sns.lineplot(
+            x=combined_xvals,
+            y=combined_occupancy,
+            label=MODE_LABELS.get(mode, mode),
+            color=COLOR_PALETTE.get(mode, "gray"),
+            ax=ax,
+            linewidth=1.5,
+            zorder=2,
+        )
+        ax.fill_between(
+            combined_xvals,
+            combined_occupancy - std_occupancy,
+            combined_occupancy + std_occupancy,
+            alpha=0.1,
+            color=COLOR_PALETTE.get(mode, "gray"),
+            linewidth=0,
+            label="_nolegend_",
+            zorder=0,
+        )
+
+    ax.xaxis.set_major_locator(MaxNLocator(4, integer=True))
+    ax.yaxis.set_major_locator(MaxNLocator(3, integer=True))
+    if xlim is not None:
+        ax.set_xlim((0, xlim))
+    else:
+        cur_xlim = ax.get_xlim()
+        ax.set_xlim((0, cur_xlim[1]))
+    if ylim is not None:
+        ax.set_ylim((0, ylim))
+    ax.axhline(1, color="gray", linestyle="--", zorder=1)
+
+    distance_label = DISTANCE_MEASURE_LABELS[distance_measure]
+    if normalization is not None:
+        distance_label = f"{distance_label} / {NORMALIZATION_LABELS[normalization]}"
+    else:
+        distance_label = f"{distance_label} (\u03bcm)"
+    ax.set_xlabel(distance_label)
+    ax.set_ylabel("Occupancy Ratio")
+    sns.despine(fig=fig)
+    fig.tight_layout()
+
+    if figures_dir is not None:
+        fig.savefig(
+            figures_dir / f"{distance_measure}_binned_occupancy_ratio{suffix}.{save_format}",
+            dpi=300,
+        )
+    plt.show()
 
     return fig, ax

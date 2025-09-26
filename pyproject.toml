@@ -114,7 +114,7 @@ aicscytoparam = {index = "aics"}
 aicsimageio = {index = "aics"}
 aicsshparam = {index = "aics"}
 aicsfiles = {index = "aics"}
-cellpack = {git = "https://github.com/mesoscope/cellpack.git", branch = "cellpack-analysis-3.11"}
+cellpack = {git = "https://github.com/mesoscope/cellpack.git", branch = "cellpack-analysis"}
 
 
 [[tool.uv.index]]

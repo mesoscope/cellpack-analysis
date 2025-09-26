@@ -20,7 +20,7 @@ from cellpack_analysis.lib.load_data import get_position_data_from_outputs
 from cellpack_analysis.lib.mesh_tools import get_mesh_information_dict_for_structure
 from cellpack_analysis.lib.stats import normalize_distances
 
-log = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 start_time = time.time()
 # %% [markdown]
@@ -36,7 +36,7 @@ PACKING_ID = "peroxisome"
 STRUCTURE_NAME = "peroxisome"
 # %% [markdown]
 # ### Set packing modes to analyze
-save_format = "svg"
+save_format = "pdf"
 packing_modes = [
     STRUCTURE_ID,
     "random",
@@ -67,7 +67,7 @@ project_root = get_project_root()
 base_datadir = project_root / "data"
 base_results_dir = project_root / "results"
 
-results_dir = base_results_dir / f"punctate_analysis/{PACKING_ID}/data"
+results_dir = base_results_dir / f"distance_analysis/{PACKING_ID}/data"
 results_dir.mkdir(exist_ok=True, parents=True)
 
 figures_dir = results_dir.parent / "figures/"
@@ -124,7 +124,7 @@ all_distance_dict = distance.get_distance_dictionary(
 )
 
 all_distance_dict = distance.filter_invalids_from_distance_distribution_dict(
-    distance_distribution_dict=all_distance_dict,
+    distance_distribution_dict=all_distance_dict, minimum_distance=None
 )
 
 all_distance_dict = normalize_distances(
@@ -220,7 +220,7 @@ ks_test_df = distance.get_ks_test_df(
     baseline_mode=baseline_mode,
     significance_level=ks_significance_level,
     save_dir=results_dir,
-    recalculate=False,
+    recalculate=True,
 )
 # %% [markdown]
 # ### Bootstrap KS test

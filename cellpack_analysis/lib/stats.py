@@ -144,15 +144,21 @@ def pdf_ratio(
         Tuple containing the density ratio, normalized density1, and normalized density2
     """
     # regularize
-    min_value = np.minimum(np.min(density1[density1 > 0]), np.min(density2[density2 > 0]))
-    density1 = np.where(density1 <= min_value, min_value, density1)
-    density2 = np.where(density2 <= min_value, min_value, density2)
+    reg = 1e-10
+    density1_reg = np.maximum(density1, reg)
+    density2_reg = np.maximum(density2, reg)
 
     # normalize densities
-    density1 = normalize_pdf(xvals, density1)
-    density2 = normalize_pdf(xvals, density2)
+    density1_norm = normalize_pdf(xvals, density1_reg)
+    density2_norm = normalize_pdf(xvals, density2_reg)
 
-    return density1 / density2, density1, density2
+    # Calculate ratio in log space
+    log_ratio = np.log(density1_norm) - np.log(density2_norm)
+    density_ratio = np.exp(log_ratio)
+
+    density_ratio = np.nan_to_num(density_ratio, nan=0.0, posinf=0.0, neginf=0.0)
+
+    return density_ratio, density1_norm, density2_norm
 
 
 def cpdf_ratio(

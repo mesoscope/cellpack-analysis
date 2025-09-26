@@ -4,12 +4,17 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+from scipy.optimize import nnls
 from scipy.stats import gaussian_kde, ks_2samp, wasserstein_distance
 from tqdm import tqdm
 
+from cellpack_analysis.lib.file_io import (
+    add_file_handler_to_logger,
+    remove_file_handler_from_logger,
+)
 from cellpack_analysis.lib.stats import normalize_pdf, pdf_ratio
 
-log = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 def get_cell_id_map_from_distance_kde_dict(
@@ -29,8 +34,8 @@ def get_cell_id_map_from_distance_kde_dict(
     return cell_id_map
 
 
-def compute_occupancy_from_kde_dict(
-    kde_dict: dict[str, dict[str, gaussian_kde]],
+def get_kde_occupancy_dict(
+    distance_kde_dict: dict[str, dict[str, gaussian_kde]],
     channel_map: dict[str, str],
     results_dir: Path | None = None,
     recalculate: bool = False,
@@ -41,12 +46,14 @@ def compute_occupancy_from_kde_dict(
     num_points: int = 100,
 ) -> dict[str, dict[str, dict[str, Any]]]:
     """
-    Compute occupancy ratio from a dictionary of KDEs.
+    Load or compute occupancy ratio from a dictionary of distance distribution KDEs.
 
     Parameters
     ----------
     kde_dict
         Dictionary containing KDEs for distance distributions
+        Should have the structure:
+        {cell_id: {mode: gaussian_kde, "available_distance": gaussian_kde}, ...}
     channel_map
         Mapping of packing modes to structure IDs
     results_dir
@@ -95,14 +102,14 @@ def compute_occupancy_from_kde_dict(
     # Check if we need to recalculate or load existing data
     if not recalculate and save_path is not None and save_path.exists():
         with open(save_path, "rb") as f:
-            occupancy_dict = pickle.load(f)
-        return occupancy_dict
+            kde_occupancy_dict = pickle.load(f)
+        return kde_occupancy_dict
 
     # Initialize occupancy dictionary
-    occupancy_dict = {}
+    kde_occupancy_dict = {}
 
     # determine cell ids to use
-    cell_id_map = get_cell_id_map_from_distance_kde_dict(kde_dict, channel_map)
+    cell_id_map = get_cell_id_map_from_distance_kde_dict(distance_kde_dict, channel_map)
     if num_cells is not None:
         for structure_id, cell_ids in cell_id_map.items():
             if len(cell_ids) > num_cells:
@@ -112,43 +119,49 @@ def compute_occupancy_from_kde_dict(
 
     # Get all available distances to use for a combined_plot
     combined_available_distance_kde = {}
+
+    x_min = np.inf
+    x_max = -np.inf
     for structure_id, cell_ids in cell_id_map.items():
         combined_available_distances = []
         for cell_id in cell_ids:
-            combined_available_distances.extend(kde_dict[cell_id]["available_distance"].dataset)
+            combined_available_distances.extend(
+                distance_kde_dict[cell_id]["available_distance"].dataset
+            )
+            for mode in channel_map.keys():
+                if mode in distance_kde_dict[cell_id]:
+                    x_min = min(x_min, np.min(distance_kde_dict[cell_id][mode].dataset))
+                    x_max = max(x_max, np.max(distance_kde_dict[cell_id][mode].dataset))
         combined_available_distance_kde[structure_id] = gaussian_kde(
             np.concatenate(combined_available_distances), bw_method=bandwidth
         )
 
     for mode, structure_id in channel_map.items():
-        occupancy_dict[mode] = {"individual": {}, "combined": {}}
+        kde_occupancy_dict[mode] = {"individual": {}, "combined": {}}
         combined_occupied_distances = []
 
         for cell_id in tqdm(
             cell_id_map.get(structure_id, []), desc=f"Computing occupancy for {mode}"
         ):
-            if mode not in kde_dict[cell_id]:
+            if mode not in distance_kde_dict[cell_id]:
                 continue
 
             # Get occupied and available distances for cell_id
-            occupied_kde = kde_dict[cell_id][mode]
+            occupied_kde = distance_kde_dict[cell_id][mode]
             occupied_distances = occupied_kde.dataset
             combined_occupied_distances.extend(occupied_distances)
 
-            available_kde = kde_dict[cell_id]["available_distance"]
+            available_kde = distance_kde_dict[cell_id]["available_distance"]
             if bandwidth is not None:
                 occupied_kde.set_bandwidth(bandwidth)
                 available_kde.set_bandwidth(bandwidth)
 
             # Create xvals for evaluation
-            # x_min, x_max = np.min(occupied_distances), np.max(occupied_distances)
-            # x_vals = np.linspace(x_min, x_max, num_points)
-            x_max = np.max(occupied_distances)
-            x_vals = np.linspace(0, x_max, num_points)
+            x_vals = np.linspace(x_min, x_max, num_points)
             pdf_occupied = normalize_pdf(x_vals, occupied_kde.evaluate(x_vals))
             pdf_available = normalize_pdf(x_vals, available_kde.evaluate(x_vals))
             occupancy, pdf_occupied, pdf_available = pdf_ratio(x_vals, pdf_occupied, pdf_available)
-            occupancy_dict[mode]["individual"][cell_id] = {
+            kde_occupancy_dict[mode]["individual"][cell_id] = {
                 "xvals": x_vals,
                 "occupancy": occupancy,
                 "pdf_occupied": pdf_occupied,
@@ -156,10 +169,9 @@ def compute_occupancy_from_kde_dict(
             }
 
         combined_occupied_distances = np.concatenate(combined_occupied_distances)
-        x_max = np.max(combined_occupied_distances)
-        x_vals = np.linspace(0, x_max, num_points)
-        # x_min, x_max = np.min(combined_occupied_distances), np.max(combined_occupied_distances)
-        # x_vals = np.linspace(x_min, x_max, num_points)
+        # Create xvals for evaluation
+        x_vals = np.linspace(x_min, x_max, num_points)
+
         pdf_combined_occupied = normalize_pdf(
             x_vals, gaussian_kde(combined_occupied_distances, bw_method=bandwidth).evaluate(x_vals)
         )
@@ -169,7 +181,7 @@ def compute_occupancy_from_kde_dict(
         occupancy, pdf_combined_occupied, pdf_combined_available = pdf_ratio(
             x_vals, pdf_combined_occupied, pdf_combined_available
         )
-        occupancy_dict[mode]["combined"] = {
+        kde_occupancy_dict[mode]["combined"] = {
             "xvals": x_vals,
             "occupancy": occupancy,
             "pdf_occupied": pdf_combined_occupied,
@@ -179,9 +191,9 @@ def compute_occupancy_from_kde_dict(
     # save occupancy dictionary
     if save_path is not None:
         with open(save_path, "wb") as f:
-            pickle.dump(occupancy_dict, f)
+            pickle.dump(kde_occupancy_dict, f)
 
-    return occupancy_dict
+    return kde_occupancy_dict
 
 
 def get_occupancy_emd(
@@ -229,7 +241,7 @@ def get_occupancy_emd(
 
     emd_occupancy_dict = {}
     for mode in packing_modes:
-        log.info(mode)
+        logger.info(mode)
         mode_dict = distance_dict[mode]
         emd_occupancy_dict[mode] = {}
         for _k, (seed, _distances) in tqdm(enumerate(mode_dict.items()), total=len(mode_dict)):
@@ -292,7 +304,7 @@ def get_occupancy_ks_test_dict(
 
     ks_occupancy_dict = {}
     for mode in packing_modes:
-        log.info(mode)
+        logger.info(mode)
         mode_dict = distance_dict[mode]
         ks_occupancy_dict[mode] = {}
         for _k, (seed, _distances) in tqdm(enumerate(mode_dict.items()), total=len(mode_dict)):
@@ -306,3 +318,187 @@ def get_occupancy_ks_test_dict(
             pickle.dump(ks_occupancy_dict, f)
 
     return ks_occupancy_dict
+
+
+def interpolate_occupancy_dict(
+    occupancy_dict: dict[str, dict[str, dict[str, Any]]],
+    baseline_mode: str,
+    results_dir: Path | None = None,
+    suffix: str = "",
+):
+    xvals = occupancy_dict[baseline_mode]["combined"]["xvals"]
+    baseline_occupancy = occupancy_dict[baseline_mode]["combined"]["occupancy"]
+    interpolated_occupancy_dict = {
+        "xvals": xvals,
+        "occupancy": {
+            mode: occupancy_dict[mode]["combined"]["occupancy"] for mode in occupancy_dict
+        },
+    }
+
+    simulated_occupancy_matrix = []
+    packing_modes = []
+    for packing_mode, mode_dict in occupancy_dict.items():
+        if packing_mode == baseline_mode:
+            continue
+        simulated_occupancy = mode_dict["combined"]["occupancy"]
+        simulated_occupancy_matrix.append(simulated_occupancy)
+        packing_modes.append(packing_mode)
+
+    simulated_occupancy_matrix = np.array(simulated_occupancy_matrix).T
+    # coeffs, _, _, _ = np.linalg.lstsq(simulated_occupancy_matrix, baseline_occupancy, rcond=None)
+    coeffs, _ = nnls(simulated_occupancy_matrix, baseline_occupancy)
+    relative_contribution = coeffs / np.sum(coeffs)
+    reconstructed_occupancy = simulated_occupancy_matrix @ coeffs
+
+    interpolated_occupancy_dict["interpolation"] = {
+        "occupancy": reconstructed_occupancy,
+        "fit_params": {
+            mode: {"coefficient": coeffs[i], "relative_contribution": relative_contribution[i]}
+            for i, mode in enumerate(packing_modes)
+        },
+    }
+
+    log_file_path = None
+    if results_dir is not None:
+        log_file_path = results_dir / f"{baseline_mode}_occupancy_interpolation_coeffs{suffix}.log"
+
+    log_occupancy_interpolation_coeffs(
+        interpolated_occupancy_dict, baseline_mode=baseline_mode, file_path=log_file_path
+    )
+
+    return interpolated_occupancy_dict
+
+
+def log_occupancy_interpolation_coeffs(
+    interpolated_occupancy_dict: dict[str, dict[str, dict[str, Any]]],
+    baseline_mode: str,
+    file_path: Path | None = None,
+) -> None:
+    """
+    Log interpolation coefficients for occupancy data.
+
+    Parameters
+    ----------
+    occupancy_dict
+        Dictionary containing occupancy data for each packing mode
+    coeffs
+        Array of interpolation coefficients
+    baseline_mode
+        The baseline packing mode used for interpolation
+    file_path
+        Optional file path to save the log output
+    """
+    if file_path is not None:
+        dist_logger = add_file_handler_to_logger(logger, file_path)
+    else:
+        dist_logger = logger
+
+    dist_logger.info(f"Baseline mode: {baseline_mode}")
+    for mode, params in interpolated_occupancy_dict["interpolation"]["fit_params"].items():
+        dist_logger.info(
+            f"Mode: {mode}, Coefficient: {params['coefficient']:.4f}, "
+            f"Relative Contribution: {params['relative_contribution']:.4f}"
+        )
+    remove_file_handler_from_logger(dist_logger, file_path)
+
+
+def get_binned_occupancy_dict(
+    distance_kde_dict: dict[str, dict[str, gaussian_kde]],
+    channel_map: dict[str, str],
+    num_cells: int | None = None,
+    num_bins: int = 64,
+    bin_width: float | None = None,
+    results_dir: Path | None = None,
+    recalculate: bool = False,
+    suffix: str = "",
+    distance_measure: str = "nucleus",
+    x_max: float | None = None,
+):
+    # Set file path for saving/loading occupancy dict
+    save_path = None
+    if results_dir is not None:
+        save_path = results_dir / f"{distance_measure}_binned_occupancy{suffix}.dat"
+
+    # Check if we need to recalculate or load existing data
+    if not recalculate and save_path is not None and save_path.exists():
+        with open(save_path, "rb") as f:
+            binned_occupancy_dict = pickle.load(f)
+        return binned_occupancy_dict
+
+    # Initialize occupancy dictionary
+    binned_occupancy_dict = {}
+
+    cell_id_map = get_cell_id_map_from_distance_kde_dict(distance_kde_dict, channel_map)
+    if num_cells is not None:
+        for structure_id, cell_ids in cell_id_map.items():
+            if len(cell_ids) > num_cells:
+                cell_id_map[structure_id] = np.random.choice(
+                    cell_ids, size=num_cells, replace=False
+                ).tolist()
+
+    # Get all available distances to use for a combined_plot
+    combined_available_distance_dict = {}
+    for structure_id, cell_ids in cell_id_map.items():
+        combined_available_distances = []
+        for cell_id in cell_ids:
+            combined_available_distances.extend(
+                distance_kde_dict[cell_id]["available_distance"].dataset
+            )
+        combined_available_distance_dict[structure_id] = np.concatenate(
+            combined_available_distances
+        )
+
+    for mode, structure_id in channel_map.items():
+        binned_occupancy_dict[mode] = {"individual": {}, "combined": {}}
+
+        max_distance = x_max or np.nanmax(combined_available_distance_dict[structure_id])
+        if bin_width is not None:
+            num_bins = int(np.ceil(max_distance / bin_width))
+        bins = np.linspace(0, max_distance, num_bins + 1)
+        bin_centers = 0.5 * (bins[1:] + bins[:-1])
+
+        available_space_counts = {}
+        occupied_space_counts = {}
+        for cell_id in tqdm(
+            cell_id_map.get(structure_id, []), desc=f"Computing binned occupancy for {mode}"
+        ):
+            if mode not in distance_kde_dict[cell_id]:
+                continue
+
+            # Get occupied and available distances for cell_id
+            occupied_distances = distance_kde_dict[cell_id][mode].dataset
+            available_distances = distance_kde_dict[cell_id]["available_distance"].dataset
+
+            available_space_counts[cell_id] = (
+                np.histogram(available_distances, bins=bins, density=True)[0] + 1e-16
+            )
+            occupied_space_counts[cell_id] = (
+                np.histogram(occupied_distances, bins=bins, density=True)[0] + 1e-16
+            )
+            occupancy = occupied_space_counts[cell_id] / available_space_counts[cell_id]
+            binned_occupancy_dict[mode]["individual"][cell_id] = {
+                "xvals": bin_centers,
+                "occupancy": occupancy,
+                "pdf_occupied": occupied_space_counts[cell_id],
+                "pdf_available": available_space_counts[cell_id],
+            }
+
+        occupied_space_counts = np.vstack(list(occupied_space_counts.values()))
+        available_space_counts = np.vstack(list(available_space_counts.values()))
+        occupancy_ratio = occupied_space_counts / available_space_counts
+        mean_occupancy_ratio = np.nanmean(occupancy_ratio, axis=0)
+        std_occupancy_ratio = np.nanstd(occupancy_ratio, axis=0)
+        binned_occupancy_dict[mode]["combined"] = {
+            "xvals": bin_centers,
+            "occupancy": mean_occupancy_ratio,
+            "std_occupancy": std_occupancy_ratio,
+            "pdf_occupied": np.nanmean(occupied_space_counts, axis=0),
+            "pdf_available": np.nanmean(available_space_counts, axis=0),
+        }
+
+    # save occupancy dictionary
+    if save_path is not None:
+        with open(save_path, "wb") as f:
+            pickle.dump(binned_occupancy_dict, f)
+
+    return binned_occupancy_dict

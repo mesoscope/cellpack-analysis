@@ -11,7 +11,7 @@ from cellpack_analysis.lib.load_data import get_position_data_from_outputs
 from cellpack_analysis.lib.mesh_tools import get_mesh_information_dict_for_structure
 from cellpack_analysis.lib.stats import normalize_distances
 
-log = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 start_time = time.time()
 # %% [markdown]
@@ -27,7 +27,7 @@ PACKING_ID = "peroxisome"
 STRUCTURE_NAME = "peroxisome"
 # %% [markdown]
 # ### Set packing modes and channel map
-save_format = "svg"
+save_format = "pdf"
 packing_modes = [
     STRUCTURE_ID,
     "random",
@@ -40,10 +40,11 @@ packing_modes = [
 
 channel_map = {
     "SLC25A17": "SLC25A17",
+    # "RAB5A": "RAB5A",
     "random": "SLC25A17",
     "nucleus_gradient_strong": "SLC25A17",
     "membrane_gradient_strong": "SLC25A17",
-    # "apical_gradient": "SLC25A17",
+    # "apical_gradient": "RAB5A",
     # "struct_gradient": "SEC61B",
     # "struct_gradient_weak": "ST6GAL1",
     # "struct_gradient": "ST6GAL1",
@@ -60,7 +61,7 @@ project_root = get_project_root()
 base_datadir = project_root / "data"
 base_results_dir = project_root / "results"
 
-results_dir = base_results_dir / f"occupancy_analysis/{PACKING_ID}"
+results_dir = base_results_dir / f"occupancy_analysis/{PACKING_ID}/test_negative_distances"
 results_dir.mkdir(exist_ok=True, parents=True)
 
 figures_dir = results_dir / "figures/"
@@ -91,7 +92,7 @@ all_positions = get_position_data_from_outputs(
     results_dir=results_dir,
     packing_output_folder=packing_output_folder,
     ingredient_key=f"membrane_interior_{STRUCTURE_NAME}",
-    recalculate=False,
+    recalculate=True,
 )
 # %% [markdown]
 # ### Get mesh information
@@ -100,11 +101,12 @@ for structure_id in all_structures:
     mesh_information_dict = get_mesh_information_dict_for_structure(
         structure_id=structure_id,
         base_datadir=base_datadir,
-        recalculate=False,
+        recalculate=True,
     )
     combined_mesh_information_dict[structure_id] = mesh_information_dict
 # %% [markdown]
 # ### Calculate distance measures and normalize
+minimum_distance = -1  # in microns
 all_distance_dict = distance.get_distance_dictionary(
     all_positions=all_positions,
     distance_measures=occupancy_distance_measures,
@@ -112,10 +114,11 @@ all_distance_dict = distance.get_distance_dictionary(
     channel_map=channel_map,
     results_dir=results_dir,
     recalculate=True,
+    num_workers=16,
+    minimum_distance=minimum_distance,
 )
-
 all_distance_dict = distance.filter_invalids_from_distance_distribution_dict(
-    distance_distribution_dict=all_distance_dict,
+    distance_distribution_dict=all_distance_dict, minimum_distance=minimum_distance
 )
 all_distance_dict = normalize_distances(
     all_distance_dict=all_distance_dict,
@@ -127,17 +130,17 @@ all_distance_dict = normalize_distances(
 # ## Occupancy Analysis
 # %% [markdown]
 # ### Set limits and bandwidths for plotting
-xlim = {
-    "nucleus": 6,
-    "z": 8,
+occupancy_params = {
+    "nucleus": {"xlim": 6, "ylim": 4, "bandwidth": 0.4},
+    "z": {"xlim": 8, "ylim": 4, "bandwidth": 0.4},
 }
 # %% [markdown]
 # ### Create kde dictionary for individual distance distributions
-# for occupancy_distance_measure in occupancy_distance_measures:
 occupancy_distance_measure = "nucleus"
+# for occupancy_distance_measure in occupancy_distance_measures:
 occupancy_figures_dir = figures_dir / occupancy_distance_measure
 occupancy_figures_dir.mkdir(exist_ok=True, parents=True)
-log.info(f"Starting occupancy analysis for distance measure: {occupancy_distance_measure}")
+logger.info(f"Starting occupancy analysis for distance measure: {occupancy_distance_measure}")
 distance_kde_dict = distance.get_distance_distribution_kde(
     all_distance_dict=all_distance_dict,
     mesh_information_dict=combined_mesh_information_dict,
@@ -147,11 +150,12 @@ distance_kde_dict = distance.get_distance_distribution_kde(
     suffix=suffix,
     normalization=normalization,
     distance_measure=occupancy_distance_measure,
+    minimum_distance=minimum_distance,
 )
 
 # %% [markdown]
 # ### Plot illustration for occupancy distribution
-kde_distance, kde_available_space, xvals, yvals, fig_ill, axs_ill = (
+pdf_occupied, pdf_available, xvals, occupancy_vals, fig_ill, axs_ill = (
     visualization.plot_occupancy_illustration(
         kde_dict=distance_kde_dict,
         baseline_mode="random",
@@ -159,24 +163,24 @@ kde_distance, kde_available_space, xvals, yvals, fig_ill, axs_ill = (
         distance_measure=occupancy_distance_measure,
         normalization=normalization,
         method="pdf",
-        seed_index=0,
-        xlim=xlim[occupancy_distance_measure],
-        # xlim=3,
+        seed_index=743916,
         figures_dir=occupancy_figures_dir,
         save_format=save_format,
-        bandwidth=0.4,
+        xlim=occupancy_params[occupancy_distance_measure]["xlim"],
+        bandwidth=occupancy_params[occupancy_distance_measure]["bandwidth"],
     )
 )
 # %% [markdown]
 # ### Calculate occupancy ratio
-occupancy_dict = occupancy.compute_occupancy_from_kde_dict(
-    kde_dict=distance_kde_dict,
+occupancy_dict = occupancy.get_kde_occupancy_dict(
+    distance_kde_dict=distance_kde_dict,
     channel_map=channel_map,
     results_dir=results_dir,
     recalculate=True,
     suffix=suffix,
     distance_measure=occupancy_distance_measure,
-    bandwidth=0.4,
+    bandwidth=occupancy_params[occupancy_distance_measure]["bandwidth"],
+    # bandwidth="scott",
     # num_cells=5,
     num_points=250,
 )
@@ -186,13 +190,86 @@ occupancy_dict = occupancy.compute_occupancy_from_kde_dict(
 fig, ax = visualization.plot_occupancy_ratio(
     occupancy_dict=occupancy_dict,
     channel_map=channel_map,
-    figures_dir=occupancy_figures_dir,
+    # figures_dir=occupancy_figures_dir,
     suffix=suffix,
     normalization=normalization,
     distance_measure=occupancy_distance_measure,
-    xlim=xlim[occupancy_distance_measure],
-    ylim=4,
+    save_format=save_format,
+    xlim=occupancy_params[occupancy_distance_measure]["xlim"],
+    # xlim=12,
+    ylim=occupancy_params[occupancy_distance_measure]["ylim"],
+)
+
+
+# %% [markdown]
+# ### Test interpolation
+interp_occupancy_dict = occupancy.interpolate_occupancy_dict(
+    occupancy_dict=occupancy_dict,
+    baseline_mode=baseline_mode,
+    results_dir=results_dir,
+    suffix=suffix,
+)
+# %% [markdown]
+# ### Plot interpolated occupancy ratio
+fig_interp, ax_interp = visualization.plot_occupancy_ratio_interpolation(
+    interpolated_occupancy_dict=interp_occupancy_dict,
+    baseline_mode=baseline_mode,
+    figures_dir=occupancy_figures_dir,
+    suffix=suffix,
+    distance_measure=occupancy_distance_measure,
+    xlim=occupancy_params[occupancy_distance_measure]["xlim"],
+    ylim=occupancy_params[occupancy_distance_measure]["ylim"],
+    save_format=save_format,
+)
+# %% [markdown]
+# ### Get binned occupancy ratio
+binned_occupancy_dict = occupancy.get_binned_occupancy_dict(
+    distance_kde_dict=distance_kde_dict,
+    channel_map=channel_map,
+    bin_width=0.4,
+    results_dir=results_dir,
+    recalculate=True,
+    suffix=suffix,
+    distance_measure=occupancy_distance_measure,
+    x_max=occupancy_params[occupancy_distance_measure]["xlim"],
+    # x_max=12,
+    # num_cells=5,
+)
+# %% [markdown]
+# ### Pot binned occupancy ratio
+fig_binned, ax_binned = visualization.plot_binned_occupancy_ratio(
+    binned_occupancy_dict=binned_occupancy_dict,
+    channel_map=channel_map,
+    figures_dir=occupancy_figures_dir,
+    suffix=suffix,
+    distance_measure=occupancy_distance_measure,
+    normalization=normalization,
+    xlim=occupancy_params[occupancy_distance_measure]["xlim"],
+    # xlim=12,
+    ylim=occupancy_params[occupancy_distance_measure]["ylim"],
+    save_format=save_format,
+)
+# %% [markdown]
+# ### Test interpolation
+interp_binned_occupancy_dict = occupancy.interpolate_occupancy_dict(
+    occupancy_dict=binned_occupancy_dict,
+    baseline_mode=baseline_mode,
+    results_dir=results_dir,
+    suffix=f"_binned_{occupancy_distance_measure}",
+)
+# %% [markdown]
+# ### Plot interpolated occupancy ratio
+fig_interp, ax_interp = visualization.plot_occupancy_ratio_interpolation(
+    interpolated_occupancy_dict=interp_binned_occupancy_dict,
+    baseline_mode=baseline_mode,
+    figures_dir=occupancy_figures_dir,
+    suffix="_binned",
+    distance_measure=occupancy_distance_measure,
+    xlim=occupancy_params[occupancy_distance_measure]["xlim"],
+    ylim=occupancy_params[occupancy_distance_measure]["ylim"],
     save_format=save_format,
 )
 # %%
-log.info(f"Time taken to complete workflow: {time.time() - start_time:.2f} s")
+logger.info(f"Time taken to complete workflow: {time.time() - start_time:.2f} s")
+
+# %%

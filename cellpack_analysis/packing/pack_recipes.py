@@ -15,7 +15,7 @@ from cellpack_analysis.lib.file_io import read_json
 from cellpack_analysis.lib.get_cell_id_list import get_cell_id_list_for_structure
 from cellpack_analysis.lib.io import format_time
 
-log = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 # set cellPACK path
 load_dotenv()
@@ -28,7 +28,7 @@ if CELLPACK_PATH is None:
 
 PACK_PATH: str = CELLPACK_PATH + "/bin/pack.py"  # type: ignore
 assert os.path.exists(PACK_PATH), f"PACK path {PACK_PATH} does not exist"
-log.debug(f"Using cellPACK at {PACK_PATH}")
+logger.debug(f"Using cellPACK at {PACK_PATH}")
 
 
 def check_recipe_completed(
@@ -122,7 +122,7 @@ def log_update(
     """
     done = count + skipped_count
     remaining = num_files - done - failed_count
-    log.info(
+    logger.info(
         f"Completed: {count}, Failed: {failed_count}, Skipped: {skipped_count}, "
         f"Total: {num_files}, Done: {done}, Remaining: {remaining}"
     )
@@ -134,7 +134,7 @@ def log_update(
         per_count = rule_time / count
         time_left = per_count * remaining
 
-    log.info(
+    logger.info(
         f"Total time: {format_time(total_time)}, Rule time: {format_time(rule_time)}, "
         f"Time per run: {format_time(per_count)}, "
         f"Estimated time left for rule: {format_time(time_left)}",
@@ -217,7 +217,7 @@ def get_input_file_dictionary(workflow_config: Any) -> dict[str, dict[str, Any]]
             )
             if cell_id_recipe_path.exists():
                 rule_recipe_list.append(cell_id_recipe_path)
-        log.info(f"Found {len(rule_recipe_list)} recipes for rule {rule}")
+        logger.info(f"Found {len(rule_recipe_list)} recipes for rule {rule}")
         input_file_dict[rule]["recipe_paths"] = rule_recipe_list
 
     return input_file_dict
@@ -240,7 +240,7 @@ def run_single_packing(recipe_path: str | Path, config_path: str | Path) -> bool
         True if packing completed successfully, False otherwise
     """
     try:
-        log.debug(f"Running {recipe_path}")
+        logger.debug(f"Running {recipe_path}")
         result = subprocess.run(
             [
                 "python",
@@ -254,7 +254,7 @@ def run_single_packing(recipe_path: str | Path, config_path: str | Path) -> bool
         )
         return result.returncode == 0
     except Exception as e:
-        log.error(f"Error: {e}")
+        logger.error(f"Error: {e}")
         return False
 
 
@@ -276,7 +276,7 @@ def pack_recipes(workflow_config: Any) -> None:
     for rule, input_files in input_file_dict.items():
         rule_start = time.time()
         skipped_count = count = failed_count = 0
-        log.info(f"Packing rule: {rule}")
+        logger.info(f"Packing rule: {rule}")
 
         config_path = input_files["config_path"]
         config_data = read_json(config_path)
@@ -292,7 +292,7 @@ def pack_recipes(workflow_config: Any) -> None:
                     recipe_path, config_data, workflow_config
                 ):
                     skipped_count += 1
-                    log.debug(
+                    logger.debug(
                         f"Skipping packing for completed recipe {recipe_path}. "
                         f"{skipped_count} skipped"
                     )
@@ -305,15 +305,17 @@ def pack_recipes(workflow_config: Any) -> None:
                         config_path,
                     )
                 )
-                log.debug(f"Submitted packing for {recipe_path}")
+                logger.debug(f"Submitted packing for {recipe_path}")
 
-            log.info(f"Submitted {len(futures)} packings for rule {rule}. {skipped_count} skipped")
+            logger.info(
+                f"Submitted {len(futures)} packings for rule {rule}. {skipped_count} skipped"
+            )
             for future in as_completed(futures):
                 if future.result():
                     count += 1
                 else:
                     failed_count += 1
-                    log.info(f"Failed packing for {future}")
+                    logger.info(f"Failed packing for {future}")
                 log_update(
                     count,
                     skipped_count,
@@ -325,5 +327,5 @@ def pack_recipes(workflow_config: Any) -> None:
                 gc.collect()
         total_count += count
         total_failed_count += failed_count
-    log.info(f"Packing complete. Total time: {format_time(time.time() - start)}")
-    log.info(f"Total count: {total_count}, Total failed: {total_failed_count}")
+    logger.info(f"Packing complete. Total time: {format_time(time.time() - start)}")
+    logger.info(f"Total count: {total_count}, Total failed: {total_failed_count}")

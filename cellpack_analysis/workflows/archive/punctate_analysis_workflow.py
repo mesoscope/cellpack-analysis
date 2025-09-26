@@ -379,7 +379,7 @@ log.info(f"Time taken to plot occupancy ratio: {time.time() - occupancy_start_ti
 # %% [markdown]
 # ### plot binned occupancy ratio
 fig_binned, ax_binned = visualization.plot_binned_occupancy_ratio(
-    distance_dict=all_distance_dict[occupancy_distance_measure],
+    kde_dict=all_distance_dict[occupancy_distance_measure],
     packing_modes=packing_modes,
     mesh_information_dict=combined_mesh_information_dict,
     channel_map=channel_map,

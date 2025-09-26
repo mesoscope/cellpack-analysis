@@ -10,7 +10,7 @@ from tqdm import tqdm
 from cellpack_analysis.lib.get_cell_id_list import get_cell_id_list_for_structure
 from cellpack_analysis.lib.get_variance_dataset import get_variance_dataframe
 
-log = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 tqdm.pandas()
 # %% [markdown]
@@ -26,7 +26,7 @@ pkg = quilt3.Package.browse("aics/hipsc_single_cell_image_dataset", registry="s3
 redownload = False
 meta_df = get_variance_dataframe(datadir, redownload, pkg)
 meta_df.index = meta_df.index.astype(str)
-log.info(meta_df.structure_name.unique())
+logger.info(meta_df.structure_name.unique())
 
 # %% [markdown]
 # ### Set structure of interest
@@ -43,7 +43,7 @@ STRUCTURE_ID = "RAB5A"
 # ### Get cell_id list for structure
 dsphere = True
 cell_id_list = get_cell_id_list_for_structure(STRUCTURE_ID, dsphere=dsphere)
-log.info(f"Found {len(cell_id_list)} cell IDs for {STRUCTURE_ID}")
+logger.info(f"Found {len(cell_id_list)} cell IDs for {STRUCTURE_ID}")
 cell_id_list = [cell_id_list[0]]
 # %% [markdown]
 # ### Create dataframe for structure metadata
@@ -56,7 +56,7 @@ folder_name = "unsegmented" if download_raw else "segmented"
 
 save_path = Path(datadir / f"structure_data/{STRUCTURE_ID}/{subfolder_name}/{folder_name}")
 save_path.mkdir(exist_ok=True, parents=True)
-log.info(f"Images will be saved to {save_path}")
+logger.info(f"Images will be saved to {save_path}")
 
 
 # %% [markdown]
@@ -69,10 +69,10 @@ def download_image(row: pd.DataFrame, col_name: str, save_path: Path, pkg) -> Pa
         / f"{row.structure_name}_{row.CellId}_ch_{row.ChannelNumberStruct}_{col_name}_original.tiff"
     )
     if not local_filename.exists():
-        # log.info(f"Downloading {local_filename.name}")
+        # logger.info(f"Downloading {local_filename.name}")
         pkg[subdir_name][file_name].fetch(local_filename)
     else:
-        log.info(f"{local_filename.name} already exists. Skipping download.")
+        logger.info(f"{local_filename.name} already exists. Skipping download.")
     return local_filename
 
 
@@ -80,6 +80,6 @@ def download_image(row: pd.DataFrame, col_name: str, save_path: Path, pkg) -> Pa
 # ### Start download
 col_name = "crop_raw" if download_raw else "crop_seg"
 meta_df_struct.apply(lambda row: download_image(row, col_name, save_path, pkg), axis=1)
-log.info("Done")
+logger.info("Done")
 
 # %%

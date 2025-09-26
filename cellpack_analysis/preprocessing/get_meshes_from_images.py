@@ -9,7 +9,7 @@ from tqdm import tqdm
 
 from cellpack_analysis.lib.file_io import get_project_root
 
-log = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 # NOTE: Raw images should be downloaded prior to running this script using `get_structure_images.py`
 # Run this script using: `python get_meshes_from_images.py`
@@ -58,7 +58,7 @@ def get_meshes_for_file(
     ):
         save_path = save_folder / f"{name}_mesh_{cell_id}.obj"
         if save_path.exists() and not recalculate:
-            log.info(f"Mesh for {file.stem} already exists. Skipping.")
+            logger.info(f"Mesh for {file.stem} already exists. Skipping.")
             return
         mesh = shtools.get_mesh_from_image(data[channel], translate_to_origin=False)
         if subsample:
@@ -76,11 +76,11 @@ subsample = True
 input_files = []
 for file in files_to_use:
     if (STRUCTURE_ID not in file.stem) or (".tiff" not in file.suffix):
-        log.info(f"Skipping {file.stem}")
+        logger.info(f"Skipping {file.stem}")
         continue
     input_files.append(file)
 
-log.info(f"Processing {len(input_files)} files")
+logger.info(f"Processing {len(input_files)} files")
 
 num_cores = 16
 if len(input_files):
@@ -108,6 +108,6 @@ if len(input_files):
         ):
             pass
 else:
-    log.info("No files to process")
+    logger.info("No files to process")
 
 # %%

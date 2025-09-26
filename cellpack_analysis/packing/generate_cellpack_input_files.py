@@ -13,7 +13,7 @@ from cellpack_analysis.lib.get_structure_stats_dataframe import get_structure_st
 from cellpack_analysis.lib.mesh_tools import get_bounding_box
 from cellpack_analysis.packing import rule_repository
 
-log = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 def set_gradient_mode_center(
@@ -91,7 +91,7 @@ def resolve_gradient_names(gradient_list: List[str]) -> Dict[str, Any]:
         if gradient in rule_repository.GRADIENTS:
             resolved_gradient_dict[gradient] = rule_repository.GRADIENTS[gradient]
         else:
-            log.error(f"Gradient {gradient} not found in GRADIENTS")
+            logger.error(f"Gradient {gradient} not found in GRADIENTS")
 
     return resolved_gradient_dict
 
@@ -285,7 +285,7 @@ def update_and_save_recipe(
     rule_path = f"{generated_recipe_path}/{rule_name}"
     Path(rule_path).mkdir(parents=True, exist_ok=True)
     recipe_path = f"{rule_path}/{structure_name}_{rule_name}_{cell_id}.json"
-    log.debug(f"Saving recipe to {recipe_path}")
+    logger.debug(f"Saving recipe to {recipe_path}")
     write_json(recipe_path, updated_recipe)
 
     return updated_recipe
@@ -346,7 +346,7 @@ def generate_recipes(workflow_config: Any) -> None:
     stats_df = get_structure_stats_dataframe()
 
     for rule_name, rule_dict in recipe_data.items():
-        log.info(f"Generating recipes for rule: {rule_name}")
+        logger.info(f"Generating recipes for rule: {rule_name}")
         with tqdm(total=len(cell_id_list)) as pbar:
             with concurrent.futures.ProcessPoolExecutor(max_workers=num_processes) as executor:
                 futures = []

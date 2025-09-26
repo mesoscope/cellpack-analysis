@@ -10,12 +10,12 @@ from pathlib import Path
 from cellpack_analysis import setup_logging
 
 setup_logging()
-log = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 def validate_config_file(config_path: Path):
     """Validate a single configuration file."""
-    log.info(f"Validating {config_path.name}...")
+    logger.info(f"Validating {config_path.name}...")
 
     try:
         with open(config_path, "r") as f:
@@ -25,32 +25,32 @@ def validate_config_file(config_path: Path):
         required_fields = ["analysis_type", "structure_id", "packing_modes"]
         for field in required_fields:
             if field not in config:
-                log.info(f"  ❌ Missing required field: {field}")
+                logger.info(f"  ❌ Missing required field: {field}")
                 return False
 
         # Check analysis type
         valid_analysis_types = ["distance_analysis", "biological_variation", "occupancy_analysis"]
         if config["analysis_type"] not in valid_analysis_types:
-            log.info(f"  ❌ Invalid analysis_type: {config['analysis_type']}")
+            logger.info(f"  ❌ Invalid analysis_type: {config['analysis_type']}")
             return False
 
         # Check packing modes is a list
         if not isinstance(config["packing_modes"], list):
-            log.info("  ❌ packing_modes must be a list")
+            logger.info("  ❌ packing_modes must be a list")
             return False
 
-        log.info("  ✅ Valid configuration")
-        log.info(f"     Analysis type: {config['analysis_type']}")
-        log.info(f"     Structure: {config.get('structure_name', 'N/A')}")
-        log.info(f"     Packing modes: {len(config['packing_modes'])} modes")
+        logger.info("  ✅ Valid configuration")
+        logger.info(f"     Analysis type: {config['analysis_type']}")
+        logger.info(f"     Structure: {config.get('structure_name', 'N/A')}")
+        logger.info(f"     Packing modes: {len(config['packing_modes'])} modes")
 
         return True
 
     except json.JSONDecodeError as e:
-        log.info(f"  ❌ JSON parsing error: {e}")
+        logger.info(f"  ❌ JSON parsing error: {e}")
         return False
     except Exception as e:
-        log.info(f"  ❌ Error: {e}")
+        logger.info(f"  ❌ Error: {e}")
         return False
 
 
@@ -59,7 +59,7 @@ def main():
     configs_dir = Path("cellpack_analysis/workflows/configs")
 
     if not configs_dir.exists():
-        log.info(f"❌ Configs directory not found: {configs_dir}")
+        logger.info(f"❌ Configs directory not found: {configs_dir}")
         return
 
     config_files = [
@@ -68,7 +68,7 @@ def main():
         "occupancy_analysis_config.json",
     ]
 
-    log.info("Validating configuration files...")
+    logger.info("Validating configuration files...")
     all_valid = True
 
     for config_file in config_files:
@@ -77,13 +77,13 @@ def main():
             valid = validate_config_file(config_path)
             all_valid = all_valid and valid
         else:
-            log.info(f"\n❌ Config file not found: {config_file}")
+            logger.info(f"\n❌ Config file not found: {config_file}")
             all_valid = False
 
     status_message = (
         "✅ All configurations valid!" if all_valid else "❌ Some configurations have issues."
     )
-    log.info(f"\n{status_message}")
+    logger.info(f"\n{status_message}")
 
 
 if __name__ == "__main__":

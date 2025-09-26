@@ -15,7 +15,7 @@ from trimesh import proximity
 
 from cellpack_analysis.lib.get_cell_id_list import get_cell_id_list_for_structure
 
-log = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 def round_away_from_zero(array):
@@ -187,15 +187,34 @@ def get_mesh_information_for_shape(seed, base_datadir, structure_id):
     z_grid_distance_path = (
         base_datadir / f"structure_data/{structure_id}/grid_distances/z_distances_{seed}.npy"
     )
-    scaled_nuc_grid_distance_path = (
-        base_datadir
-        / f"structure_data/{structure_id}/grid_distances/scaled_nuc_distances_{seed}.npy"
+    scaled_nuc_grid_distance_path = base_datadir / (
+        f"structure_data/{structure_id}/grid_distances/scaled_nuc_distances_{seed}.npy"
     )
 
     nuc_grid_distances = np.load(nuc_grid_distance_path)
     mem_grid_distances = np.load(mem_grid_distance_path)
     z_grid_distances = np.load(z_grid_distance_path)
     scaled_nuc_grid_distances = np.load(scaled_nuc_grid_distance_path)
+
+    inside_mem_inds = np.where((mem_grid_distances > 0) & ~np.isinf(mem_grid_distances))[0]
+    mem_grid_distances = mem_grid_distances[inside_mem_inds]
+    if not (
+        len(nuc_grid_distances)
+        == len(mem_grid_distances)
+        == len(z_grid_distances)
+        == len(scaled_nuc_grid_distances)
+    ):
+        raise ValueError(
+            f"Grid distances have different lengths:\n"
+            f"nuc: {len(nuc_grid_distances)}, mem: {len(mem_grid_distances)},\n"
+            f"z: {len(z_grid_distances)}, scaled_nuc: {len(scaled_nuc_grid_distances)}"
+        )
+
+    cytoplasm_point_inds = np.where(nuc_grid_distances > 0)[0]
+    mem_grid_distances = mem_grid_distances[cytoplasm_point_inds]
+    nuc_grid_distances = nuc_grid_distances[cytoplasm_point_inds]
+    z_grid_distances = z_grid_distances[cytoplasm_point_inds]
+    scaled_nuc_grid_distances = scaled_nuc_grid_distances[cytoplasm_point_inds]
 
     nuc_mesh = trimesh.load_mesh(str(nuc_mesh_path))
     mem_mesh = trimesh.load_mesh(str(mem_mesh_path))
@@ -248,12 +267,12 @@ def get_mesh_information_dict_for_structure(
     """
     file_path = base_datadir / f"structure_data/{structure_id}/mesh_information.dat"
     if not recalculate and file_path.exists():
-        log.info(f"Loading mesh information for {structure_id} from {file_path}")
+        logger.info(f"Loading mesh information for {structure_id} from {file_path}")
         with open(file_path, "rb") as f:
             mesh_information_dict = pickle.load(f)
         return mesh_information_dict
 
-    log.info(f"Calculating mesh information for {structure_id}")
+    logger.info(f"Calculating mesh information for {structure_id}")
     if structure_id == "mean":
         cell_id_list = ["mean"]
     else:
@@ -275,6 +294,7 @@ def get_mesh_information_dict_for_structure(
                     [structure_id] * len(cell_id_list),
                 ),
                 total=len(cell_id_list),
+                desc=f"Calculating mesh information for {structure_id}",
             )
         )
 
@@ -354,20 +374,20 @@ def calc_scaled_distance_to_nucleus_surface(
             else:
                 mem_surface_positions[ind] = intersect_positions
         except ValueError as e:
-            log.error(f"Value error in scaled distance calculation: {e}")
+            logger.error(f"Value error in scaled distance calculation: {e}")
             failed_inds.append(ind)
             continue
         except RTreeError as e:
-            log.error(f"Rtree error in scaled distance calculation: {e}")
+            logger.error(f"Rtree error in scaled distance calculation: {e}")
             failed_inds.append(ind)
             continue
         except Exception as e:
-            log.error(f"Unexpected error in scaled distance calculation: {e}")
+            logger.error(f"Unexpected error in scaled distance calculation: {e}")
             failed_inds.append(ind)
             continue
 
     if len(failed_inds) > 0:
-        log.debug(f"Failed {len(failed_inds)} out of {len(position_list)}")
+        logger.debug(f"Failed {len(failed_inds)} out of {len(position_list)}")
 
     distance_between_surfaces = np.linalg.norm(
         mem_surface_positions - nuc_surface_positions, axis=1
@@ -456,25 +476,25 @@ def calculate_grid_distances(
         if mem_file_name.exists():
             calc_mem_distances = False
             mem_distances = np.load(save_dir / f"mem_distances_{cell_id}.npy")
-            log.info(f"Loaded mem distances for {cell_id}")
+            logger.info(f"Loaded mem distances for {cell_id}")
 
         nuc_file_name = save_dir / f"nuc_distances_{cell_id}.npy"
         if nuc_file_name.exists():
             calc_nuc_distances = False
             nuc_distances = np.load(nuc_file_name)
-            log.info(f"Loaded nuc distances for {cell_id}")
+            logger.info(f"Loaded nuc distances for {cell_id}")
 
         z_file_name = save_dir / f"z_distances_{cell_id}.npy"
         if z_file_name.exists():
             calc_z_distances = False
             z_distances = np.load(z_file_name)
-            log.info(f"Loaded z distances for {cell_id}")
+            logger.info(f"Loaded z distances for {cell_id}")
 
         scaled_nuc_file_name = save_dir / f"scaled_nuc_distances_{cell_id}.npy"
         if scaled_nuc_file_name.exists():
             calc_scaled_nuc_distances = False
             scaled_nuc_distances = np.load(scaled_nuc_file_name)
-            log.info(f"Loaded scaled nuc distances for {cell_id}")
+            logger.info(f"Loaded scaled nuc distances for {cell_id}")
 
     # load meshes
     nuc_mesh = trimesh.load_mesh(nuc_mesh_path)
@@ -492,7 +512,7 @@ def calculate_grid_distances(
         np.save(save_dir / f"grid_points_{cell_id}.npy", points)
 
     if calc_mem_distances:
-        log.info(f"Calculating mem distances for {cell_id}")
+        logger.info(f"Calculating mem distances for {cell_id}")
         if chunk_size is None:
             chunk_size = int(len(points) / 10)
 
@@ -518,7 +538,7 @@ def calculate_grid_distances(
         if save_dir is not None:
             np.save(save_dir / f"mem_distances_{cell_id}.npy", mem_distances)
 
-        log.info(
+        logger.info(
             f"Took {(time.time() - start_time):0.2g}s to calculate mem distances for {cell_id}"
         )
 
@@ -532,7 +552,7 @@ def calculate_grid_distances(
         ]
     # calculate scaled distances
     if calc_scaled_nuc_distances:
-        log.info(f"Calculating scaled distances for {cell_id}")
+        logger.info(f"Calculating scaled distances for {cell_id}")
 
         start_time = time.time()
 
@@ -554,7 +574,7 @@ def calculate_grid_distances(
                 _,
             ) = calc_scaled_distance_to_nucleus_surface(chunk_points, nuc_mesh, mem_mesh)
 
-        log.info(
+        logger.info(
             f"Took {(time.time() - start_time):0.2g}s to calculate scaled distances for {cell_id}"
         )
 
@@ -568,7 +588,7 @@ def calculate_grid_distances(
 
     # get distances to nuc_mesh
     if calc_nuc_distances:
-        log.info(f"Calculating nuc distances for {cell_id}")
+        logger.info(f"Calculating nuc distances for {cell_id}")
 
         start_time = time.time()
 
@@ -587,7 +607,7 @@ def calculate_grid_distances(
                 nuc_mesh, chunk_points
             )
 
-        log.info(
+        logger.info(
             f"Took {(time.time() - start_time):0.2g}s to calculate nuc distances for {cell_id}"
         )
 
@@ -596,7 +616,7 @@ def calculate_grid_distances(
 
     # get z-coordinates
     if calc_z_distances and mem_distances is not None:
-        log.info(f"Calculating z distances for {cell_id}")
+        logger.info(f"Calculating z distances for {cell_id}")
 
         start_time = time.time()
 
@@ -607,7 +627,9 @@ def calculate_grid_distances(
         min_z = np.min(z_coords)
         z_distances = np.abs(z_coords - min_z)
 
-        log.info(f"Took {(time.time() - start_time):0.2g}s to calculate z distances for {cell_id}")
+        logger.info(
+            f"Took {(time.time() - start_time):0.2g}s to calculate z distances for {cell_id}"
+        )
         if save_dir is not None:
             np.save(save_dir / f"z_distances_{cell_id}.npy", z_distances)
 

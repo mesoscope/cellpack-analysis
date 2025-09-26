@@ -8,35 +8,38 @@ import numpy as np
 from cellpack_analysis.lib.file_io import get_project_root, read_json, write_json
 from cellpack_analysis.lib.label_tables import STATIC_SHAPE_MODES, STRUCTURE_NAME_DICT
 
-log = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 PROJECT_ROOT = get_project_root()
 
 
 def combine_multiple_seeds_to_dictionary(
-    data_folder,
-    ingredient_key="membrane_interior_peroxisome",
-    search_prefix="positions_",
-    rule_name="random",
-    save_name="positions_peroxisome_analyze_random_mean.json",
-):
+    data_folder: str | Path,
+    ingredient_key: str = "membrane_interior_peroxisome",
+    search_prefix: str = "positions_",
+    rule_name: str = "random",
+    save_name: str = "positions_peroxisome_analyze_random_mean.json",
+) -> dict[str, dict[str, list[list[float]]]]:
     """
     Combine data from multiple seeds into a dictionary.
 
-    Args:
-    ----
-        data_folder (str): Path to the folder containing the data files.
-        ingredient_key (str, optional): Key of the ingredient to extract from the data.
-            Defaults to "membrane_interior_peroxisome".
-        search_prefix (str, optional): Prefix to search for in the data file names.
-            Defaults to "positions_".
-        rule_name (str, optional): Name of the rule to filter the data files.
-            Defaults to "random".
-        save_name (str, optional): Name of the output file.
-            Defaults to "positions_peroxisome_analyze_random_mean".
+    Parameters
+    ----------
+    data_folder
+        Path to the folder containing the data files
+    ingredient_key
+        Key of the ingredient to extract from the data
+    search_prefix
+        Prefix to search for in the data file names
+    rule_name
+        Name of the rule to filter the data files
+    save_name
+        Name of the output file
 
-    Returns:
+    Returns
     -------
-        dict: A dictionary containing the combined data from multiple seeds.
+    :
+        Dictionary containing the combined data from multiple seeds with structure
+        {seed_key: {ingredient_key: positions}}
     """
 
     data_folder = Path(data_folder)
@@ -64,23 +67,26 @@ def combine_multiple_seeds_to_dictionary(
 
 
 def get_positions_dictionary_from_file(
-    filename, ingredient_key="membrane_interior_peroxisome", drop_random_seed=False
-):
+    filename: str | Path,
+    ingredient_key: str = "membrane_interior_peroxisome",
+    drop_random_seed: bool = False,
+) -> dict[str, np.ndarray]:
     """
     Retrieve positions dictionary from a file.
 
-    Args:
-    ----
-        filename (str):
-            The path to the file containing the positions data.
-        ingredient_key (str, optional):
-            The key for the ingredient in the raw data.
-            Defaults to "membrane_interior_peroxisome".
+    Parameters
+    ----------
+    filename
+        Path to the file containing the positions data
+    ingredient_key
+        Key for the ingredient in the raw data
+    drop_random_seed
+        Whether to remove random seed suffix from keys
 
-    Returns:
+    Returns
     -------
-        dict: A dictionary containing the positions data,
-            where the keys are integers and the values are NumPy arrays.
+    :
+        Dictionary containing positions data where keys are cell IDs and values are NumPy arrays
     """
     with open(filename) as j:
         raw_data = json.load(j)
@@ -92,108 +98,136 @@ def get_positions_dictionary_from_file(
     return positions
 
 
+def _get_mode_file_path(
+    mode: str,
+    structure_id: str,
+    structure_name: str,
+    base_datadir: Path,
+    packing_output_folder: str,
+) -> Path:
+    """Get the file path for a specific packing mode."""
+    if mode in STRUCTURE_NAME_DICT:  # observed microscopy data
+        return (
+            base_datadir / f"structure_data/{structure_id}/sample_8d/positions_{structure_id}.json"
+        )
+    else:  # cellPACK outputs
+        subfolder = f"{mode}/{structure_name}/spheresSST/"
+        data_folder = base_datadir / f"{packing_output_folder}/{subfolder}"
+        mode_position_filename = f"all_positions_{structure_name}_analyze_{mode}.json"
+        return data_folder / mode_position_filename
+
+
+def _ensure_positions_file_exists(
+    mode_file_path: Path, mode: str, ingredient_key: str, recalculate: bool
+) -> None:
+    """Ensure the positions file exists, creating it if necessary."""
+    if mode_file_path.exists() and not recalculate:
+        return
+
+    if mode in STRUCTURE_NAME_DICT:
+        return  # microscopy data files should already exist
+
+    # Create combined file for cellPACK outputs
+    data_folder = mode_file_path.parent
+    rule_name = mode if mode not in STATIC_SHAPE_MODES else "random"
+    combine_multiple_seeds_to_dictionary(
+        data_folder,
+        ingredient_key=ingredient_key,
+        search_prefix="positions_",
+        rule_name=rule_name,
+        save_name=mode_file_path.name,
+    )
+
+
+def _load_positions_for_mode(
+    mode: str,
+    structure_id: str,
+    structure_name: str,
+    base_datadir: Path,
+    packing_output_folder: str,
+    ingredient_key: str,
+    recalculate: bool,
+) -> dict[str, np.ndarray]:
+    """Load positions for a single packing mode."""
+    mode_file_path = _get_mode_file_path(
+        mode, structure_id, structure_name, base_datadir, packing_output_folder
+    )
+
+    _ensure_positions_file_exists(mode_file_path, mode, ingredient_key, recalculate)
+
+    logger.info(f"Reading positions for {mode} from {mode_file_path.relative_to(PROJECT_ROOT)}")
+    positions = get_positions_dictionary_from_file(
+        mode_file_path,
+        ingredient_key=ingredient_key,
+        drop_random_seed=mode not in STATIC_SHAPE_MODES,
+    )
+
+    logger.info(f"Read {len(positions)} cell_ids for {mode}")
+    return positions
+
+
 def get_position_data_from_outputs(
-    structure_id,
-    structure_name,
-    packing_modes,
-    base_datadir,
-    results_dir,
-    packing_output_folder,
-    recalculate=False,
-    ingredient_key=None,
-):
+    structure_id: str,
+    structure_name: str,
+    packing_modes: list[str],
+    base_datadir: Path,
+    results_dir: Path,
+    packing_output_folder: str,
+    recalculate: bool = False,
+    ingredient_key: str | None = None,
+) -> dict[str, dict[str, np.ndarray]]:
     """
-    Retrieves position data from outputs.
+    Retrieve position data from packing outputs.
 
     Parameters
     ----------
-    structure_id : str
-        The ID of the structure.
-    structure_name : str
-        The name of the structure.
-    packing_modes : list of str
-        The packing modes to retrieve data for.
-    base_datadir : str
-        The base directory for data.
-    results_dir : str
-        The directory to save results.
-    packing_output_folder : str
-        The folder containing packing outputs.
-    recalculate : bool, optional
-        Whether to recalculate the position data. Default is False.
-    ingredient_key : str, optional
-        The key for the ingredient in the raw data. Default is None.
+    structure_id
+        ID of the structure
+    structure_name
+        Name of the structure
+    packing_modes
+        List of packing modes to retrieve data for
+    base_datadir
+        Base directory for data
+    results_dir
+        Directory to save results
+    packing_output_folder
+        Folder containing packing outputs
+    recalculate
+        Whether to recalculate the position data
+    ingredient_key
+        Key for the ingredient in the raw data, defaults to membrane_interior_{structure_name}
 
     Returns
     -------
     :
-        A dictionary containing the position data for each packing mode.
-        Has the structure:
-        {
-            "mode_1": { "cell_id_1": np.ndarray, "cell_id_2": np.ndarray, ... },
-            "mode_2": { "cell_id_1": np.ndarray, "cell_id_2": np.ndarray, ... },
-            ...
-        }
+        Dictionary containing position data for each packing mode with structure
+        {mode: {cell_id: positions_array}}
     """
-    save_file_name = f"{structure_name}_positions.dat"
-    save_file_path = results_dir / save_file_name
+    save_file_path = results_dir / f"{structure_name}_positions.dat"
+
+    # Load cached results if available
     if not recalculate and save_file_path.exists():
-        log.info(f"Loading positions from {save_file_path.relative_to(PROJECT_ROOT)}")
+        logger.info(f"Loading positions from {save_file_path.relative_to(PROJECT_ROOT)}")
         with open(save_file_path, "rb") as f:
-            all_positions = pickle.load(f)
-        return all_positions
+            return pickle.load(f)
 
-    if ingredient_key is None:
-        ingredient_key = f"membrane_interior_{structure_name}"
+    ingredient_key = ingredient_key or f"membrane_interior_{structure_name}"
+    logger.info("Reading position data from outputs")
 
-    log.info("Reading position data from outputs")
     all_positions = {}
-
     for mode in packing_modes:
-        if mode in STRUCTURE_NAME_DICT:  # if the mode is from observed microscopy data
-            mode_file_path = (
-                base_datadir
-                / f"structure_data/{structure_id}/sample_8d/positions_{structure_id}.json"
-            )
-        else:  # if the mode is from cellPACK outputs
-            subfolder = f"{mode}/{structure_name}/spheresSST/"
-
-            data_folder = base_datadir / f"{packing_output_folder}/{subfolder}"
-
-            mode_position_filename = f"all_positions_{structure_name}_analyze_{mode}.json"
-
-            mode_file_path = data_folder / mode_position_filename
-
-            if mode_file_path.exists() and not recalculate:
-                positions = get_positions_dictionary_from_file(
-                    mode_file_path,
-                    ingredient_key=ingredient_key,
-                    drop_random_seed=mode not in STATIC_SHAPE_MODES,
-                )
-                all_positions[mode] = positions
-                continue
-
-            rule_name = mode if mode not in STATIC_SHAPE_MODES else "random"
-
-            combine_multiple_seeds_to_dictionary(
-                data_folder,
-                ingredient_key=ingredient_key,
-                search_prefix="positions_",
-                rule_name=rule_name,
-                save_name=mode_position_filename,
-            )
-
-        log.info(f"Reading positions for {mode} from {mode_file_path.relative_to(PROJECT_ROOT)}")
-        positions = get_positions_dictionary_from_file(
-            mode_file_path,
-            ingredient_key=ingredient_key,
-            drop_random_seed=mode not in STATIC_SHAPE_MODES,
+        all_positions[mode] = _load_positions_for_mode(
+            mode,
+            structure_id,
+            structure_name,
+            base_datadir,
+            packing_output_folder,
+            ingredient_key,
+            recalculate,
         )
 
-        all_positions[mode] = positions
-        log.info(f"Read {len(positions)} cell_ids for {mode}")
-
-    # save all positions dictionary
+    # Cache results
     with open(save_file_path, "wb") as f:
         pickle.dump(all_positions, f)
 

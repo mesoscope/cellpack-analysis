@@ -5,7 +5,7 @@ import pandas as pd
 
 from cellpack_analysis.lib.file_io import get_datadir_path
 
-log = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 def get_cell_id_df(load_local: bool = True) -> pd.DataFrame:
@@ -39,13 +39,13 @@ def get_cell_id_df(load_local: bool = True) -> pd.DataFrame:
 
     if load_local and local_path.exists():
         df_path = local_path
-        log.info(f"Loading cell ID data from local file: {df_path}")
+        logger.info(f"Loading cell ID data from local file: {df_path}")
     else:
         if load_local and not local_path.exists():
-            log.warning(f"Local file {local_path} not found, loading from S3.")
+            logger.warning(f"Local file {local_path} not found, loading from S3.")
         df_path = s3_path
         loaded_from_s3 = True
-        log.info(f"Loading cell ID data from S3: {df_path}")
+        logger.info(f"Loading cell ID data from S3: {df_path}")
 
     try:
         df_cell_id = pd.read_parquet(df_path)
@@ -58,21 +58,21 @@ def get_cell_id_df(load_local: bool = True) -> pd.DataFrame:
         if missing_columns:
             raise ValueError(f"DataFrame missing required columns: {missing_columns}")
 
-        log.info(f"Successfully loaded {len(df_cell_id)} cell records")
+        logger.info(f"Successfully loaded {len(df_cell_id)} cell records")
 
         # Save to local if we loaded from S3
         if loaded_from_s3:
             try:
                 local_path.parent.mkdir(parents=True, exist_ok=True)
                 df_cell_id.to_parquet(local_path, index=False)
-                log.info(f"Saved cell ID data to local file: {local_path}")
+                logger.info(f"Saved cell ID data to local file: {local_path}")
             except Exception as e:
-                log.warning(f"Failed to save to local file {local_path}: {e}")
+                logger.warning(f"Failed to save to local file {local_path}: {e}")
 
         return df_cell_id
 
     except Exception as e:
-        log.error(f"Failed to load cell ID data from {df_path}: {e}")
+        logger.error(f"Failed to load cell ID data from {df_path}: {e}")
         raise
 
 
@@ -143,7 +143,7 @@ def sample_cell_ids_for_structure(
     )
 
     if len(all_cell_ids) == 0:
-        log.warning(f"No cell IDs found for structure_id={structure_id} with dsphere={dsphere}")
+        logger.warning(f"No cell IDs found for structure_id={structure_id} with dsphere={dsphere}")
         return []
 
     if num_cells is None or num_cells >= len(all_cell_ids):

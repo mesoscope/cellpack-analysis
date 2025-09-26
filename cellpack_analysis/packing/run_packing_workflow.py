@@ -19,7 +19,7 @@ from cellpack_analysis.packing.workflow_config import WorkflowConfig
 # set random seed
 np.random.seed(42)
 
-log = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 def _run_packing_workflow(workflow_config_path: Path):
@@ -38,19 +38,19 @@ def _run_packing_workflow(workflow_config_path: Path):
 
     # ## Generate cellPACK input files if needed
     if workflow_config.generate_recipes:
-        log.info("Generating cellPACK input files")
+        logger.info("Generating cellPACK input files")
         generate_recipes(workflow_config=workflow_config)
 
     # ## update cellpack config file
     if workflow_config.generate_configs:
-        log.info("Updating cellPACK config file")
+        logger.info("Updating cellPACK config file")
         generate_configs(workflow_config=workflow_config)
 
     # ## pack recipes
     if workflow_config.dry_run:
-        log.info("Dry run. Skipping packing.")
+        logger.info("Dry run. Skipping packing.")
         return
-    log.info("Packing recipes")
+    logger.info("Packing recipes")
     pack_recipes(workflow_config=workflow_config)
 
 
@@ -70,4 +70,4 @@ if __name__ == "__main__":
 
     _run_packing_workflow(workflow_config_path=Path(args.workflow_config_path))
 
-    log.info(f"Total time: {format_time(time.time() - start)}")
+    logger.info(f"Total time: {format_time(time.time() - start)}")

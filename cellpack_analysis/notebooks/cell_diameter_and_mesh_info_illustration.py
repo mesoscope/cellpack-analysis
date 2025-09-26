@@ -1,8 +1,6 @@
 # %% [markdown]
 # # Plot cell diameter and distance measures for grid points
-# %% [markdown]
 import logging
-import pickle
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -13,10 +11,19 @@ from tqdm import tqdm
 from cellpack_analysis.lib.default_values import PIXEL_SIZE_IN_UM
 from cellpack_analysis.lib.distance import filter_invalid_distances
 from cellpack_analysis.lib.file_io import get_project_root
-from cellpack_analysis.lib.label_tables import COLOR_PALETTE, DISTANCE_LIMITS
+from cellpack_analysis.lib.label_tables import (
+    COLOR_PALETTE,
+    DISTANCE_LIMITS,
+    DISTANCE_MEASURE_LABELS,
+    GRID_DISTANCE_LABELS,
+    MODE_LABELS,
+)
 from cellpack_analysis.lib.mesh_tools import get_mesh_information_dict_for_structure
 
-log = logging.getLogger(__name__)
+plt.rcParams["pdf.fonttype"] = 42
+plt.rcParams["ps.fonttype"] = 42
+
+logger = logging.getLogger(__name__)
 
 # %% [markdown]
 # ## Set parameters and file paths
@@ -86,85 +93,55 @@ for structure_id in all_structures:
 
 
 # %% [markdown]
-# ## Load distances
-normalization = None
-nuc_distances = []
-mem_distances = []
-z_distances = []
-for cell_id in tqdm(cell_ids_to_use):
-    nuc_distances.append(np.load(grid_dir / f"nuc_distances_{cell_id}.npy"))
-    mem_distances.append(np.load(grid_dir / f"mem_distances_{cell_id}.npy"))
-    z_distances.append(np.load(grid_dir / f"z_distances_{cell_id}.npy"))
-# %% [markdown]
-# ## Plot distance distribution as kde
-fig_z, ax_z = plt.subplots(figsize=(6, 3), dpi=300)
-fig_nuc, ax_nuc = plt.subplots(figsize=(6, 3), dpi=300)
-all_nuc_distances = []
-all_z_distances = []
-for i in tqdm(range(len(nuc_distances))):
-    nuc_distances_to_plot = filter_invalid_distances(nuc_distances[i] * PIXEL_SIZE_IN_UM)
-    z_distances_to_plot = filter_invalid_distances(z_distances[i] * PIXEL_SIZE_IN_UM)
+# ## Plot grid distance distribution
+fig, axs = plt.subplots(2, 2, figsize=(4, 2.5), dpi=300, sharex="col", sharey="col")
 
-    sns.kdeplot(
-        nuc_distances_to_plot,
-        ax=ax_nuc,
-        color=COLOR_PALETTE[STRUCTURE_ID],
-        alpha=0.1,
-        linewidth=0.5,
-        cut=0,
-        label="_nolegend_",
+for row, structure_id in enumerate(all_structures):
+    mesh_information_dict = get_mesh_information_dict_for_structure(
+        structure_id=structure_id,
+        base_datadir=base_datadir,
+        recalculate=False,
     )
-    sns.kdeplot(
-        z_distances_to_plot,
-        ax=ax_z,
-        color=COLOR_PALETTE[STRUCTURE_ID],
-        alpha=0.1,
-        linewidth=0.5,
-        cut=0,
-        label="_nolegend_",
-    )
+    for col, distance_measure in enumerate(distance_measures):
+        ax = axs[row, col]
 
-    all_z_distances.append(z_distances_to_plot)
-    all_nuc_distances.append(nuc_distances_to_plot)
+        combined_distances = []
+        for cell_id in tqdm(mesh_information_dict.keys()):
+            distances = mesh_information_dict[cell_id][GRID_DISTANCE_LABELS[distance_measure]]
+            distances_to_plot = filter_invalid_distances(
+                distances * PIXEL_SIZE_IN_UM, minimum_distance=0
+            )
 
-all_nuc_distances = np.concatenate(all_nuc_distances)
-sns.kdeplot(
-    all_nuc_distances, ax=ax_nuc, color=COLOR_PALETTE[STRUCTURE_ID], linewidth=3, bw_method=0.2
-)
+            sns.kdeplot(
+                distances_to_plot,
+                ax=ax,
+                color=COLOR_PALETTE[structure_id],
+                alpha=0.1,
+                linewidth=0.1,
+                cut=0,
+                label="_nolegend_",
+                bw_method=0.4,
+            )
+            combined_distances.append(distances_to_plot)
 
-all_z_distances = np.concatenate(all_z_distances)
-sns.kdeplot(all_z_distances, ax=ax_z, color=COLOR_PALETTE[STRUCTURE_ID], linewidth=3, bw_method=0.1)
-
-mean_nuc_distance = np.mean(all_nuc_distances).item()
-std_nuc_distance = np.std(all_nuc_distances).item()
-ax_nuc.axvline(mean_nuc_distance, color="black", linestyle="--")
-
-mean_z_distance = np.mean(all_z_distances).item()
-std_z_distance = np.std(all_z_distances).item()
-ax_z.axvline(mean_z_distance, color="black", linestyle="--")
-
-ax_nuc.set_xlim(DISTANCE_LIMITS["nucleus"])
-ax_z.set_xlim(DISTANCE_LIMITS["z"])
-
-
-for ax in [ax_nuc, ax_z]:
-    ax.set_xlabel("Distance (\u03bcm)")
-    ax.set_ylabel("Probability density")
-    ax.xaxis.set_major_locator(MaxNLocator(5, integer=True))
-    ax.yaxis.set_major_locator(MaxNLocator(5, integer=True))
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-
-fig_nuc.savefig(
-    figures_dir / f"nucleus_distance_distribution_{STRUCTURE_ID}.svg", bbox_inches="tight"
-)
-fig_z.savefig(figures_dir / f"z_distance_distribution_{STRUCTURE_ID}.svg", bbox_inches="tight")
-plt.show()
-
-log.info(
-    f"Mean nucleus distance for {STRUCTURE_NAME}: "
-    f"{mean_nuc_distance:.2f} +/- {std_nuc_distance}\u03bcm"
-)
-log.info(f"Mean z distance for {STRUCTURE_NAME}: {mean_z_distance:.2f} +/- {std_z_distance}\u03bcm")
+        sns.kdeplot(
+            np.concatenate(combined_distances),
+            ax=ax,
+            color=COLOR_PALETTE[structure_id],
+            linewidth=1.5,
+            cut=0,
+            label=structure_id,
+            bw_method=0.4,
+        )
+        if row == 1:
+            ax.set_xlabel(f"{DISTANCE_MEASURE_LABELS[distance_measure]} (\u03bcm)")
+        if col == 0:
+            ax.set_ylabel(f"{MODE_LABELS[structure_id]}\n PDF")
+        ax.xaxis.set_major_locator(MaxNLocator(5, integer=True))
+        ax.yaxis.set_major_locator(MaxNLocator(3, integer=True))
+        sns.despine(ax=ax)
+        ax.set_xlim(DISTANCE_LIMITS[distance_measure])
+fig.tight_layout()
+fig.savefig(figures_dir / "grid_distance_distribution.pdf", bbox_inches="tight")
 
 # %%

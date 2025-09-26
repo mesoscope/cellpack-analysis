@@ -15,31 +15,25 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-# Global logger instance
-log = None
-
 
 def get_module_version():
     """Get the current module version."""
     return __version__
 
 
-def setup_logging():
+def setup_logging(level=logging.INFO):
     """Set up logging configuration for the entire package."""
-    global log
-
     config_path = Path(__file__).parents[1] / "logging.conf"
     if config_path.exists():
-        logging.config.fileConfig(config_path, disable_existing_loggers=True)
+        logging.config.fileConfig(config_path, disable_existing_loggers=False)
     else:
         logging.basicConfig(
-            level=logging.INFO,
+            level=level,
             format="%(asctime)s | %(levelname)s | %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S",
+            force=True,
         )
-
-    log = logging.getLogger()
-    return log
+    logging.getLogger().setLevel(level)
 
 
 # Initialize logging automatically when the package is imported
@@ -49,7 +43,6 @@ setup_logging()
 __all__ = [
     "get_module_version",
     "setup_logging",
-    "log",
     "__version__",
     "__author__",
     "__email__",
