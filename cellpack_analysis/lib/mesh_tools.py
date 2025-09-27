@@ -7,11 +7,14 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import skimage.filters as skfilters
+import skimage.measure
 import trimesh
 import vtk
 from rtree.exceptions import RTreeError
 from tqdm import tqdm
 from trimesh import proximity
+from vtkmodules.util import numpy_support as vtknp
 
 from cellpack_analysis.lib.get_cell_id_list import get_cell_id_list_for_structure
 
@@ -240,6 +243,124 @@ def get_mesh_information_for_shape(seed, base_datadir, structure_id):
         "z_grid_distances": z_grid_distances,
         "scaled_nuc_grid_distances": scaled_nuc_grid_distances,
     }
+
+
+def get_mesh_from_image(
+    image: np.ndarray,
+    sigma: float = 0,
+    lcc: bool = True,
+    translate_to_origin: bool = True,
+):
+    """Converts a numpy array into a vtkImageData and then into a 3d mesh
+    using vtkContourFilter. The input is assumed to be binary and the
+    isosurface value is set to 0.5.
+
+    Optionally the input can be pre-processed by i) extracting the largest
+    connected component and ii) applying a gaussian smooth to it. In case
+    smooth is used, the image is binarize using thershold 1/e.
+
+    A size threshold is applying to garantee that enough points will be
+    used to compute the SH parametrization.
+
+    Also, points as the edge of the image are set to zero (background)
+    to make sure the mesh forms a manifold.
+
+    Adapted from the aicsshparam package.
+
+    Parameters
+    ----------
+    image : np.ndarray
+        Input array where the mesh will be computed on
+    Returns
+    -------
+    mesh : vtkPolyData
+        3d mesh in VTK format
+    img_output : np.array
+        Input image after pre-processing
+    centroid : np.array
+        x, y, z coordinates of the mesh centroid
+
+    Other parameters
+    ----------------
+    lcc : bool, optional
+        Wheather or not to compute the mesh only on the largest
+        connected component found in the input connected component,
+        default is True.
+    sigma : float, optional
+        The degree of smooth to be applied to the input image, default
+        is 0 (no smooth).
+    translate_to_origin : bool, optional
+        Wheather or not translate the mesh to the origin (0,0,0),
+        default is True.
+    """
+
+    img = image.copy()
+
+    # VTK requires YXZ
+    img = np.swapaxes(img, 0, 2)
+
+    # Extracting the largest connected component
+    if lcc is True:
+        labeled_img = skimage.measure.label(img.astype(np.uint8))
+        labeled_img = np.asarray(labeled_img)
+
+        counts = np.bincount(labeled_img.flatten())
+
+        lcc_val = 1 + np.argmax(counts[1:])
+
+        img = np.zeros_like(labeled_img, dtype=np.uint8)
+        img[labeled_img == lcc_val] = 1
+
+    # Smooth binarize the input image and binarize
+    if sigma > 0:
+        img = skfilters.gaussian(img.astype(np.float32), sigma=sigma)
+
+        img[img < 1.0 / np.exp(1.0)] = 0
+        img[img > 0] = 1
+
+        if img.sum() == 0:
+            raise ValueError("No foreground voxels found after pre-processing. Try using sigma=0.")
+
+    # Set image border to 0 so that the mesh forms a manifold
+    img[[0, -1], :, :] = 0
+    img[:, [0, -1], :] = 0
+    img[:, :, [0, -1]] = 0
+    img = img.astype(np.float32)
+
+    if img.sum() == 0:
+        raise ValueError(
+            "No foreground voxels found after pre-processing." "Is the object of interest centered?"
+        )
+
+    # Create vtkImageData
+    imgdata = vtk.vtkImageData()
+    imgdata.SetDimensions(img.shape)
+
+    img = img.transpose(2, 1, 0)
+    img_output = img.copy()
+    img = img.flatten()
+    arr = vtknp.numpy_to_vtk(img, array_type=vtk.VTK_FLOAT)
+    arr.SetName("Scalar")
+    imgdata.GetPointData().SetScalars(arr)
+
+    # Create 3d mesh
+    cf = vtk.vtkContourFilter()
+    cf.SetInputData(imgdata)
+    cf.SetValue(0, 0.5)
+    cf.Update()
+
+    mesh = cf.GetOutput()
+
+    # Calculate the mesh centroid
+    coords = vtknp.vtk_to_numpy(mesh.GetPoints().GetData())
+    centroid = coords.mean(axis=0, keepdims=True)
+
+    if translate_to_origin is True:
+        # Translate to origin
+        coords -= centroid
+        mesh.GetPoints().SetData(vtknp.numpy_to_vtk(coords))
+
+    return mesh, img_output, tuple(centroid.squeeze())
 
 
 def get_mesh_information_dict_for_structure(

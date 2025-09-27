@@ -9,8 +9,8 @@ version = "0.1.0"
 readme = "README.md"
 requires-python = "~=3.11.0"
 dependencies = [
-    "aicsimageio>=4.14.0",
-    "aicsshparam==0.1.10",
+    "bioio>=3.0.0",
+    "bioio-ome-tiff>=1.1.0",
     "cellpack",
     "fire",
     "ipykernel",
@@ -59,11 +59,6 @@ docs = [
     "sphinx-copybutton",
 ]
 
-[project.optional-dependencies]
-pilr = [
-    "aicscytoparam==0.1.10",
-]
-
 [build-system]
 requires = ["uv_build>=0.8.14,<0.9.0"]
 build-backend = "uv_build"
@@ -108,12 +103,6 @@ source-exclude = [
 
 [tool.uv.sources]
 cellpack = {git = "https://github.com/mesoscope/cellpack.git", branch = "cellpack-analysis"}
-
-[[tool.uv.index]]
-name = "PyPI"
-url = "https://pypi.org/simple"
-default = true
-
 
 [tool.black]
 line-length = 100
@@ -170,9 +159,7 @@ show_error_codes = true
 
 [[tool.mypy.overrides]]
 module = [
-    "aicsshparam.*",
-    "aicscytoparam.*",
-    "autopack,*",
+    "autopack.*",
     "cellpack.*",
     "pacmap.*",
     "pandas.*",

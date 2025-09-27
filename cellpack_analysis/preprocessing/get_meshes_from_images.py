@@ -3,11 +3,11 @@ import concurrent.futures
 import logging
 
 import vtk
-from aicsimageio.aics_image import AICSImage
-from aicsshparam import shtools
+from bioio import BioImage
 from tqdm import tqdm
 
 from cellpack_analysis.lib.file_io import get_project_root
+from cellpack_analysis.lib.mesh_tools import get_mesh_from_image
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,7 @@ RECALCULATE = False
 datadir = get_project_root() / f"data/structure_data/{STRUCTURE_ID}"
 image_path = datadir / "sample_8d/segmented/"
 
-save_folder = datadir / "meshes/"
+save_folder = datadir / "meshes/test"
 save_folder.mkdir(exist_ok=True, parents=True)
 
 nuc_channel = 0
@@ -50,7 +50,7 @@ def get_meshes_for_file(
     recalculate=RECALCULATE,
 ):
     cell_id = file.stem.split("_")[1]
-    reader = AICSImage(file)
+    reader = BioImage(file)
     data = reader.get_image_data("CZYX", S=0, T=0)
     writer = vtk.vtkOBJWriter()
     for name, channel in zip(
@@ -60,7 +60,7 @@ def get_meshes_for_file(
         if save_path.exists() and not recalculate:
             logger.info(f"Mesh for {file.stem} already exists. Skipping.")
             return
-        mesh = shtools.get_mesh_from_image(data[channel], translate_to_origin=False)
+        mesh = get_mesh_from_image(data[channel], translate_to_origin=False)
         if subsample:
             subsampled_mesh = decimation_pro(mesh[0], 0.95)
         else:
@@ -75,18 +75,24 @@ files_to_use = list(image_path.glob("*.tiff"))
 subsample = True
 input_files = []
 for file in files_to_use:
-    if (STRUCTURE_ID not in file.stem) or (".tiff" not in file.suffix):
+    if (
+        (STRUCTURE_ID not in file.stem)
+        or (".tiff" not in file.suffix)
+        or (file.name.startswith("."))
+    ):
         logger.info(f"Skipping {file.stem}")
         continue
     input_files.append(file)
-
+input_files = input_files[:10]  # for testing
 logger.info(f"Processing {len(input_files)} files")
+for file in input_files:
+    logger.info(f"File to process: {file.stem}")
 
 num_cores = 16
 if len(input_files):
     with concurrent.futures.ProcessPoolExecutor(max_workers=num_cores) as executor:
         futures = []
-        for file in tqdm(input_files, desc="Processing files", unit="file"):
+        for file in input_files:
             future = executor.submit(
                 get_meshes_for_file,
                 file,
@@ -103,7 +109,7 @@ if len(input_files):
         for _ in tqdm(
             concurrent.futures.as_completed(futures),
             total=len(futures),
-            desc="Waiting for completion",
+            desc="Processing files",
             unit="file",
         ):
             pass
