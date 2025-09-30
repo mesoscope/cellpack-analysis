@@ -261,9 +261,7 @@ def get_distance_dictionary(
                     positions,
                     mode_mesh_dict,
                     minimum_distance,
-                ): (
-                    str(cell_id).split("_")[0]
-                )
+                ): (str(cell_id).split("_")[0])
                 for cell_id, positions in position_dict.items()
             }
             for future in tqdm(
