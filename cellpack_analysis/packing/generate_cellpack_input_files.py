@@ -2,7 +2,7 @@ import concurrent.futures
 import logging
 import multiprocessing
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 import numpy as np
 from tqdm import tqdm
@@ -17,8 +17,8 @@ logger = logging.getLogger(__name__)
 
 
 def set_gradient_mode_center(
-    mode_settings: Dict[str, Any], bounding_box: List[List[float]]
-) -> Dict[str, Any]:
+    mode_settings: dict[str, Any], bounding_box: list[list[float]]
+) -> dict[str, Any]:
     """
     Set gradient mode center based on mode settings and bounding box.
 
@@ -72,7 +72,7 @@ def set_gradient_mode_center(
     return mode_settings
 
 
-def resolve_gradient_names(gradient_list: List[str]) -> Dict[str, Any]:
+def resolve_gradient_names(gradient_list: list[str]) -> dict[str, Any]:
     """
     Resolve gradient names from gradient list.
 
@@ -97,10 +97,10 @@ def resolve_gradient_names(gradient_list: List[str]) -> Dict[str, Any]:
 
 
 def process_gradient_data(
-    recipe_entry: Union[List[str], Dict[str, Any]],
-    recipe: Dict[str, Any],
+    recipe_entry: list[str] | dict[str, Any],
+    recipe: dict[str, Any],
     gradient_structure_name: str,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Process gradient data for recipe.
 
@@ -144,8 +144,8 @@ def process_gradient_data(
 
 
 def process_rule_dict(
-    updated_recipe: Dict[str, Any], rule_dict: Dict[str, Any], gradient_structure_name: str
-) -> Dict[str, Any]:
+    updated_recipe: dict[str, Any], rule_dict: dict[str, Any], gradient_structure_name: str
+) -> dict[str, Any]:
     """
     Process rule dictionary and update recipe.
 
@@ -174,21 +174,21 @@ def process_rule_dict(
 
 
 def update_and_save_recipe(
-    cell_id: Union[int, str],
+    cell_id: int | str,
     structure_name: str,
-    recipe_template: Dict[str, Any],
+    recipe_template: dict[str, Any],
     rule_name: str,
-    rule_dict: Dict[str, Any],
-    grid_path: Union[str, Path],
-    mesh_path: Union[str, Path],
-    generated_recipe_path: Union[str, Path],
+    rule_dict: dict[str, Any],
+    grid_path: str | Path,
+    mesh_path: str | Path,
+    generated_recipe_path: str | Path,
     multiple_replicates: bool,
-    count: Optional[int] = None,
-    radius: Optional[float] = None,
+    count: int | None = None,
+    radius: float | None = None,
     get_bounding_box_from_mesh: bool = False,
     use_additional_struct: bool = False,
-    gradient_structure_name: Optional[str] = None,
-) -> Dict[str, Any]:
+    gradient_structure_name: str | None = None,
+) -> dict[str, Any]:
     """
     Update the recipe template with provided parameters and save the updated recipe to a JSON file.
 
@@ -291,7 +291,7 @@ def update_and_save_recipe(
     return updated_recipe
 
 
-def get_cell_ids(workflow_config: Any) -> List[Union[int, str]]:
+def get_cell_ids(workflow_config: Any) -> list[str]:
     """
     Get list of cell IDs to pack for a given structure.
 
@@ -354,12 +354,12 @@ def generate_recipes(workflow_config: Any) -> None:
                     # get count from cell stats
                     count = None
                     if workflow_config.get_counts_from_data:
-                        count = stats_df.loc[cell_id, "count"]
+                        count = stats_df.loc[cell_id, "count"].astype(int)  # type: ignore
 
                     # get size from cell stats
                     radius = None
                     if workflow_config.get_size_from_data:
-                        radius = stats_df.loc[cell_id, "radius"]
+                        radius = stats_df.loc[cell_id, "radius"].astype(float)  # type: ignore
 
                     future = executor.submit(
                         update_and_save_recipe,

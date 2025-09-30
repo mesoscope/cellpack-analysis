@@ -1,7 +1,7 @@
 import seaborn as sns
 
 colormap = sns.color_palette("tab10", 10).as_hex()
-colormap = colormap + ["#000aff", "#00ff8a"]
+colormap = [*colormap, "#000aff", "#00ff8a"]
 
 # Names of tagged genes
 STRUCTURE_NAME_DICT = {

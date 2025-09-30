@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
-"""
-Validate configuration files for the unified analysis workflow runner.
-"""
+# Validate configuration files for the unified analysis workflow runner.
 
 import json
 import logging
@@ -18,7 +16,7 @@ def validate_config_file(config_path: Path):
     logger.info(f"Validating {config_path.name}...")
 
     try:
-        with open(config_path, "r") as f:
+        with open(config_path) as f:
             config = json.load(f)
 
         # Check required fields

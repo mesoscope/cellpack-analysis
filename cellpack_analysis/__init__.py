@@ -41,9 +41,9 @@ setup_logging()
 
 
 __all__ = [
-    "get_module_version",
-    "setup_logging",
-    "__version__",
     "__author__",
     "__email__",
+    "__version__",
+    "get_module_version",
+    "setup_logging",
 ]

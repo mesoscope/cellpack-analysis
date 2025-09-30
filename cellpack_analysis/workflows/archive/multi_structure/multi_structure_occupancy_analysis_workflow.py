@@ -5,12 +5,12 @@ import logging
 import time
 
 import matplotlib.pyplot as plt
-from matplotlib.ticker import MaxNLocator
-
 from cellpack_analysis.analysis.punctate_analysis.lib import distance
 from cellpack_analysis.analysis.punctate_analysis.lib.stats_functions import (
     normalize_distances,
 )
+from matplotlib.ticker import MaxNLocator
+
 from cellpack_analysis.lib.file_io import get_project_root
 from cellpack_analysis.lib.load_data import get_position_data_from_outputs
 from cellpack_analysis.lib.mesh_tools import get_mesh_information_dict_for_structure

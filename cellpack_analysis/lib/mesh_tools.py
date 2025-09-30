@@ -21,33 +21,38 @@ from cellpack_analysis.lib.get_cell_id_list import get_cell_id_list_for_structur
 logger = logging.getLogger(__name__)
 
 
-def round_away_from_zero(array):
+def round_away_from_zero(array: np.ndarray) -> np.ndarray:
     """
-    Rounds the elements of the input array away from zero.
+    Round array elements away from zero.
 
     Parameters
     ----------
-        array (numpy.ndarray): Input array to be rounded.
+    array
+        Input array to be rounded
 
     Returns
     -------
-        numpy.ndarray: Array with elements rounded away from zero.
+    :
+        Array with elements rounded away from zero
     """
     return np.copysign(np.ceil(np.abs(array)), array)
 
 
-def get_list_of_grid_points(bounding_box, spacing):
+def get_list_of_grid_points(bounding_box: np.ndarray, spacing: float) -> np.ndarray:
     """
-    Generate a list of grid points within a given bounding box with a specified spacing.
+    Generate uniform grid points within a bounding box with specified spacing.
 
     Parameters
     ----------
-    bounding_box (numpy.ndarray): The bounding box defining the region of interest.
-    spacing (float): The spacing between grid points.
+    bounding_box
+        Array defining the region of interest bounds
+    spacing
+        Distance between adjacent grid points
 
     Returns
     -------
-    numpy.ndarray: A 2D array containing the list of grid points.
+    :
+        2D array of grid point coordinates with shape (N, 3)
     """
 
     grid = np.mgrid[
@@ -60,8 +65,8 @@ def get_list_of_grid_points(bounding_box, spacing):
     return all_points
 
 
-def get_mesh_vertices(mesh_file_path):
-    """Given a mesh file path, returns the coordinates of the mesh vertices."""
+def get_mesh_vertices(mesh_file_path: str | Path) -> np.ndarray:
+    """Extract vertex coordinates from mesh file."""
     coordinates = []
     with open(mesh_file_path) as mesh_file:
         for line in mesh_file:
@@ -71,17 +76,26 @@ def get_mesh_vertices(mesh_file_path):
     return coordinates
 
 
-def get_mesh_center(mesh_file_path):
-    """Given a mesh file path, returns the center of the mesh."""
+def get_mesh_center(mesh_file_path: str | Path) -> np.ndarray:
+    """Calculate center coordinates of mesh vertices."""
     coordinates = get_mesh_vertices(mesh_file_path)
     center = np.mean(coordinates, axis=0)
     return center
 
 
-def get_mesh_boundaries(mesh_file_path):
+def get_mesh_boundaries(mesh_file_path: str | Path) -> tuple[np.ndarray, np.ndarray]:
     """
-    Given a mesh file path, returns the coordinates:
-    [max_x, max_y, max_z] , [min_x, min_y, min_z].
+    Calculate maximum and minimum coordinates of mesh vertices.
+
+    Parameters
+    ----------
+    mesh_file_path
+        Path to the mesh file
+
+    Returns
+    -------
+    :
+        Tuple of (max_coordinates, min_coordinates) arrays
     """
     coordinates = get_mesh_vertices(mesh_file_path)
     max_coordinates = np.max(coordinates, axis=0)
@@ -89,21 +103,31 @@ def get_mesh_boundaries(mesh_file_path):
     return max_coordinates, min_coordinates
 
 
-def calculate_scaled_distances_from_mesh(positions, inner_mesh, outer_mesh):
+def calculate_scaled_distances_from_mesh(
+    positions: np.ndarray, inner_mesh: trimesh.Trimesh, outer_mesh: trimesh.Trimesh
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
-    Calculates the scaled distances between the inner mesh and outer mesh surfaces.
+    Calculate scaled distances between inner and outer mesh surfaces.
 
     Parameters
     ----------
-        positions (numpy.ndarray): Array of positions.
-        inner_mesh (trimesh.Trimesh): Inner mesh surface.
-        outer_mesh (trimesh.Trimesh): Outer mesh surface.
+    positions
+        Array of 3D positions
+    inner_mesh
+        Inner mesh surface
+    outer_mesh
+        Outer mesh surface
 
     Returns
     -------
-        tuple: A tuple containing the scaled distances between the surfaces,
-            the distances between the surfaces, and the distances between
-            the positions and the inner mesh surface.
+    :
+        Tuple containing (scaled distances, distance between surfaces,
+        distances to inner surface)
+
+    Raises
+    ------
+    ValueError
+        If calculated distances are outside valid range [0, 1]
     """
     query = proximity.ProximityQuery(inner_mesh)
 
@@ -129,8 +153,20 @@ def calculate_scaled_distances_from_mesh(positions, inner_mesh, outer_mesh):
     )
 
 
-def get_average_shape_mesh_objects(mesh_folder: Path):
-    # Get the mesh objects for the average shape
+def get_average_shape_mesh_objects(mesh_folder: Path) -> dict[str, Any]:
+    """
+    Load mesh objects for the average shape.
+
+    Parameters
+    ----------
+    mesh_folder
+        Path to folder containing mesh files
+
+    Returns
+    -------
+    :
+        Dictionary mapping shape names to VTK mesh objects
+    """
     mesh_dict = {}
     for shape in ["nuc", "mem"]:
         reader = vtk.vtkOBJReader()
@@ -140,18 +176,21 @@ def get_average_shape_mesh_objects(mesh_folder: Path):
     return mesh_dict
 
 
-def expand_bounding_box(bounding_box, expand=1.2):
+def expand_bounding_box(bounding_box: np.ndarray, expand: float = 1.2) -> np.ndarray:
     """
-    Expand the bounding box by a given factor.
+    Expand bounding box by specified factor.
 
     Parameters
     ----------
-        bounding_box (numpy.ndarray): The bounding box to expand.
-        expand (optional): Amount to expand the bounding box. Defaults to 0.
+    bounding_box
+        Bounding box to expand
+    expand
+        Expansion factor, defaults to 1.2
 
     Returns
     -------
-        numpy.ndarray: The expanded bounding box.
+    :
+        Expanded bounding box array
     """
     center = np.mean(bounding_box, axis=0)
     sizes = np.abs(np.diff(bounding_box, axis=0).squeeze())
@@ -160,24 +199,46 @@ def expand_bounding_box(bounding_box, expand=1.2):
     return new_bounding_box
 
 
-def get_bounding_box(mesh_path, expand=1.2):
+def get_bounding_box(mesh_path: str | Path, expand: float = 1.2) -> np.ndarray:
     """
-    Get the bounding box of a mesh.
+    Get expanded bounding box of a mesh.
 
     Parameters
     ----------
-        mesh_path (Path): Path to the mesh file.
-        expand (optional): Amount to expand the bounding box. Defaults to 0.
+    mesh_path
+        Path to the mesh file
+    expand
+        Expansion factor, defaults to 1.2
 
     Returns
     -------
-        numpy.ndarray: The bounding box of the mesh.
+    :
+        Expanded bounding box array
     """
     mesh = trimesh.load_mesh(mesh_path)
     return expand_bounding_box(mesh.bounds, expand)
 
 
-def get_mesh_information_for_shape(seed, base_datadir, structure_id):
+def get_mesh_information_for_shape(
+    seed: str, base_datadir: Path, structure_id: str
+) -> dict[str, Any]:
+    """
+    Get mesh information for a specific shape.
+
+    Parameters
+    ----------
+    seed
+        Seed identifier for the mesh
+    base_datadir
+        Base directory containing data
+    structure_id
+        Identifier for the structure
+
+    Returns
+    -------
+    :
+        Dictionary containing mesh and distance information for the shape
+    """
     nuc_mesh_path = base_datadir / f"structure_data/{structure_id}/meshes/nuc_mesh_{seed}.obj"
     mem_mesh_path = base_datadir / f"structure_data/{structure_id}/meshes/mem_mesh_{seed}.obj"
 
@@ -250,48 +311,39 @@ def get_mesh_from_image(
     sigma: float = 0,
     lcc: bool = True,
     translate_to_origin: bool = True,
-):
-    """Converts a numpy array into a vtkImageData and then into a 3d mesh
-    using vtkContourFilter. The input is assumed to be binary and the
-    isosurface value is set to 0.5.
-
-    Optionally the input can be pre-processed by i) extracting the largest
-    connected component and ii) applying a gaussian smooth to it. In case
-    smooth is used, the image is binarize using thershold 1/e.
-
-    A size threshold is applying to garantee that enough points will be
-    used to compute the SH parametrization.
-
-    Also, points as the edge of the image are set to zero (background)
-    to make sure the mesh forms a manifold.
-
-    Adapted from the aicsshparam package.
+) -> tuple[Any, np.ndarray, tuple[float, ...]]:
+    """
+    Convert numpy array to 3D mesh using VTK contour filter.
 
     Parameters
     ----------
-    image : np.ndarray
-        Input array where the mesh will be computed on
+    image
+        Binary input array for mesh computation
+    sigma
+        Gaussian smoothing degree, defaults to 0 (no smoothing)
+    lcc
+        If True, use only largest connected component. Default is True
+    translate_to_origin
+        If True, translate mesh to origin (0,0,0). Default is True
+
     Returns
     -------
-    mesh : vtkPolyData
-        3d mesh in VTK format
-    img_output : np.array
-        Input image after pre-processing
-    centroid : np.array
-        x, y, z coordinates of the mesh centroid
+    :
+        VTK mesh object
+    :
+        Preprocessed input image array
+    :
+        Mesh centroid coordinates (x, y, z)
 
-    Other parameters
-    ----------------
-    lcc : bool, optional
-        Wheather or not to compute the mesh only on the largest
-        connected component found in the input connected component,
-        default is True.
-    sigma : float, optional
-        The degree of smooth to be applied to the input image, default
-        is 0 (no smooth).
-    translate_to_origin : bool, optional
-        Wheather or not translate the mesh to the origin (0,0,0),
-        default is True.
+    Raises
+    ------
+    ValueError
+        If no foreground voxels found after preprocessing or object not centered
+
+    Notes
+    -----
+    Adapted from the aicsshparam package. Input assumed binary with
+    isosurface value 0.5. Image borders set to zero to ensure manifold mesh.
     """
 
     img = image.copy()
@@ -369,22 +421,21 @@ def get_mesh_information_dict_for_structure(
     recalculate: bool = False,
 ) -> dict[str, dict[str, Any]]:
     """
-    Retrieves or calculates mesh information dictionary.
+    Retrieve or calculate mesh information dictionary for structure.
 
-    Args:
-    ----
-        all_positions (dict): Dictionary containing positions of particles
-            in different modes.
-        structure_id (str): ID of the structure.
-        base_datadir (str): Base directory path.
-        results_dir (str, optional): Directory path to save/load mesh information.
-            Defaults to None.
-        recalculate (bool, optional): Flag to indicate whether to recalculate
-            mesh information. Defaults to False.
+    Parameters
+    ----------
+    structure_id
+        ID of the structure
+    base_datadir
+        Base directory path
+    recalculate
+        If True, recalculate mesh information. Default is False
 
-    Returns:
+    Returns
     -------
-        dict: Mesh information dictionary.
+    :
+        Dictionary mapping cell IDs to mesh information
     """
     file_path = base_datadir / f"structure_data/{structure_id}/mesh_information.dat"
     if not recalculate and file_path.exists():
@@ -521,239 +572,290 @@ def calc_scaled_distance_to_nucleus_surface(
     return nuc_surface_distances, scaled_nuc_distances, distance_between_surfaces
 
 
+def _load_existing_distances(
+    save_dir: Path, cell_id: str
+) -> dict[str, tuple[bool, np.ndarray | None]]:
+    """Load existing distance arrays if they exist."""
+    distance_types = {
+        "mem": "mem_distances",
+        "nuc": "nuc_distances",
+        "z": "z_distances",
+        "scaled_nuc": "scaled_nuc_distances",
+    }
+
+    results = {}
+    for key, prefix in distance_types.items():
+        file_path = save_dir / f"{prefix}_{cell_id}.npy"
+        if file_path.exists():
+            results[key] = (False, np.load(file_path))  # (should_calc, data)
+            logger.info(f"Loaded {prefix} for {cell_id}")
+        else:
+            results[key] = (True, None)  # Need to calculate
+
+    return results
+
+
+def _calculate_membrane_distances(
+    points: np.ndarray,
+    mem_mesh: trimesh.Trimesh,
+    struct_mesh: trimesh.Trimesh | None,
+    cell_id: str,
+    chunk_size: int,
+    save_dir: Path | None = None,
+) -> tuple[np.ndarray, np.ndarray | None]:
+    """Calculate membrane and optional structure distances."""
+    logger.info(f"Calculating mem distances for {cell_id}")
+    start_time = time.time()
+
+    mem_distances = np.full(len(points), np.inf)
+    struct_distances = None
+
+    if struct_mesh is not None:
+        struct_distances = np.full(len(points), np.inf)
+
+    for i in tqdm(
+        range(0, len(points), chunk_size),
+        desc=f"Membrane distance chunks for {cell_id}",
+    ):
+        chunk_points = points[i : (i + chunk_size)]
+        mem_distances[i : (i + chunk_size)] = trimesh.proximity.signed_distance(
+            mem_mesh, chunk_points
+        )
+        if struct_mesh is not None and struct_distances is not None:
+            struct_distances[i : (i + chunk_size)] = trimesh.proximity.signed_distance(
+                struct_mesh, chunk_points
+            )
+
+    if save_dir is not None:
+        np.save(save_dir / f"mem_distances_{cell_id}.npy", mem_distances)
+
+    logger.info(f"Took {(time.time() - start_time):0.2g}s to calculate mem distances for {cell_id}")
+    return mem_distances, struct_distances
+
+
+def _calculate_scaled_nucleus_distances(
+    points: np.ndarray,
+    inside_mem_inds: np.ndarray,
+    nuc_mesh: trimesh.Trimesh,
+    mem_mesh: trimesh.Trimesh,
+    cell_id: str,
+    chunk_size: int,
+    save_dir: Path | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Calculate scaled nucleus distances and return both nuc and scaled distances."""
+    logger.info(f"Calculating scaled distances for {cell_id}")
+    start_time = time.time()
+
+    nuc_distances = np.full(len(inside_mem_inds), np.inf)
+    scaled_nuc_distances = np.full(len(inside_mem_inds), np.inf)
+
+    for i in tqdm(
+        range(0, len(inside_mem_inds), chunk_size),
+        desc=f"Scaled distance chunks for {cell_id}",
+    ):
+        chunk_indices = inside_mem_inds[i : (i + chunk_size)]
+        chunk_points = points[chunk_indices]
+        (
+            nuc_distances[i : (i + chunk_size)],
+            scaled_nuc_distances[i : (i + chunk_size)],
+            _,
+        ) = calc_scaled_distance_to_nucleus_surface(chunk_points, nuc_mesh, mem_mesh)
+
+    logger.info(
+        f"Took {(time.time() - start_time):0.2g}s to calculate scaled distances for {cell_id}"
+    )
+
+    if save_dir is not None:
+        np.save(save_dir / f"scaled_nuc_distances_{cell_id}.npy", scaled_nuc_distances)
+        np.save(save_dir / f"nuc_distances_{cell_id}.npy", nuc_distances)
+
+    return nuc_distances, scaled_nuc_distances
+
+
+def _calculate_nucleus_distances(
+    points: np.ndarray,
+    inside_mem_inds: np.ndarray,
+    nuc_mesh: trimesh.Trimesh,
+    cell_id: str,
+    chunk_size: int,
+    save_dir: Path | None = None,
+) -> np.ndarray:
+    """Calculate nucleus distances."""
+    logger.info(f"Calculating nuc distances for {cell_id}")
+    start_time = time.time()
+
+    nuc_distances = np.full(len(inside_mem_inds), np.inf)
+
+    for i in tqdm(
+        range(0, len(inside_mem_inds), chunk_size),
+        desc=f"Nucleus distance chunks for {cell_id}",
+    ):
+        chunk_indices = inside_mem_inds[i : (i + chunk_size)]
+        chunk_points = points[chunk_indices]
+        nuc_distances[i : (i + chunk_size)] = -trimesh.proximity.signed_distance(
+            nuc_mesh, chunk_points
+        )
+
+    logger.info(f"Took {(time.time() - start_time):0.2g}s to calculate nuc distances for {cell_id}")
+
+    if save_dir is not None:
+        np.save(save_dir / f"nuc_distances_{cell_id}.npy", nuc_distances)
+
+    return nuc_distances
+
+
+def _calculate_z_distances(
+    points: np.ndarray,
+    inside_mem_inds: np.ndarray,
+    cell_id: str,
+    save_dir: Path | None = None,
+) -> np.ndarray:
+    """Calculate z-coordinate distances."""
+    logger.info(f"Calculating z distances for {cell_id}")
+    start_time = time.time()
+
+    inside_mem_points = points[inside_mem_inds]
+    z_coords = inside_mem_points[:, 2]
+    min_z = np.min(z_coords)
+    z_distances = np.abs(z_coords - min_z)
+
+    logger.info(f"Took {(time.time() - start_time):0.2g}s to calculate z distances for {cell_id}")
+
+    if save_dir is not None:
+        np.save(save_dir / f"z_distances_{cell_id}.npy", z_distances)
+
+    return z_distances
+
+
 def calculate_grid_distances(
-    nuc_mesh_path,
-    mem_mesh_path,
-    cell_id,
-    spacing,
-    save_dir=None,
-    recalculate=True,
-    calc_nuc_distances=True,
-    calc_mem_distances=True,
-    calc_z_distances=True,
-    calc_scaled_nuc_distances=True,
-    chunk_size=None,
-    struct_mesh_path=None,
-):
+    nuc_mesh_path: str | Path,
+    mem_mesh_path: str | Path,
+    cell_id: str,
+    spacing: float,
+    save_dir: Path | None = None,
+    recalculate: bool = True,
+    calc_nuc_distances: bool = True,
+    calc_mem_distances: bool = True,
+    calc_z_distances: bool = True,
+    calc_scaled_nuc_distances: bool = True,
+    chunk_size: int | None = None,
+    struct_mesh_path: str | Path | None = None,
+) -> tuple[np.ndarray | None, np.ndarray | None, np.ndarray | None, np.ndarray | None]:
     """
-    Calculate distances to nucleus, membrane, z-coordinate for each point in points.
+    Calculate distances to nucleus, membrane, and z-coordinate for grid points.
 
     Parameters
     ----------
-    nuc_mesh_path: Path
-        Path to nucleus mesh
-
-    mem_mesh_path: Path
-        Path to membrane mesh
-
-    cell_id: str
-        Cellid for the mesh
-
-    points: np.ndarray
-        Array of points to calculate distances for
-
-    save_dir: Path
-        Directory to save distances
-
-    recalculate: bool
-        Recalculate distances
-
-    calc_nuc_distances: bool
-        Calculate distances to nucleus
-
-    calc_mem_distances: bool
-        Calculate distances to membrane
-
-    calc_z_distance: bool
-        Calculate z-coordinate
+    nuc_mesh_path
+        Path to nucleus mesh file
+    mem_mesh_path
+        Path to membrane mesh file
+    cell_id
+        Cell identifier for the mesh
+    spacing
+        Grid spacing for point generation
+    save_dir
+        Directory to save distance arrays
+    recalculate
+        If True, recalculate existing distances. Default is True
+    calc_nuc_distances
+        If True, calculate nucleus distances. Default is True
+    calc_mem_distances
+        If True, calculate membrane distances. Default is True
+    calc_z_distances
+        If True, calculate z-coordinates. Default is True
+    calc_scaled_nuc_distances
+        If True, calculate scaled nucleus distances. Default is True
+    chunk_size
+        Number of points to process per chunk
+    struct_mesh_path
+        Optional path to structure mesh file
 
     Returns
     -------
-    nuc_distances: np.ndarray
-        Array of distances to nucleus
-
-    mem_distances: np.ndarray
-        Array of distances to membrane
-
-    z_distances: np.ndarray
-        Array of z-coordinates
-
-    scaled_nuc_distances: np.ndarray
-        Array of scaled distances to nucleus
-
-    chunk_size: int
-        Size of chunks to process points
+    :
+        Nucleus distances array or None
+    :
+        Membrane distances array or None
+    :
+        Z-coordinate distances array or None
+    :
+        Scaled nucleus distances array or None
     """
-    # Initialize variables
-    mem_distances = None
-    nuc_distances = None
-    struct_distances = None
-    z_distances = None
-    scaled_nuc_distances = None
+    # Load existing distances if not recalculating
+    distance_flags = {
+        "mem": calc_mem_distances,
+        "nuc": calc_nuc_distances,
+        "z": calc_z_distances,
+        "scaled_nuc": calc_scaled_nuc_distances,
+    }
 
-    # check if distances already calculated
     if not recalculate and save_dir is not None:
-        mem_file_name = save_dir / f"mem_distances_{cell_id}.npy"
-        if mem_file_name.exists():
-            calc_mem_distances = False
-            mem_distances = np.load(save_dir / f"mem_distances_{cell_id}.npy")
-            logger.info(f"Loaded mem distances for {cell_id}")
+        existing = _load_existing_distances(save_dir, cell_id)
+        for key in distance_flags:
+            if not existing[key][0]:  # If file exists, don't calculate
+                distance_flags[key] = False
+        mem_distances = existing["mem"][1]
+        nuc_distances = existing["nuc"][1]
+        z_distances = existing["z"][1]
+        scaled_nuc_distances = existing["scaled_nuc"][1]
+    else:
+        mem_distances = nuc_distances = z_distances = scaled_nuc_distances = None
 
-        nuc_file_name = save_dir / f"nuc_distances_{cell_id}.npy"
-        if nuc_file_name.exists():
-            calc_nuc_distances = False
-            nuc_distances = np.load(nuc_file_name)
-            logger.info(f"Loaded nuc distances for {cell_id}")
-
-        z_file_name = save_dir / f"z_distances_{cell_id}.npy"
-        if z_file_name.exists():
-            calc_z_distances = False
-            z_distances = np.load(z_file_name)
-            logger.info(f"Loaded z distances for {cell_id}")
-
-        scaled_nuc_file_name = save_dir / f"scaled_nuc_distances_{cell_id}.npy"
-        if scaled_nuc_file_name.exists():
-            calc_scaled_nuc_distances = False
-            scaled_nuc_distances = np.load(scaled_nuc_file_name)
-            logger.info(f"Loaded scaled nuc distances for {cell_id}")
-
-    # load meshes
+    # Load meshes
     nuc_mesh = trimesh.load_mesh(nuc_mesh_path)
     mem_mesh = trimesh.load_mesh(mem_mesh_path)
-    struct_mesh = None
-    if struct_mesh_path is not None:
-        struct_mesh = trimesh.load_mesh(struct_mesh_path)
+    struct_mesh = trimesh.load_mesh(struct_mesh_path) if struct_mesh_path else None
 
-    # get bounding box
+    # Generate grid points
     bounding_box = round_away_from_zero(mem_mesh.bounds)
-
-    # get grid points
     points = get_list_of_grid_points(bounding_box, spacing)
     if save_dir is not None:
         np.save(save_dir / f"grid_points_{cell_id}.npy", points)
 
-    if calc_mem_distances:
-        logger.info(f"Calculating mem distances for {cell_id}")
-        if chunk_size is None:
-            chunk_size = int(len(points) / 10)
+    # Set default chunk size
+    if chunk_size is None:
+        chunk_size = max(1, int(len(points) / 10))
 
-        start_time = time.time()
-        mem_distances = np.full(len(points), np.inf)
-
-        if struct_mesh is not None:
-            struct_distances = np.full(len(points), np.inf)
-
-        for i in tqdm(
-            range(0, len(points), chunk_size),
-            desc=f"Membrane distance chunks for {cell_id}",
-        ):
-            chunk_points = points[i : (i + chunk_size)]
-            mem_distances[i : (i + chunk_size)] = trimesh.proximity.signed_distance(
-                mem_mesh, chunk_points
-            )
-            if struct_mesh is not None:
-                struct_distances[i : (i + chunk_size)] = trimesh.proximity.signed_distance(
-                    struct_mesh, chunk_points
-                )
-
-        if save_dir is not None:
-            np.save(save_dir / f"mem_distances_{cell_id}.npy", mem_distances)
-
-        logger.info(
-            f"Took {(time.time() - start_time):0.2g}s to calculate mem distances for {cell_id}"
+    # Calculate membrane distances
+    struct_distances = None
+    if distance_flags["mem"]:
+        mem_distances, struct_distances = _calculate_membrane_distances(
+            points, mem_mesh, struct_mesh, cell_id, chunk_size, save_dir
         )
 
     if mem_distances is None:
         raise ValueError("Membrane distances must be calculated or loaded first")
 
+    # Find points inside membrane
     inside_mem_inds = np.where((mem_distances > 0) & ~np.isinf(mem_distances))[0]
     if struct_distances is not None:
         inside_mem_inds = inside_mem_inds[
-            struct_distances[inside_mem_inds] < 0 & ~np.isinf(struct_distances[inside_mem_inds])
+            (struct_distances[inside_mem_inds] < 0) & ~np.isinf(struct_distances[inside_mem_inds])
         ]
-    # calculate scaled distances
-    if calc_scaled_nuc_distances:
-        logger.info(f"Calculating scaled distances for {cell_id}")
 
-        start_time = time.time()
+    # Update chunk size for interior points
+    if chunk_size is None or len(inside_mem_inds) < chunk_size:
+        chunk_size = max(1, int(len(inside_mem_inds) / 10))
 
-        nuc_distances = np.full(len(inside_mem_inds), np.inf)
-        scaled_nuc_distances = np.full(len(inside_mem_inds), np.inf)
+    # Calculate scaled nucleus distances (includes regular nuc distances)
+    if distance_flags["scaled_nuc"]:
+        nuc_distances, scaled_nuc_distances = _calculate_scaled_nucleus_distances(
+            points, inside_mem_inds, nuc_mesh, mem_mesh, cell_id, chunk_size, save_dir
+        )
+        distance_flags["nuc"] = False  # Already calculated
 
-        if chunk_size is None:
-            chunk_size = int(len(inside_mem_inds) / 10)
-
-        for i in tqdm(
-            range(0, len(inside_mem_inds), chunk_size),
-            desc=f"Scaled distance chunks for {cell_id}",
-        ):
-            chunk_indices = inside_mem_inds[i : (i + chunk_size)]
-            chunk_points = points[chunk_indices]
-            (
-                nuc_distances[i : (i + chunk_size)],
-                scaled_nuc_distances[i : (i + chunk_size)],
-                _,
-            ) = calc_scaled_distance_to_nucleus_surface(chunk_points, nuc_mesh, mem_mesh)
-
-        logger.info(
-            f"Took {(time.time() - start_time):0.2g}s to calculate scaled distances for {cell_id}"
+    # Calculate nucleus distances separately if needed
+    if distance_flags["nuc"]:
+        nuc_distances = _calculate_nucleus_distances(
+            points, inside_mem_inds, nuc_mesh, cell_id, chunk_size, save_dir
         )
 
-        if save_dir is not None:
-            np.save(save_dir / f"scaled_nuc_distances_{cell_id}.npy", scaled_nuc_distances)
+    # Calculate z distances
+    if distance_flags["z"]:
+        z_distances = _calculate_z_distances(points, inside_mem_inds, cell_id, save_dir)
 
-        if calc_nuc_distances:
-            if save_dir is not None:
-                np.save(save_dir / f"nuc_distances_{cell_id}.npy", nuc_distances)
-            calc_nuc_distances = False
-
-    # get distances to nuc_mesh
-    if calc_nuc_distances:
-        logger.info(f"Calculating nuc distances for {cell_id}")
-
-        start_time = time.time()
-
-        nuc_distances = np.full(len(inside_mem_inds), np.inf)
-
-        if chunk_size is None:
-            chunk_size = int(len(inside_mem_inds) / 10)
-
-        for i in tqdm(
-            range(0, len(inside_mem_inds), chunk_size),
-            desc=f"Nucleus distance chunks for {cell_id}",
-        ):
-            chunk_indices = inside_mem_inds[i : (i + chunk_size)]
-            chunk_points = points[chunk_indices]
-            nuc_distances[i : (i + chunk_size)] = -trimesh.proximity.signed_distance(
-                nuc_mesh, chunk_points
-            )
-
-        logger.info(
-            f"Took {(time.time() - start_time):0.2g}s to calculate nuc distances for {cell_id}"
-        )
-
-        if save_dir is not None:
-            np.save(save_dir / f"nuc_distances_{cell_id}.npy", nuc_distances)
-
-    # get z-coordinates
-    if calc_z_distances and mem_distances is not None:
-        logger.info(f"Calculating z distances for {cell_id}")
-
-        start_time = time.time()
-
-        # only check points insde the membrane
-        inside_mem_points = points[inside_mem_inds]
-
-        z_coords = inside_mem_points[:, 2]
-        min_z = np.min(z_coords)
-        z_distances = np.abs(z_coords - min_z)
-
-        logger.info(
-            f"Took {(time.time() - start_time):0.2g}s to calculate z distances for {cell_id}"
-        )
-        if save_dir is not None:
-            np.save(save_dir / f"z_distances_{cell_id}.npy", z_distances)
-
+    # Cleanup
     del points
     gc.collect()
 

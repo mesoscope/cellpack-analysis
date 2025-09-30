@@ -33,18 +33,14 @@ plt.rcParams["ps.fonttype"] = 42
 
 def plot_cell_diameter_distribution(
     mesh_information_dict: dict[Any, dict[str, float]],
-) -> None:
+) -> tuple[Figure, Axes]:
     """
-    Plots the distribution of cell and nucleus diameters.
-
-    This function calculates the cell and nucleus diameters from the mesh information dictionary,
-    and then plots the histograms of the diameters. It also displays the mean cell and nucleus
-    diameters in the plot title.
+    Plot distribution of cell and nucleus diameters as histograms.
 
     Parameters
     ----------
     mesh_information_dict
-        A dictionary containing mesh information with cell_diameter and nuc_diameter keys
+        Dictionary containing mesh information with cell_diameter and nuc_diameter keys
     """
     cell_diameters = [
         cell_id_dict["cell_diameter"] * PIXEL_SIZE_IN_UM
@@ -65,6 +61,8 @@ def plot_cell_diameter_distribution(
     ax.set_ylabel("Count")
     plt.tight_layout()
     plt.show()
+
+    return fig, ax
 
 
 def plot_distance_distributions_kde(
@@ -92,19 +90,26 @@ def plot_distance_distributions_kde(
     all_distance_dict
         Dictionary containing distance distributions for each packing mode and distance measure
     figures_dir
-        Directory to save the figures. If None, figures will not be saved
+        Directory to save the figures, if None figures will not be saved
     suffix
-        Suffix to append to the figure filenames
+        Suffix to append to figure filenames
     normalization
-        Normalization method to apply to the distance measures
+        Normalization method to apply to distance measures
     overlay
-        If True, overlay the pooled KDE
+        If True, overlay the pooled KDE. Default is True
     distance_limits
         Dictionary containing limits for each distance measure
     bandwidth
-        Bandwidth method for KDE. Can be "scott", "silverman", or a float value
+        Bandwidth method for KDE
     save_format
-        Format to save the figures in
+        Format to save figures in
+    minimum_distance
+        Minimum distance threshold for filtering
+
+    Returns
+    -------
+    :
+        Tuple containing figure and dictionary mapping distance measures to axes
     """
     logger.info("Starting distance distribution kde plot")
     plt.rcParams.update({"font.size": 5})
@@ -252,19 +257,21 @@ def plot_ks_test_barplots(
         DataFrame containing KS test results
     distance_measures
         List of distance measures to plot
-    significance_level
-        Significance level for the KS test
     suffix
-        Suffix to append to the figure filenames
+        Suffix to append to figure filenames
     figures_dir
-        Directory to save the figures. If None, figures will not be saved
+        Directory to save figures, if None figures will not be saved
+    baseline_mode
+        Baseline packing mode for significance testing
     save_format
-        Format to save the figures in
+        Format to save figures in
+    annotate_significance
+        If True, add statistical significance annotations. Default is False
 
     Returns
     -------
     :
-        Tuple containing lists of figure and axis objects for each distance measure
+        Tuple containing figure and array of axes objects
     """
     logger.info("Plotting KS test barplots")
     plt.rcParams.update({"font.size": 6})
@@ -365,12 +372,17 @@ def plot_emd_comparisons(
     save_format
         Format to save the figures in
     annotate_significance
-        Whether to add statistical significance annotations to the plots
+        If True, add statistical significance annotations. Default is False
 
     Returns
     -------
     :
         Tuple containing (bar_figure, bar_axes, violin_figure, violin_axes)
+
+    Raises
+    ------
+    ValueError
+        If comparison_type is not 'intra_mode' or 'baseline'
     """
     if comparison_type == "intra_mode":
         logger.info("Plotting within rule EMD plots")
@@ -433,7 +445,7 @@ def plot_emd_comparisons(
         sns.barplot(ax=ax_bar, **plot_params)
         sns.violinplot(ax=ax_violin, **plot_params)
 
-        for ax, plot_type in zip([ax_bar, ax_violin], ["barplot", "violinplot"]):
+        for ax, plot_type in zip([ax_bar, ax_violin], ["barplot", "violinplot"], strict=False):
             sns.despine(ax=ax)
             ax.set_xlabel("EMD")
             ax.set_ylabel("")
@@ -474,7 +486,7 @@ def plot_emd_comparisons(
         if annotate_significance:
             final_suffix += "_annotated"
 
-        for fig, label in zip([fig_bar, fig_violin], ["barplot", "violinplot"]):
+        for fig, label in zip([fig_bar, fig_violin], ["barplot", "violinplot"], strict=False):
             fig.tight_layout()
             fig.savefig(
                 figures_dir / f"{file_prefix}_{label}{final_suffix}.{save_format}",
@@ -500,14 +512,12 @@ def plot_occupancy_illustration(
     seed_index: int | None = None,
     save_format: str = "png",
     bandwidth: Literal["scott", "silverman"] | float | None = None,
-) -> tuple[Any, Any, np.ndarray, np.ndarray, Any, list[Any]]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, Figure, list[Axes]]:
     """
-    Plot an illustration of occupancy analysis.
+    Create an illustration of occupancy analysis showing occupied, available, and ratio plots.
 
     Parameters
     ----------
-    distance_dict
-        Dictionary containing distance information
     kde_dict
         Dictionary containing KDE information
     baseline_mode
@@ -521,18 +531,22 @@ def plot_occupancy_illustration(
     normalization
         Normalization method applied
     method
-        Method for ratio calculation ("pdf" or "cumulative")
+        Method for ratio calculation
     xlim
         X-axis limit for plots
+    num_points
+        Number of points for KDE evaluation
     seed_index
         Index of seed to use for illustration
     save_format
         Format to save the figures in
+    bandwidth
+        Bandwidth method for KDE
 
     Returns
     -------
     :
-        Tuple containing KDE objects, x-values, y-values, figure, and axes
+        Tuple containing (pdf_occupied, pdf_available, x_values, y_values, figure, axes)
     """
     plt.rcParams.update({"font.size": 6})
     fig, axs = plt.subplots(nrows=3, ncols=1, dpi=300, figsize=(2.5, 2.5), sharex=True)
@@ -622,13 +636,13 @@ def plot_occupancy_illustration(
 
 
 def add_struct_radius_to_plot(
-    ax: Any,
+    ax: Axes,
     structure_id: str,
     mesh_information_dict: dict[str, dict[str, Any]],
     normalization: str | None = None,
-) -> Any:
+) -> Axes:
     """
-    Add the mean and std structure radius to the plot.
+    Add the mean and standard deviation of structure radius to the plot.
 
     Parameters
     ----------
@@ -674,39 +688,33 @@ def plot_occupancy_ratio(
     save_format: str = "png",
 ) -> tuple[Figure, Axes]:
     """
-    Plot the occupancy ratio based on the given parameters.
+    Plot occupancy ratio for individual and combined data across packing modes.
 
     Parameters
     ----------
-    distance_dict
-        A dictionary containing distance information
-    kde_dict
-        A dictionary containing KDE information
-    packing_modes
-        A list of packing modes
+    occupancy_dict
+        Dictionary containing occupancy information
+    channel_map
+        Dictionary mapping packing modes to channels
     figures_dir
-        The directory to save the figures
+        Directory to save the figures
     suffix
-        A suffix to add to the figure filename
+        Suffix to add to the figure filename
     normalization
         Normalization method applied
     distance_measure
         The distance measure to plot
-    method
-        The ratio to plot ("pdf" or "cumulative")
     xlim
         X-axis limit for plots
     ylim
         Y-axis limit for plots
-    sample_size
-        Number of samples to plot
     save_format
         Format to save the figures in
 
     Returns
     -------
     :
-        Tuple containing lists of figure and axis objects
+        Tuple containing figure and axis objects
     """
     logger.info("Plotting individual occupancy values")
 
@@ -788,33 +796,31 @@ def plot_occupancy_ratio_interpolation(
     save_format: str = "png",
 ) -> tuple[Figure, Axes]:
     """
-    Plot combined occupancy ratio and interpolated reconstruction.
+    Plot combined occupancy ratio with interpolated reconstruction.
 
     Parameters
     ----------
     interpolated_occupancy_dict
-        A dictionary containing interpolated occupancy information
+        Dictionary containing interpolated occupancy information
+    baseline_mode
+        Baseline packing mode for interpolation
     figures_dir
-        The directory to save the figures
+        Directory to save the figures
     suffix
-        A suffix to add to the figure filename
+        Suffix to add to the figure filename
     distance_measure
         The distance measure to plot
-    method
-        The ratio to plot ("pdf" or "cumulative")
     xlim
         X-axis limit for plots
     ylim
         Y-axis limit for plots
-    sample_size
-        Number of samples to plot
     save_format
         Format to save the figures in
 
     Returns
     -------
     :
-        Tuple containing lists of figure and axis objects
+        Tuple containing figure and axis objects
     """
     logger.info("Plotting occupancy interpolation")
 
@@ -889,43 +895,49 @@ def plot_mean_and_std_occupancy_ratio_kde(
     bandwidth: Literal["scott", "silverman"] | float | None = None,
 ) -> tuple[Figure, Axes]:
     """
-    Plot the mean occupancy ratio along with the confidence intervals.
+    Plot mean occupancy ratio with confidence intervals across packing modes.
 
     Parameters
     ----------
     distance_dict
-        A dictionary containing distance information
+        Dictionary containing distance information
     kde_dict
-        A dictionary containing KDE information
+        Dictionary containing KDE information
     packing_modes
-        A list of packing modes
+        List of packing modes
     figures_dir
-        The directory to save the figures
+        Directory to save the figures
     suffix
-        A suffix to add to the figure filename
+        Suffix to add to the figure filename
     normalization
         Normalization method applied
     distance_measure
         The distance measure to plot
+    method
+        Method for ratio calculation
     xlim
         X-axis limit for plots
     ylim
         Y-axis limit for plots
     sample_size
-        The number of samples to use
+        Number of samples to use
     save_format
         Format to save the figures in
+    num_points
+        Number of points for KDE evaluation
+    bandwidth
+        Bandwidth method for KDE
 
     Returns
     -------
     :
-        Tuple containing lists of figure and axis objects
+        Tuple containing figure and axis objects
     """
     logger.info("Plotting occupancy with confidence intervals")
 
     lines = []
     fig, ax = plt.subplots(dpi=300, figsize=(6, 6))
-    for ct, mode in enumerate(packing_modes):
+    for _ct, mode in enumerate(packing_modes):
 
         color = COLOR_PALETTE.get(mode, "gray")
 
@@ -1041,18 +1053,14 @@ def plot_binned_occupancy_ratio_calc(
     xlim: float | None = None,
     ylim: float | None = None,
     save_format: str = "png",
-) -> tuple[Any, Any]:
+) -> tuple[Figure, Axes]:
     """
-    Calculate the binned occupancy ratio based on the provided distance dictionary.
+    Calculate and plot binned occupancy ratio from KDE information.
 
     Parameters
     ----------
-    distance_dict
-        A dictionary containing distance information for various entities
-    packing_modes
-        A list of packing modes to consider for the analysis
-    mesh_information_dict
-        Dictionary containing mesh information for each seed
+    kde_dict
+        Dictionary containing KDE information for various entities
     channel_map
         Dictionary mapping packing modes to channels
     figures_dir
@@ -1063,6 +1071,8 @@ def plot_binned_occupancy_ratio_calc(
         Suffix to append to the result filenames
     num_bins
         Number of bins to use for histogram
+    num_cells
+        Maximum number of cells to include per structure
     bin_width
         Width of bins (overrides num_bins if provided)
     distance_measure
@@ -1071,8 +1081,6 @@ def plot_binned_occupancy_ratio_calc(
         X-axis limit for plots
     ylim
         Y-axis limit for plots
-    sample_size
-        The number of samples to consider
     save_format
         Format to save the figures in
 
@@ -1210,12 +1218,12 @@ def plot_binned_occupancy_ratio(
     save_format: str = "png",
 ) -> tuple[Any, Any]:
     """
-    Plot the binned occupancy ratio based on the provided binned occupancy dictionary.
+    Plot binned occupancy ratio from precomputed binned occupancy dictionary.
 
     Parameters
     ----------
     binned_occupancy_dict
-        A dictionary containing binned occupancy information for various entities
+        Dictionary containing binned occupancy information for various entities
     channel_map
         Dictionary mapping packing modes to channels
     figures_dir
@@ -1230,8 +1238,6 @@ def plot_binned_occupancy_ratio(
         X-axis limit for plots
     ylim
         Y-axis limit for plots
-    sample_size
-        The number of samples to consider
     save_format
         Format to save the figures in
 

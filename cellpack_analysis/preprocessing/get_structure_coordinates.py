@@ -2,6 +2,7 @@
 # # Get positions of structure centroids from images
 
 import json
+import logging
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
@@ -15,6 +16,8 @@ from tqdm import tqdm
 from cellpack_analysis.lib.file_io import get_datadir_path
 from cellpack_analysis.lib.label_tables import STRUCTURE_NAME_DICT
 
+logger = logging.getLogger(__name__)
+
 # %% [markdown]
 # ### Set structure id
 STRUCTURE_ID = "SLC25A17"  # peroxisome: "SLC25A17", early endosome: "RAB5A"
@@ -24,13 +27,13 @@ subfolder = "sample_8d" if dsphere else "full"
 
 # %% [markdown]
 # ### Get path for images
-img_path = get_datadir_path() / f"structure_data/{STRUCTURE_ID}/{subfolder}/segmented/"
+datadir = get_datadir_path() / f"structure_data/{STRUCTURE_ID}/{subfolder}"
+img_path = datadir / "segmented"
 
 # %% [markdown]
 # ### Get list of files
-file_path = img_path.glob("*.tiff")
-file_path_list = list(file_path)
-print(f"Number of files: {len(file_path_list)}")
+file_path_list = [f for f in img_path.glob("*.tiff") if not f.name.startswith(".")]
+logger.info(f"Number of files: {len(file_path_list)}")
 
 # %% [markdown]
 # Set image parameters
@@ -41,26 +44,40 @@ mem_channel_index = 2
 
 # %% [markdown]
 # ### Define function to get positions from a single image
-def get_positions_from_single_image(file):
+def get_positions_from_single_image(
+    file: Path,
+) -> tuple[str, list[list[float]], list[float], list[float], list[float], list[float]]:
     """
     Get the positions of structures from a single image.
 
-    Args:
-    ----
-        file (str): The file path of the image.
+    Parameters
+    ----------
+    file
+        The path to the image file.
 
-    Returns:
+    Returns
     -------
-        tuple: A tuple containing the cell ID and a list of positions of structures.
+    cell_id
+        The cell ID extracted from the file name.
+    positions
+        A list of positions of the structures.
+    nuc_centroid
+        The centroid of the nucleus.
+    mem_centroid
+        The centroid of the membrane.
+    struct_nuc_distances
+        A list of distances from each structure to the nucleus.
+    struct_mem_distances
+        A list of distances from each structure to the membrane.
     """
     cell_id = file.stem.split("_")[1]
     img = io.imread(file)
     img_pex = img[:, struct_channel_index]
     img_nuc = img[:, nuc_channel_index]
     img_mem = img[:, mem_channel_index]
-    label_img_pex, n_pex = measure.label(img_pex, return_num=True)
-    label_img_nuc, n_nuc = measure.label(img_nuc, return_num=True)
-    label_img_mem, n_mem = measure.label(img_mem, return_num=True)
+    label_img_pex, n_pex = measure.label(img_pex, return_num=True)  # type: ignore
+    label_img_nuc, n_nuc = measure.label(img_nuc, return_num=True)  # type: ignore
+    label_img_mem, n_mem = measure.label(img_mem, return_num=True)  # type: ignore
 
     nuc_positions = []
     nuc_sizes = []
@@ -113,10 +130,10 @@ def get_positions_from_single_image(file):
             centroid,
         )
         struct_nuc_distances.append(
-            nuc_distances[centroid_inds[2], centroid_inds[1], centroid_inds[0]]
+            nuc_distances[centroid_inds[2], centroid_inds[1], centroid_inds[0]]  # type: ignore
         )
         struct_mem_distances.append(
-            mem_distances[centroid_inds[2], centroid_inds[1], centroid_inds[0]]
+            mem_distances[centroid_inds[2], centroid_inds[1], centroid_inds[0]]  # type: ignore
         )
     return (
         cell_id,
@@ -181,43 +198,88 @@ inside_nuc_indices = nuc_distances < 0
 outside_mem_indices = mem_distances < 0
 good_indices = np.logical_and(~inside_nuc_indices, ~outside_mem_indices)
 bad_indices = np.logical_or(inside_nuc_indices, outside_mem_indices)
-# %% plot nucleus with structure positions and negative distances
+# %% plot composite image with structure positions and negative distances
 fig, axs = plt.subplots(2, 2, dpi=300)
-# projection_axis = "y"
 for ct, projection_axis in enumerate(["x", "y", "z"]):
     ax = axs[ct // 2, ct % 2]
     projection_axis_index = {"x": 2, "y": 1, "z": 0}[projection_axis]
     plot_index_1 = {"x": 1, "y": 0, "z": 0}[projection_axis]
     plot_index_2 = {"x": 2, "y": 2, "z": 1}[projection_axis]
     axis_indices = {0: "x", 1: "y", 2: "z"}
-    binary_label_img = np.max(label_img > 0, axis=projection_axis_index)
-    binary_img_nuc = np.max(img_nuc > 0, axis=projection_axis_index)
-    binary_img_mem = np.max(img_mem > 0, axis=projection_axis_index)
-    ax.imshow(binary_label_img, cmap="Greens", origin="lower")
-    ax.imshow(binary_img_nuc, cmap="Blues", alpha=0.4, origin="lower")
-    ax.imshow(binary_img_mem, cmap="Reds", alpha=0.4, origin="lower")
+
+    # Get max projections for each channel
+    img_struct_proj = np.max(img_struct, axis=projection_axis_index)
+    img_nuc_proj = np.max(img_nuc, axis=projection_axis_index)
+    img_mem_proj = np.max(img_mem, axis=projection_axis_index)
+
+    # Normalize intensity values to 0-1 range
+    img_struct_norm = (
+        img_struct_proj / np.max(img_struct_proj)
+        if np.max(img_struct_proj) > 0
+        else img_struct_proj
+    )
+    img_nuc_norm = img_nuc_proj / np.max(img_nuc_proj) if np.max(img_nuc_proj) > 0 else img_nuc_proj
+    img_mem_norm = img_mem_proj / np.max(img_mem_proj) if np.max(img_mem_proj) > 0 else img_mem_proj
+
+    # Create binary masks for each channel
+    threshold = 0.1
+    struct_mask = img_struct_norm > threshold
+    nuc_mask = img_nuc_norm > threshold
+    mem_mask = img_mem_norm > threshold
+
+    # Create RGB composite with priority overlay
+    height, width = img_struct_proj.shape
+    composite = np.zeros((height, width, 3))
+
+    # Layer 1 (bottom): Membrane - Magenta (1, 0, 1)
+    composite[mem_mask, 0] = img_mem_norm[mem_mask]  # Red channel
+    composite[mem_mask, 2] = img_mem_norm[mem_mask]  # Blue channel
+
+    # Layer 2 (middle): Nucleus - Cyan (0, 1, 1)
+    composite[nuc_mask, 0] = 0  # Clear red channel to avoid white with membrane
+    composite[nuc_mask, 1] = img_nuc_norm[nuc_mask]  # Green channel
+    composite[nuc_mask, 2] = img_nuc_norm[nuc_mask]  # Blue channel
+
+    # Layer 3 (top): Structure - Yellow/Green (1, 1, 0)
+    composite[struct_mask, :] = 0  # Clear all channels first
+    composite[struct_mask, 1] = img_struct_norm[struct_mask]  # Green channel
+
+    ax.imshow(composite, origin="lower")
+
+    # Plot structure positions with different colors
     ax.scatter(
         positions[good_indices, plot_index_1],
         positions[good_indices, plot_index_2],
-        c="y",
-        s=1,
+        c="white",
+        s=5,
+        marker="x",
     )  # plot good positions
     ax.scatter(
         positions[inside_nuc_indices, plot_index_1],
         positions[inside_nuc_indices, plot_index_2],
-        c="r",
-        s=1,
+        c="red",
+        s=5,
+        marker="x",
     )  # inside nucleus
     ax.scatter(
         positions[outside_mem_indices, plot_index_1],
         positions[outside_mem_indices, plot_index_2],
-        c="b",
-        s=1,
+        c="blue",
+        s=5,
+        marker="x",
     )  # outside membrane
 
     ax.set_xlabel(axis_indices[plot_index_1])
     ax.set_ylabel(axis_indices[plot_index_2])
+    ax.set_title(f"{projection_axis.upper()}-projection")
+
 axs[-1, -1].axis("off")
+# Add legend for the composite colors
+legend_text = (
+    "Membrane: Magenta\nNucleus: Cyan\nStructure: Green\n"
+    "Good positions: White\nInside nucleus: Red\nOutside membrane: Blue"
+)
+axs[-1, -1].text(0.1, 0.5, legend_text, fontsize=8, verticalalignment="center")
 plt.tight_layout()
 plt.show()
 
@@ -252,12 +314,12 @@ else:
         centroids_dict[cell_id]["membrane"] = mem_centroid
 
 # %% save positions
-save_path = datadir / f"structure_data/{STRUCTURE_ID}/{subfolder}/positions_{STRUCTURE_ID}.json"
+save_path = datadir / f"positions_{STRUCTURE_ID}.json"
 with open(save_path, "w") as f:
     json.dump(positions_dict, f, indent=4, sort_keys=True)
 print(f"Saved positions to {save_path}")
 # %% save centroids
-save_path = datadir / f"structure_data/{STRUCTURE_ID}/centroids/centroids_{STRUCTURE_ID}.json"
+save_path = datadir / f"centroids/centroids_{STRUCTURE_ID}.json"
 save_path.parent.mkdir(parents=True, exist_ok=True)
 with open(save_path, "w") as f:
     json.dump(centroids_dict, f, indent=4, sort_keys=True)

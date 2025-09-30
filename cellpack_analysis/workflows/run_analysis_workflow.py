@@ -38,7 +38,6 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import Dict
 
 from cellpack_analysis import setup_logging
 from cellpack_analysis.lib import distance, occupancy, visualization
@@ -61,16 +60,16 @@ class AnalysisConfig:
         self._setup_parameters()
         self._setup_paths()
 
-    def _load_config(self) -> Dict:
+    def _load_config(self) -> dict:
         """Load configuration from JSON file."""
         if not self.config_file.exists():
             raise FileNotFoundError(f"Config file not found: {self.config_file}")
 
-        with open(self.config_file, "r") as f:
+        with open(self.config_file) as f:
             return json.load(f)
 
     def _setup_paths(self):
-        """Setup directory paths."""
+        """Set directory paths."""
         self.project_root = get_project_root()
         self.base_datadir = self.project_root / "data"
         self.base_results_dir = self.project_root / "results"
@@ -84,7 +83,7 @@ class AnalysisConfig:
         self.figures_dir.mkdir(exist_ok=True, parents=True)
 
     def _setup_parameters(self):
-        """Setup analysis parameters from config."""
+        """Set analysis parameters from config."""
         # Structure parameters
         self.structure_id = self.config.get("structure_id", "SLC25A17")
         self.packing_id = self.config.get("packing_id", "peroxisome")
@@ -146,7 +145,7 @@ class AnalysisConfig:
         recalculate_config = self.config.get("recalculate")
         if isinstance(recalculate_config, bool):
             # If recalculate is a boolean, apply to all steps
-            self.recalculate = {key: recalculate_config for key in default_recalculate.keys()}
+            self.recalculate = dict.fromkeys(default_recalculate.keys(), recalculate_config)
         elif isinstance(recalculate_config, dict):
             # If recalculate is a dict, update defaults with provided values
             self.recalculate = default_recalculate.copy()
@@ -564,7 +563,7 @@ class AnalysisRunner:
 
 
 def main():
-    """Main entry point for command line interface."""
+    """Run the analysis workflow based on command-line arguments."""
     parser = argparse.ArgumentParser(
         description="Run cellpack analysis workflows",
         formatter_class=argparse.RawDescriptionHelpFormatter,

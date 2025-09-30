@@ -21,6 +21,21 @@ def get_cell_id_map_from_distance_kde_dict(
     kde_dict: dict[str, dict[str, gaussian_kde]],
     channel_map: dict[str, str],
 ) -> dict[str, list[str]]:
+    """
+    Create mapping from structure IDs to cell IDs based on available KDE data.
+
+    Parameters
+    ----------
+    kde_dict
+        Dictionary with cell IDs as keys and mode-specific KDEs as values
+    channel_map
+        Mapping from packing modes to structure IDs
+
+    Returns
+    -------
+    :
+        Dictionary mapping structure IDs to lists of cell IDs
+    """
     cell_id_map = {}
     for mode, structure_id in channel_map.items():
         if structure_id not in cell_id_map:
@@ -46,30 +61,29 @@ def get_kde_occupancy_dict(
     num_points: int = 100,
 ) -> dict[str, dict[str, dict[str, Any]]]:
     """
-    Load or compute occupancy ratio from a dictionary of distance distribution KDEs.
+    Load or compute occupancy ratio from distance distribution KDEs.
 
     Parameters
     ----------
-    kde_dict
-        Dictionary containing KDEs for distance distributions
-        Should have the structure:
-        {cell_id: {mode: gaussian_kde, "available_distance": gaussian_kde}, ...}
+    distance_kde_dict
+        Dictionary with cell IDs as keys and mode-specific KDEs as values
+        Structure: {cell_id: {mode: gaussian_kde, "available_distance": gaussian_kde}}
     channel_map
-        Mapping of packing modes to structure IDs
+        Mapping from packing modes to structure IDs
     results_dir
-        Directory to save the results
+        Directory to save the results, by default None
     recalculate
-        Whether to recalculate even if results exist
+        If True, recalculate even if results exist. Default is False
     suffix
         Suffix to add to the saved file name
     distance_measure
         Distance measure to analyze
     bandwidth
-        Bandwidth for KDE smoothing
+        Bandwidth for KDE smoothing, by default None
     num_cells
-        Number of cells to sample per structure
+        Maximum number of cells to sample per structure, by default None
     num_points
-        Number of points for KDE evaluation
+        Number of points for KDE evaluation, by default 100
 
     Returns
     -------
@@ -219,7 +233,7 @@ def get_occupancy_emd(
     results_dir
         Directory to save the results
     recalculate
-        Whether to recalculate even if results exist
+        If True, recalculate even if results exist. Default is False
     suffix
         Suffix to add to the saved file name
     distance_measure
@@ -281,7 +295,7 @@ def get_occupancy_ks_test_dict(
     results_dir
         Directory to save the results
     recalculate
-        Whether to recalculate even if results exist
+        If True, recalculate even if results exist. Default is False
     suffix
         Suffix to add to the saved file name
     distance_measure
@@ -325,7 +339,26 @@ def interpolate_occupancy_dict(
     baseline_mode: str,
     results_dir: Path | None = None,
     suffix: str = "",
-):
+) -> dict[str, Any]:
+    """
+    Interpolate occupancy data using non-negative least squares fitting.
+
+    Parameters
+    ----------
+    occupancy_dict
+        Dictionary containing occupancy data for each packing mode
+    baseline_mode
+        The baseline packing mode used for interpolation
+    results_dir
+        Directory to save the results, by default None
+    suffix
+        Suffix to add to the saved file name
+
+    Returns
+    -------
+    :
+        Dictionary containing interpolated occupancy data and fit parameters
+    """
     xvals = occupancy_dict[baseline_mode]["combined"]["xvals"]
     baseline_occupancy = occupancy_dict[baseline_mode]["combined"]["occupancy"]
     interpolated_occupancy_dict = {
@@ -379,10 +412,8 @@ def log_occupancy_interpolation_coeffs(
 
     Parameters
     ----------
-    occupancy_dict
-        Dictionary containing occupancy data for each packing mode
-    coeffs
-        Array of interpolation coefficients
+    interpolated_occupancy_dict
+        Dictionary containing interpolated occupancy data and fit parameters
     baseline_mode
         The baseline packing mode used for interpolation
     file_path
@@ -413,7 +444,38 @@ def get_binned_occupancy_dict(
     suffix: str = "",
     distance_measure: str = "nucleus",
     x_max: float | None = None,
-):
+) -> dict[str, dict[str, dict[str, Any]]]:
+    """
+    Calculate binned occupancy ratios from distance KDE data.
+
+    Parameters
+    ----------
+    distance_kde_dict
+        Dictionary with cell IDs as keys and mode-specific KDEs as values
+    channel_map
+        Mapping from packing modes to structure IDs
+    num_cells
+        Maximum number of cells to sample per structure, by default None
+    num_bins
+        Number of histogram bins, by default 64
+    bin_width
+        Width of histogram bins. If provided, overrides num_bins
+    results_dir
+        Directory to save the results, by default None
+    recalculate
+        If True, recalculate even if results exist. Default is False
+    suffix
+        Suffix to add to the saved file name
+    distance_measure
+        Distance measure to analyze
+    x_max
+        Maximum distance for binning. If None, uses data maximum
+
+    Returns
+    -------
+    :
+        Dictionary containing binned occupancy ratios and statistics
+    """
     # Set file path for saving/loading occupancy dict
     save_path = None
     if results_dir is not None:

@@ -42,8 +42,8 @@ def filter_invalids_from_distance_distribution_dict(
     distance_distribution_dict
         Distance distributions with structure
         {distance_measure: {packing_mode: {cell_id: distances}}}
-    filter_negatives
-        Whether to also remove negative distance values
+    minimum_distance
+        Minimum distance to consider for filtering invalid distances
 
     Returns
     -------
@@ -81,8 +81,8 @@ def filter_invalid_distances(
     ----------
     distances
         Array of distance values to filter
-    filter_negatives
-        Whether to also remove negative distance values
+    minimum_distance
+        Minimum distance to consider for filtering invalid distances
 
     Returns
     -------
@@ -116,6 +116,8 @@ def _calculate_distances_for_cell_id(
     mesh_dict
         Dictionary containing mesh information for the cell including
         'nuc_mesh', 'mem_mesh', and 'cell_bounds'
+    minimum_distance
+        Minimum distance to consider for filtering invalid distances
 
     Returns
     -------
@@ -215,6 +217,10 @@ def get_distance_dictionary(
         The directory to save or load distance dictionaries
     recalculate
         If True, recalculate the distance measures
+    num_workers
+        Number of parallel workers to use for distance calculations
+    minimum_distance
+        Minimum distance to consider for filtering invalid distances
 
     Returns
     -------
@@ -604,31 +610,31 @@ def calculate_ripley_k(
     :
         Tuple containing all Ripley K values, mean values, confidence intervals, and r values
     """
-    all_ripleyK = {}
-    mean_ripleyK = {}
-    ci_ripleyK = {}
+    all_ripley_k = {}
+    mean_ripley_k = {}
+    ci_ripley_k = {}
     r_max = 0.5
     num_bins = 100
     r_values = np.linspace(0, r_max, num_bins)
     for mode, position_dict in all_positions.items():
         logger.info(f"Calculating Ripley K for mode: {mode}")
-        all_ripleyK[mode] = {}
+        all_ripley_k[mode] = {}
         for cell_id, positions in tqdm(position_dict.items(), desc=f"Ripley K for {mode}"):
             radius = mesh_information_dict[cell_id]["cell_diameter"] / 2
             volume = 4 / 3 * np.pi * radius**3
             mean_k_values, _ = ripley_k(positions, volume, r_values, norm_factor=(radius * 2))
-            all_ripleyK[mode][cell_id] = mean_k_values
-        mean_ripleyK[mode] = np.mean(
-            np.array([np.array(v, dtype=float) for v in all_ripleyK[mode].values()], dtype=float),
+            all_ripley_k[mode][cell_id] = mean_k_values
+        mean_ripley_k[mode] = np.mean(
+            np.array([np.array(v, dtype=float) for v in all_ripley_k[mode].values()], dtype=float),
             axis=0,
         )
-        ci_ripleyK[mode] = np.percentile(
-            np.array([np.array(v, dtype=float) for v in all_ripleyK[mode].values()], dtype=float),
+        ci_ripley_k[mode] = np.percentile(
+            np.array([np.array(v, dtype=float) for v in all_ripley_k[mode].values()], dtype=float),
             [2.5, 97.5],
             axis=0,
         )
 
-    return all_ripleyK, mean_ripleyK, ci_ripleyK, r_values
+    return all_ripley_k, mean_ripley_k, ci_ripley_k, r_values
 
 
 def get_normalization_factor(
@@ -698,7 +704,7 @@ def get_distance_distribution_kde(
     minimum_distance: float | None = 0,
 ) -> dict[str, dict[str, gaussian_kde]]:
     """
-    Obtain KDE for distance distribution measures
+    Obtain KDE for distance distribution measures.
 
     This function computes the KDE for each packing mode and cell_id,
     and saves the results to a file.
@@ -714,6 +720,8 @@ def get_distance_distribution_kde(
         Dictionary containing mesh information for each cell_id
     channel_map
         Dictionary mapping packing modes to their corresponding channel names
+    save_dir
+        Directory to save the KDE results
     packing_modes
         List of packing modes to calculate distance distribution KDE for
     results_dir
@@ -728,6 +736,8 @@ def get_distance_distribution_kde(
         Distance measure to use for the KDE calculation
     bandwidth
         Bandwidth method for the Gaussian KDE
+    minimum_distance
+        Minimum distance to consider for KDE calculation
 
     Returns
     -------
@@ -991,6 +1001,8 @@ def log_central_tendencies_for_distance_distributions(
         List of packing modes to analyze
     file_path
         Optional file path to save the log output
+    minimum_distance
+        Minimum distance to consider for filtering invalid distances
     """
     if file_path is not None:
         dist_logger = add_file_handler_to_logger(logger, file_path)

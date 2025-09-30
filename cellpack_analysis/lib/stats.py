@@ -1,12 +1,28 @@
 from collections.abc import Sequence
-from typing import Literal
+from typing import Any, Literal
 
 import numpy as np
 from scipy import integrate
 
+from cellpack_analysis.lib.default_values import PIXEL_SIZE_IN_UM
+
 
 def cohens_d(x: np.ndarray, y: np.ndarray) -> float:
-    """Compute Cohen's d for two independent samples."""
+    """
+    Compute Cohen's d effect size for two independent samples.
+
+    Parameters
+    ----------
+    x
+        First sample array
+    y
+        Second sample array
+
+    Returns
+    -------
+    :
+        Cohen's d effect size (absolute value)
+    """
     nx, ny = len(x), len(y)
     dof = nx + ny - 2
     pooled_std = np.sqrt(((nx - 1) * np.var(x, ddof=1) + (ny - 1) * np.var(y, ddof=1)) / dof)
@@ -14,28 +30,34 @@ def cohens_d(x: np.ndarray, y: np.ndarray) -> float:
 
 
 def normalize_distances(
-    all_distance_dict: dict,
-    mesh_information_dict: dict,
+    all_distance_dict: dict[str, Any],
+    mesh_information_dict: dict[str, Any],
+    channel_map: dict[str, str],
     normalization: str | None = None,
-    channel_map: dict | None = None,
-    pix_size: float = 0.108,
-):
+    pixel_size_in_um: float = PIXEL_SIZE_IN_UM,
+) -> dict[str, Any]:
     """
-    Normalize the distances in a dictionary of distances.
+    Normalize distances using specified normalization method.
 
-    Args:
-    ----
-        all_distance_dict (dict): A dictionary containing distances.
-        normalization (str, optional): The normalization to use. Defaults to None.
-        mesh_information_dict (dict, optional): A dictionary containing mesh information.
-                                                Defaults to None.
+    Parameters
+    ----------
+    all_distance_dict
+        Dictionary containing distance measurements by measure and mode
+    mesh_information_dict
+        Dictionary containing mesh information for normalization
+    normalization
+        Normalization method: 'intracellular_radius', 'cell_diameter', 'max_distance',
+        or None for pixel size
+    channel_map
+        Mapping between modes and mesh information keys
+    pixel_size_in_um
+        Pixel size for default normalization
 
-    Returns:
+    Returns
     -------
-        dict: The normalized distances.
+    :
+        Dictionary with normalized distances
     """
-    if channel_map is None:
-        channel_map = {}
     for measure, mode_distance_dict in all_distance_dict.items():
         if "scaled" in measure:
             continue
@@ -54,30 +76,40 @@ def normalize_distances(
                 elif normalization == "max_distance":
                     normalization_factor = distance.max()
                 else:
-                    normalization_factor = 1 / pix_size
+                    normalization_factor = 1 / pixel_size_in_um
 
                 distance_dict[cell_id] = distance / normalization_factor
 
     return all_distance_dict
 
 
-def ripley_k(positions, volume, r_values, norm_factor=1, edge_correction=True):
+def ripley_k(
+    positions: np.ndarray,
+    volume: float,
+    r_values: np.ndarray,
+    norm_factor: float = 1,
+    edge_correction: bool = True,
+) -> tuple[np.ndarray, np.ndarray]:
     """
-    Calculate Ripley's K metric for a given set of positions in a volume V.
+    Calculate Ripley's K metric for spatial point patterns.
 
     Parameters
     ----------
-        positions (numpy.ndarray): Array of shape (n, 3) representing n points in 3D space.
-        volume (float): Volume of the space.
-        r_values (numpy.ndarray): Array of distances at which to calculate K(r).
-        norm_factor (float, optional): Normalization factor for distance calculation. Default is 1.
-        edge_correction (bool, optional): Whether to apply border correction. Default is True.
+    positions
+        Array of shape (n, 3) representing n points in 3D space
+    volume
+        Volume of the space
+    r_values
+        Array of distances at which to calculate K(r)
+    norm_factor
+        Normalization factor for distance calculation
+    edge_correction
+        If True, apply border correction
 
     Returns
     -------
-        tuple: A tuple containing:
-            - numpy.ndarray: An array of K(r) values for each distance r.
-            - numpy.ndarray: The input r_values array.
+    :
+        Tuple containing K(r) values and input r_values array
     """
     num_positions = positions.shape[0]
 
@@ -120,7 +152,8 @@ def normalize_pdf(xvals: np.ndarray, density: np.ndarray) -> np.ndarray:
     :
         Normalized density
     """
-    return density / integrate.trapezoid(density, xvals)
+    integral = integrate.trapezoid(density, xvals)
+    return density / integral if integral != 0 else density
 
 
 def pdf_ratio(
