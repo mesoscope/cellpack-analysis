@@ -123,7 +123,7 @@ def main():
     )
 
     parser.add_argument(
-        "--sample-dir", required=True, help="Sample directory name (e.g., sample_8d)"
+        "--sample-dir", default="sample_8d", help="Sample directory name (e.g., sample_8d)"
     )
 
     # Optional arguments
@@ -177,7 +177,10 @@ def main():
         "--recalculate", action="store_true", help="Recalculate meshes even if they already exist"
     )
 
-    parser.add_argument("--output-dir", help="Custom output directory name (default: meshes/test)")
+    parser.add_argument(
+        "--output-dir",
+        help="Custom output directory name within the structure data folder (default: meshes)",
+    )
 
     args = parser.parse_args()
 
@@ -215,11 +218,9 @@ def main():
             logger.debug(f"Skipping {file.stem}")
             continue
         input_files.append(file)
-
-    # Limit files if specified
-    if args.max_files:
-        input_files = input_files[: args.max_files]
-        logger.info(f"Limited to {args.max_files} files for testing")
+        if args.max_files and len(input_files) >= args.max_files:
+            logger.info(f"Limited to {args.max_files} files for testing")
+            break
 
     if not input_files:
         logger.error("No files to process")
