@@ -35,14 +35,16 @@
             "gradients": [
                 "struct_gradient"
             ]
+        },
+        "apical_gradient_weak": {
+            "gradients": [
+                "apical_gradient_weak"
+            ]
         }
     },
     "packings_to_run": {
         "rules": [
-            "random",
-            "nucleus_gradient_strong",
-            "membrane_gradient_strong",
-            "struct_gradient"
+            "apical_gradient_weak"
         ]
     }
 }

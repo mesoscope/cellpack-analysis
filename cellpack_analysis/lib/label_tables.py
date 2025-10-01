@@ -45,6 +45,7 @@ MODE_LABELS = {
     "membrane_gradient_strong": "Membrane",
     "planar_gradient_Z_moderate": "Apical",
     "apical_gradient": "Apical",
+    "apical_gradient_weak": "Apical",
     "planar_gradient_Z_moderate_invert": "Basal",
     "struct_gradient": "Structure",
     "struct_gradient_weak": "Structure",
@@ -72,6 +73,9 @@ VARIABLE_SHAPE_MODES = [
     "nucleus_gradient_strong",
     "membrane_gradient_strong",
     "apical_gradient",
+    "apical_gradient_weak",
+    "struct_gradient",
+    "struct_gradient_weak",
 ]
 
 # Labels for distance measures
