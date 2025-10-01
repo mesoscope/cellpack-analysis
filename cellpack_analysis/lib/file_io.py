@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Any
 
@@ -76,6 +77,7 @@ def write_json(file_path: str | Path, data: dict[str, Any]) -> None:
     """
     with open(file_path, "w") as f:
         json.dump(data, f, indent=4)
+    os.chmod(file_path, 0o644)
 
 
 def add_file_handler_to_logger(logger: logging.Logger, file_path: str | Path) -> logging.Logger:
