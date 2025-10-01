@@ -137,6 +137,8 @@ def process_gradient_data(
 
     # set the gradients required for the structure
     gradient_keys = list(recipe_entry.keys())
+    if len(gradient_keys) == 1:
+        gradient_keys = gradient_keys[0]
 
     recipe["objects"][gradient_structure_name]["gradient"] = gradient_keys
 
