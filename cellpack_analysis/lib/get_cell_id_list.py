@@ -3,7 +3,7 @@ import logging
 import numpy as np
 import pandas as pd
 
-from cellpack_analysis.lib.file_io import get_datadir_path
+from cellpack_analysis.lib.io import load_dataframe
 
 logger = logging.getLogger(__name__)
 
@@ -31,49 +31,7 @@ def get_cell_id_df(load_local: bool = True) -> pd.DataFrame:
     Exception
         For other file read errors.
     """
-    s3_path = "s3://cellpack-analysis-data/all_cell_ids.parquet"
-    local_path = get_datadir_path() / "all_cell_ids.parquet"
-
-    # Determine data source
-    loaded_from_s3 = False
-
-    if load_local and local_path.exists():
-        df_path = local_path
-        logger.info(f"Loading cell ID data from local file: {df_path}")
-    else:
-        if load_local and not local_path.exists():
-            logger.warning(f"Local file {local_path} not found, loading from S3.")
-        df_path = s3_path
-        loaded_from_s3 = True
-        logger.info(f"Loading cell ID data from S3: {df_path}")
-
-    try:
-        df_cell_id = pd.read_parquet(df_path)
-
-        if df_cell_id.empty:
-            raise ValueError(f"Loaded DataFrame from {df_path} is empty")
-
-        required_columns = ["CellId", "structure_name"]
-        missing_columns = [col for col in required_columns if col not in df_cell_id.columns]
-        if missing_columns:
-            raise ValueError(f"DataFrame missing required columns: {missing_columns}")
-
-        logger.info(f"Successfully loaded {len(df_cell_id)} cell records")
-
-        # Save to local if we loaded from S3
-        if loaded_from_s3:
-            try:
-                local_path.parent.mkdir(parents=True, exist_ok=True)
-                df_cell_id.to_parquet(local_path, index=False)
-                logger.info(f"Saved cell ID data to local file: {local_path}")
-            except Exception as e:
-                logger.warning(f"Failed to save to local file {local_path}: {e}")
-
-        return df_cell_id
-
-    except Exception as e:
-        logger.error(f"Failed to load cell ID data from {df_path}: {e}")
-        raise
+    return load_dataframe(load_local=load_local, prefix="all_cell_ids")
 
 
 def get_cell_id_list_for_structure(

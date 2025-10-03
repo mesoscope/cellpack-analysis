@@ -839,7 +839,7 @@ def get_scaled_structure_radius(
     :
         Tuple containing the scaled structure radius and standard deviation
     """
-    df_struct_stats = get_structure_stats_dataframe(structure_id=structure_id)
+    df_struct_stats = get_structure_stats_dataframe(structure_id=structure_id).set_index("CellId")
 
     scaled_radius_list = []
     for cell_id, mesh_info in mesh_information_dict.items():
