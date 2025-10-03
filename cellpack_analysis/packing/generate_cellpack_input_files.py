@@ -8,7 +8,7 @@ import numpy as np
 from tqdm import tqdm
 
 from cellpack_analysis.lib.file_io import read_json, write_json
-from cellpack_analysis.lib.get_cell_id_list import get_cell_id_list_for_structure
+from cellpack_analysis.lib.get_cell_id_list import sample_cell_ids_for_structure
 from cellpack_analysis.lib.get_structure_stats_dataframe import get_structure_stats_dataframe
 from cellpack_analysis.lib.mesh_tools import get_bounding_box
 from cellpack_analysis.packing import rule_repository
@@ -256,6 +256,7 @@ def update_and_save_recipe(
         updated_recipe["objects"][obj]["representations"]["mesh"][
             "name"
         ] = f"{short_name}_mesh_{cell_id}.obj"
+        
 
     # update mesh path for additional structure if needed
     if use_additional_struct:
@@ -310,11 +311,10 @@ def get_cell_ids(workflow_config: Any) -> list[str]:
     if workflow_config.use_mean_cell:
         return ["mean"]
     else:
-        return get_cell_id_list_for_structure(
+        return sample_cell_ids_for_structure(
             structure_id=workflow_config.structure_id,
-            df_cell_id=None,
+            num_cells=workflow_config.num_cells,
             dsphere=workflow_config.use_cells_in_8d_sphere,
-            load_local=True,
         )
 
 
@@ -345,8 +345,8 @@ def generate_recipes(workflow_config: Any) -> None:
 
     recipe_template = read_json(workflow_config.recipe_template_path)
 
-    stats_df = get_structure_stats_dataframe()
-
+    stats_df = get_structure_stats_dataframe().set_index("CellId")
+    
     for rule_name, rule_dict in recipe_data.items():
         logger.info(f"Generating recipes for rule: {rule_name}")
         with tqdm(total=len(cell_id_list)) as pbar:
