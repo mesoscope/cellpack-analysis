@@ -76,7 +76,3 @@ Configuration files are JSON files that specify analysis parameters. See the exa
 ## Output
 
 Results are saved to the `results/` directory in the project root, organized by analysis type and structure name. Figures are saved in SVG format by default.
-
-## Logging
-
-The script uses Python's logging module. Set up logging configuration as needed in your environment.
