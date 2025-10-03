@@ -106,7 +106,7 @@ def get_meshes_for_file(
         writer.SetFileName(str(save_path))
         writer.SetInputData(subsampled_mesh)
         writer.Write()
-        logger.info(f"Saved mesh: {save_path}")
+        logger.debug(f"Saved mesh: {save_path}")
 
 
 def main():
