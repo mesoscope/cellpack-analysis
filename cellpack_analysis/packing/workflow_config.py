@@ -1,7 +1,11 @@
 import json
+import logging
 from pathlib import Path
 
 from cellpack_analysis.lib import default_values
+from cellpack_analysis.lib.io import is_url
+
+logger = logging.getLogger(__name__)
 
 
 class WorkflowConfig:
@@ -51,6 +55,7 @@ class WorkflowConfig:
         self.use_cells_in_8d_sphere = self.data.get(
             "use_cells_in_8d_sphere", default_values.USE_CELLS_IN_8D_SPHERE
         )
+        self.num_cells = self.data.get("num_cells", default_values.NUM_CELLS)
         self.use_additional_struct = self.data.get(
             "use_additional_struct", default_values.USE_ADDITIONAL_STRUCT
         )
@@ -92,21 +97,21 @@ class WorkflowConfig:
         )
         self.generated_config_path.mkdir(parents=True, exist_ok=True)
 
-        self.grid_path = Path(
-            self.data.get(
+        self.grid_path = self.data.get(
                 "grid_path",
                 self.datadir / f"structure_data/{self.structure_id}/grids",
             )
-        )
-        self.grid_path.mkdir(parents=True, exist_ok=True)
+        if not is_url(self.grid_path):
+            self.grid_path = Path(self.grid_path)
+            self.grid_path.mkdir(parents=True, exist_ok=True)
 
-        self.mesh_path = Path(
-            self.data.get(
-                "mesh_path",
-                self.datadir / f"structure_data/{self.structure_id}/meshes",
-            )
+        self.mesh_path = self.data.get(
+            "mesh_path",
+            self.datadir / f"structure_data/{self.structure_id}/meshes",
         )
-        self.mesh_path.mkdir(parents=True, exist_ok=True)
+        if not is_url(self.mesh_path):
+            self.mesh_path = Path(self.mesh_path)
+            self.mesh_path.mkdir(parents=True, exist_ok=True)
 
         subfolder = "8d_sphere_data" if self.use_cells_in_8d_sphere else "full_variance_data"
         self.output_path = Path(
@@ -116,3 +121,4 @@ class WorkflowConfig:
             )
         )
         self.output_path.mkdir(parents=True, exist_ok=True)
+
