@@ -1,0 +1,94 @@
+{
+    "version": "nucleus_cube",
+    "format_version": "2.1",
+    "name": "peroxisome",
+    "bounding_box": [
+        [
+            -190,
+            -224,
+            -66
+        ],
+        [
+            172,
+            216,
+            74
+        ]
+    ],
+    "objects": {
+        "membrane_mesh": {
+            "type": "mesh",
+            "color": [
+                1,
+                0,
+                1
+            ],
+            "representations": {
+                "mesh": {
+                    "path": "https://www.dl.dropboxusercontent.com/s/4d7rys8uwqz72xy/",
+                    "name": "mean-membrane.obj",
+                    "format": "obj"
+                }
+            }
+        },
+        "nucleus_mesh": {
+            "type": "mesh",
+            "color": [
+                0,
+                1,
+                1
+            ],
+            "representations": {
+                "mesh": {
+                    "path": "https://www.dl.dropboxusercontent.com/s/3194r3t40ewypxh/",
+                    "name": "mean-nuc.obj",
+                    "format": "obj"
+                }
+            }
+        },
+        "peroxisome": {
+            "jitter_attempts": 300,
+            "type": "single_sphere",
+            "color": [
+                0.20,
+                0.70,
+                0.10
+            ],
+            "radius": 2.37,
+            "packing_mode": "random"
+        }
+    },
+    "composition": {
+        "bounding_area": {
+            "regions": {
+                "interior": [
+                    "membrane"
+                ]
+            }
+        },
+        "membrane": {
+            "object": "membrane_mesh",
+            "count": 1,
+            "regions": {
+                "interior": [
+                    "nucleus",
+                    {
+                        "object": "peroxisome",
+                        "count": 121,
+                        "count_options": {
+                            "distribution": "normal",
+                            "mean": 121,
+                            "std": 42
+                        }
+                    }
+                ]
+            }
+        },
+        "nucleus": {
+            "object": "nucleus_mesh",
+            "count": 1,
+            "regions": {
+                "interior": []
+            }
+        }
+    }
+}
