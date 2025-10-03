@@ -78,9 +78,6 @@ def main():
     # Parse command line arguments
     args = parse_arguments()
 
-    # Set up logging
-    logging.basicConfig(level=logging.INFO)
-
     # Extract parameters from arguments
     structure_id = args.structure_id
     spacing = args.spacing
