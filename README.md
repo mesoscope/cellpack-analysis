@@ -25,22 +25,8 @@ cd cellpack-analysis
 
 **3. Install the dependencies using uv**
 
-For basic installation with just the core dependencies:
-
-```bash
-uv sync --no-dev
-```
-
-If you plan to develop code, you should also install the development dependencies:
-
 ```bash
 uv sync
-```
-
-To install extra dependencies:
-
-```bash
-uv sync --all-extras
 ```
 
 **4. Activate the virtual environment**
@@ -94,6 +80,36 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-## Usage
+## Example usage
 
-Coming soon!
+### Analyze the radial bias for peroxisomes in cells from the [hiPSC single cell image dataset](https://open.quiltdata.com/b/allencell/packages/aics/hipsc_single_cell_image_dataset).
+
+**1. Download images**
+```bash
+python cellpack_analysis/preprocessing/get_structure_images.py --structure-id SLC25A17
+```
+
+**2. Get meshes from images**
+```bash
+python cellpack_analysis/preprocessing/get_meshes_from_images.py --structure-id SLC25A17
+```
+
+**3. Run simulations with radial bias rules**
+```bash
+python cellpack_analysis/packing/run_packing_workflow.py -c cellpack_analysis/packing/configs/examples/peroxisome_example.json
+```
+
+**4. Extract structure coordinates from segmented images**
+```bash
+python cellpack_analysis/preprocessing/get_structure_coordinates.py --structure-id SLC25A17
+```
+
+**5. (WIP) Calculate grid distances from membrane and nucleus**
+```bash
+python cellpack_analysis/preprocessing/calculate_available_space.py --structure-id SLC25A17
+```
+
+**6. (WIP) Run distance analysis workflow**
+```bash
+python cellpack_analysis/workflows/run_analysis_workflow.py -c cellpack_analysis/workflows/configs/distance_analysis_config_peroxisome.json
+```
