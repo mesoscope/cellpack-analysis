@@ -9,13 +9,13 @@ It can download either raw (unsegmented) or segmented images for various cellula
 
 Usage:
     python get_structure_images.py --structure-id SLC25A17 --download-raw
-    
+
 Example:
     python get_structure_images.py --structure-id RAB5A --sample-dir sample_8d --max-cells 5 --redownload
-        
+
 Available structures:
     - SLC25A17 (peroxisomes)
-    - RAB5A (early endosomes)  
+    - RAB5A (early endosomes)
     - LAMP1 (lysosomes)
     - SEC61B (ER)
     - ATP2A2 (smooth ER)
@@ -64,7 +64,7 @@ def download_image(row: pd.Series, col_name: str, save_path: Path, pkg: quilt3.P
         save_path
         / f"{row.structure_name}_{row.CellId}_ch_{row.ChannelNumberStruct}_{col_name}_original.tiff"
     )
-    
+
     if not local_filename.exists():
         logger.debug(f"Downloading {local_filename.name}")
         pkg[subdir_name][file_name].fetch(local_filename)
@@ -107,16 +107,16 @@ def download_structure_images(
     """
     # Set up data directory
     datadir = get_datadir_path()
-    
+
     # Load dataset package from quilt
     logger.info("Loading dataset package from quilt...")
     pkg = quilt3.Package.browse("aics/hipsc_single_cell_image_dataset", registry="s3://allencell")
-    
+
     # Load dataframe
     logger.info("Loading metadata...")
     meta_df = get_variance_dataframe(redownload, pkg)
     meta_df.index = meta_df.index.astype(str)
-    
+
     # Get cell_id list for structure
     dsphere = sample_dir == "sample_8d"
     cell_id_list = get_cell_id_list_for_structure(structure_id, dsphere=dsphere)
@@ -124,34 +124,36 @@ def download_structure_images(
     if len(cell_id_list) == 0:
         logger.error(f"No cell IDs found for structure {structure_id}. Exiting.")
         return 1
-    
+
     # Limit number of cells if specified
     if max_cells is not None:
         cell_id_list = cell_id_list[:max_cells]
         logger.info(f"Limited to {len(cell_id_list)} cells")
-    
+
     # Create dataframe for structure metadata
     meta_df_struct = meta_df.loc[cell_id_list].reset_index()
-    
+
     # Prepare file paths to save images
     subfolder_name = "sample_8d" if dsphere else "full"
     if output_dir:
         folder_name = output_dir
     else:
         folder_name = "unsegmented" if download_raw else "segmented"
-    
+
     save_path = datadir / f"structure_data/{structure_id}/{subfolder_name}/{folder_name}"
     save_path.mkdir(exist_ok=True, parents=True)
     logger.info(f"Images will be saved to {save_path}")
-    
+
     # Start download
     col_name = "crop_raw" if download_raw else "crop_seg"
     logger.info(f"Starting download of {len(meta_df_struct)} images...")
-    
+
     # Download images with progress bar
-    for _, row in tqdm(meta_df_struct.iterrows(), total=len(meta_df_struct), desc="Downloading images"):
+    for _, row in tqdm(
+        meta_df_struct.iterrows(), total=len(meta_df_struct), desc="Downloading images"
+    ):
         download_image(row, col_name, save_path, pkg)
-    
+
     logger.info("Download complete!")
     return 0
 
@@ -166,41 +168,39 @@ def main():
 
     # Required arguments
     parser.add_argument(
-        "--structure-id", 
-        required=True, 
-        help="Structure ID to download (e.g., SLC25A17, RAB5A, LAMP1, SEC61B, TOMM20, ST6GAL1)"
+        "--structure-id",
+        required=True,
+        help="Structure ID to download (e.g., SLC25A17, RAB5A, LAMP1, SEC61B, TOMM20, ST6GAL1)",
     )
 
     # Optional arguments
     parser.add_argument(
-        "--sample-dir", 
-        default="sample_8d", 
+        "--sample-dir",
+        default="sample_8d",
         choices=["sample_8d", "full"],
-        help="Sample directory: 'sample_8d' for dsphere samples or 'full' for complete dataset (default: sample_8d)"
+        help="Sample directory: 'sample_8d' for dsphere samples or 'full' for complete dataset (default: sample_8d)",
     )
 
     parser.add_argument(
-        "--download-raw", 
-        action="store_true", 
-        help="Download raw/unsegmented images (default: download segmented images)"
+        "--download-raw",
+        action="store_true",
+        help="Download raw/unsegmented images (default: download segmented images)",
     )
 
     parser.add_argument(
         "--max-cells",
         type=int,
         default=None,
-        help="Maximum number of cells to download (default: download all available)"
+        help="Maximum number of cells to download (default: download all available)",
     )
 
     parser.add_argument(
-        "--redownload", 
-        action="store_true", 
-        help="Re-download variance dataset metadata"
+        "--redownload", action="store_true", help="Re-download variance dataset metadata"
     )
 
     parser.add_argument(
         "--output-dir",
-        help="Custom output directory name within structure data folder (default: auto-generated)"
+        help="Custom output directory name within structure data folder (default: auto-generated)",
     )
 
     args = parser.parse_args()
