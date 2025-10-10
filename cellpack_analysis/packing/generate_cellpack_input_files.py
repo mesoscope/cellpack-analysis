@@ -256,7 +256,6 @@ def update_and_save_recipe(
         updated_recipe["objects"][obj]["representations"]["mesh"][
             "name"
         ] = f"{short_name}_mesh_{cell_id}.obj"
-        
 
     # update mesh path for additional structure if needed
     if use_additional_struct:
@@ -346,7 +345,7 @@ def generate_recipes(workflow_config: Any) -> None:
     recipe_template = read_json(workflow_config.recipe_template_path)
 
     stats_df = get_structure_stats_dataframe().set_index("CellId")
-    
+
     for rule_name, rule_dict in recipe_data.items():
         logger.info(f"Generating recipes for rule: {rule_name}")
         with tqdm(total=len(cell_id_list)) as pbar:

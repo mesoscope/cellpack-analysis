@@ -8,6 +8,7 @@ from cellpack_analysis.lib.file_io import get_datadir_path
 
 logger = logging.getLogger(__name__)
 
+
 def format_time(seconds):
     """Format time in seconds to a human readable format."""
     if seconds == np.inf:
@@ -18,7 +19,8 @@ def format_time(seconds):
         return f"{seconds/60:.1f}m"
     else:
         return f"{seconds/3600:.1f}h"
-    
+
+
 def is_url(path: Path | str) -> bool:
     """Check if a path is a URL."""
     str_path = str(path)
@@ -73,11 +75,6 @@ def load_dataframe(load_local: bool = True, prefix: str = "all_cell_ids") -> pd.
 
         if df.empty:
             raise ValueError(f"Loaded DataFrame from {df_path} is empty")
-
-        required_columns = ["CellId", "structure_name"]
-        missing_columns = [col for col in required_columns if col not in df.columns]
-        if missing_columns:
-            raise ValueError(f"DataFrame missing required columns: {missing_columns}")
 
         logger.debug(f"Successfully loaded {len(df)} cell records")
 
