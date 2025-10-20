@@ -59,6 +59,8 @@ def get_kde_occupancy_dict(
     bandwidth: str | float | None = None,
     num_cells: int | None = None,
     num_points: int = 100,
+    x_min: float | None = 0,
+    x_max: float | None = None,
 ) -> dict[str, dict[str, dict[str, Any]]]:
     """
     Load or compute occupancy ratio from distance distribution KDEs.
@@ -113,11 +115,28 @@ def get_kde_occupancy_dict(
     if results_dir is not None:
         save_path = results_dir / f"{distance_measure}_occupancy{suffix}.dat"
 
-    # Check if we need to recalculate or load existing data
+    # Try to load cached occupancy data if not recalculating
     if not recalculate and save_path is not None and save_path.exists():
-        with open(save_path, "rb") as f:
-            kde_occupancy_dict = pickle.load(f)
-        return kde_occupancy_dict
+        try:
+            with open(save_path, "rb") as f:
+                kde_occupancy_dict = pickle.load(f)
+
+            # Validate that cached data matches requested modes
+            cached_modes = set(kde_occupancy_dict.keys())
+            requested_modes = set(channel_map.keys())
+            if cached_modes != requested_modes:
+                logger.warning(
+                    f"Cached occupancy data contains modes {cached_modes} but requested modes are "
+                    f"{requested_modes}. Recalculating occupancy."
+                )
+            else:
+                logger.info(f"Successfully loaded cached occupancy data from {save_path}")
+                return kde_occupancy_dict
+        except Exception as e:
+            logger.warning(
+                f"Error loading cached occupancy data from {save_path}: {e}. "
+                f"Recalculating occupancy."
+            )
 
     # Initialize occupancy dictionary
     kde_occupancy_dict = {}
@@ -134,8 +153,8 @@ def get_kde_occupancy_dict(
     # Get all available distances to use for a combined_plot
     combined_available_distance_kde = {}
 
-    x_min = np.inf
-    x_max = -np.inf
+    x_min_calc = np.inf
+    x_max_calc = -np.inf
     for structure_id, cell_ids in cell_id_map.items():
         combined_available_distances = []
         for cell_id in cell_ids:
@@ -144,12 +163,17 @@ def get_kde_occupancy_dict(
             )
             for mode in channel_map.keys():
                 if mode in distance_kde_dict[cell_id]:
-                    x_min = min(x_min, np.min(distance_kde_dict[cell_id][mode].dataset))
-                    x_max = max(x_max, np.max(distance_kde_dict[cell_id][mode].dataset))
+                    x_min_calc = min(x_min_calc, np.min(distance_kde_dict[cell_id][mode].dataset))
+                    x_max_calc = max(x_max_calc, np.max(distance_kde_dict[cell_id][mode].dataset))
         combined_available_distance_kde[structure_id] = gaussian_kde(
             np.concatenate(combined_available_distances), bw_method=bandwidth
         )
-
+    if x_min is None:
+        x_min = x_min_calc
+    if x_max is None:
+        x_max = x_max_calc
+    # Create xvals for evaluation
+    x_vals = np.linspace(x_min, x_max, num_points)
     for mode, structure_id in channel_map.items():
         kde_occupancy_dict[mode] = {"individual": {}, "combined": {}}
         combined_occupied_distances = []
@@ -170,8 +194,7 @@ def get_kde_occupancy_dict(
                 occupied_kde.set_bandwidth(bandwidth)
                 available_kde.set_bandwidth(bandwidth)
 
-            # Create xvals for evaluation
-            x_vals = np.linspace(x_min, x_max, num_points)
+            # Evaluate KDEs on x_vals
             pdf_occupied = normalize_pdf(x_vals, occupied_kde.evaluate(x_vals))
             pdf_available = normalize_pdf(x_vals, available_kde.evaluate(x_vals))
             occupancy, pdf_occupied, pdf_available = pdf_ratio(x_vals, pdf_occupied, pdf_available)
@@ -183,8 +206,6 @@ def get_kde_occupancy_dict(
             }
 
         combined_occupied_distances = np.concatenate(combined_occupied_distances)
-        # Create xvals for evaluation
-        x_vals = np.linspace(x_min, x_max, num_points)
 
         pdf_combined_occupied = normalize_pdf(
             x_vals, gaussian_kde(combined_occupied_distances, bw_method=bandwidth).evaluate(x_vals)
@@ -335,7 +356,8 @@ def get_occupancy_ks_test_dict(
 
 
 def interpolate_occupancy_dict(
-    occupancy_dict: dict[str, dict[str, dict[str, Any]]],
+    occupancy_dict: dict[str, dict[str, dict[str, dict[str, Any]]]],
+    channel_map: dict[str, str],
     baseline_mode: str,
     results_dir: Path | None = None,
     suffix: str = "",
@@ -343,10 +365,16 @@ def interpolate_occupancy_dict(
     """
     Interpolate occupancy data using non-negative least squares fitting.
 
+    Performs two types of interpolation:
+    1. Individual: Separate optimization for each distance measure
+    2. Joint: Combined optimization across all distance measures
+
     Parameters
     ----------
     occupancy_dict
         Dictionary containing occupancy data for each packing mode
+        Has the structure:
+        {distance_measure:{mode:{"individual":{ ... },"combined": { ... }}}}
     baseline_mode
         The baseline packing mode used for interpolation
     results_dir
@@ -359,47 +387,150 @@ def interpolate_occupancy_dict(
     :
         Dictionary containing interpolated occupancy data and fit parameters
     """
-    xvals = occupancy_dict[baseline_mode]["combined"]["xvals"]
-    baseline_occupancy = occupancy_dict[baseline_mode]["combined"]["occupancy"]
-    interpolated_occupancy_dict = {
-        "xvals": xvals,
-        "occupancy": {
-            mode: occupancy_dict[mode]["combined"]["occupancy"] for mode in occupancy_dict
+    # Validate that baseline mode exists in all distance measures
+    for distance_measure in occupancy_dict:
+        if baseline_mode not in occupancy_dict[distance_measure]:
+            raise ValueError(
+                f"Baseline mode '{baseline_mode}' not found in distance measure "
+                f"'{distance_measure}'"
+            )
+
+    # Get all packing modes (excluding baseline) from first distance measure
+    packing_modes = [mode for mode in channel_map.keys() if mode != baseline_mode]
+
+    # Initialize result dictionary
+    interp_dict = {
+        "occupancy": {},
+        "interpolation": {
+            "individual": {},
+            "joint": {},
         },
     }
 
-    simulated_occupancy_matrix = []
-    packing_modes = []
-    for packing_mode, mode_dict in occupancy_dict.items():
-        if packing_mode == baseline_mode:
-            continue
-        simulated_occupancy = mode_dict["combined"]["occupancy"]
-        simulated_occupancy_matrix.append(simulated_occupancy)
-        packing_modes.append(packing_mode)
+    # Stack data across all distance measures for joint optimization
+    stacked_baseline_occupancy = []
+    stacked_simulated_occupancy_matrix = []
+    stacked_xvals = []
+    distance_measures = []
 
-    simulated_occupancy_matrix = np.array(simulated_occupancy_matrix).T
-    # coeffs, _, _, _ = np.linalg.lstsq(simulated_occupancy_matrix, baseline_occupancy, rcond=None)
-    coeffs, _ = nnls(simulated_occupancy_matrix, baseline_occupancy)
-    relative_contribution = coeffs / np.sum(coeffs)
-    reconstructed_occupancy = simulated_occupancy_matrix @ coeffs
+    for distance_measure, distance_data in occupancy_dict.items():
+        # Get baseline occupancy for this distance measure
+        baseline_occupancy = distance_data[baseline_mode]["combined"]["occupancy"]
+        xvals = distance_data[baseline_mode]["combined"]["xvals"]
 
-    interpolated_occupancy_dict["interpolation"] = {
-        "occupancy": reconstructed_occupancy,
-        "fit_params": {
-            mode: {"coefficient": coeffs[i], "relative_contribution": relative_contribution[i]}
-            for i, mode in enumerate(packing_modes)
-        },
+        stacked_baseline_occupancy.append(baseline_occupancy)
+        stacked_xvals.append(xvals)
+        distance_measures.append(distance_measure)
+
+        # Get simulated occupancy for each packing mode
+        simulated_occupancy_for_distance = []
+        for packing_mode in packing_modes:
+            simulated_occupancy = distance_data[packing_mode]["combined"]["occupancy"]
+            simulated_occupancy_for_distance.append(simulated_occupancy)
+
+        simulated_occupancy_matrix = np.array(simulated_occupancy_for_distance).T
+        stacked_simulated_occupancy_matrix.append(simulated_occupancy_matrix)
+
+        # Perform individual optimization for this distance measure
+        coeffs_individual, _ = nnls(simulated_occupancy_matrix, baseline_occupancy)
+        relative_contribution_individual = coeffs_individual / np.sum(coeffs_individual)
+        reconstructed_occupancy_individual = simulated_occupancy_matrix @ coeffs_individual
+        mse_individual = np.mean((baseline_occupancy - reconstructed_occupancy_individual) ** 2)
+
+        # Store individual interpolation results
+        interp_dict["interpolation"]["individual"][distance_measure] = {
+            "fit_params": {
+                mode: {
+                    "coefficient": coeffs_individual[i],
+                    "relative_contribution": relative_contribution_individual[i],
+                }
+                for i, mode in enumerate(packing_modes)
+            },
+            "mse": mse_individual,
+        }
+
+    # Concatenate all data for joint optimization
+    stacked_baseline_occupancy = np.concatenate(stacked_baseline_occupancy)
+    stacked_simulated_occupancy_matrix = np.vstack(stacked_simulated_occupancy_matrix)
+
+    # Perform joint non-negative least squares fitting
+    coeffs_joint, _ = nnls(stacked_simulated_occupancy_matrix, stacked_baseline_occupancy)
+    relative_contribution_joint = coeffs_joint / np.sum(coeffs_joint)
+
+    # Store global fit parameters
+    interp_dict["interpolation"]["joint"]["fit_params"] = {
+        mode: {
+            "coefficient": coeffs_joint[i],
+            "relative_contribution": relative_contribution_joint[i],
+        }
+        for i, mode in enumerate(packing_modes)
     }
+
+    # Reconstruct occupancy for each distance measure using both methods
+    start_idx = 0
+    for i, distance_measure in enumerate(distance_measures):
+        distance_data = occupancy_dict[distance_measure]
+        xvals = stacked_xvals[i]
+        end_idx = start_idx + len(xvals)
+
+        # Get the portion of the stacked matrix for this distance measure
+        distance_matrix = stacked_simulated_occupancy_matrix[start_idx:end_idx]
+
+        # Reconstruct using joint coefficients
+        reconstructed_occupancy_joint = distance_matrix @ coeffs_joint
+        mse_joint = np.mean(
+            (distance_data[baseline_mode]["combined"]["occupancy"] - reconstructed_occupancy_joint)
+            ** 2
+        )
+
+        # Reconstruct using individual coefficients
+        coeffs_individual = np.array(
+            [
+                interp_dict["interpolation"]["individual"][distance_measure]["fit_params"][mode][
+                    "coefficient"
+                ]
+                for mode in packing_modes
+            ]
+        )
+        reconstructed_occupancy_individual = distance_matrix @ coeffs_individual
+
+        interp_dict["occupancy"][distance_measure] = {
+            "xvals": xvals,
+            "baseline": distance_data[baseline_mode]["combined"]["occupancy"],
+            "reconstructed_joint": reconstructed_occupancy_joint,
+            "reconstructed_individual": reconstructed_occupancy_individual,
+            "mse_joint": mse_joint,
+            "mse_individual": interp_dict["interpolation"]["individual"][distance_measure]["mse"],
+            "modes": {
+                mode: distance_data[mode]["combined"]["occupancy"] for mode in distance_data.keys()
+            },
+            "coeffs_individual": {
+                mode: coeff for mode, coeff in zip(packing_modes, coeffs_individual)
+            },
+            "coeffs_joint": {mode: coeff for mode, coeff in zip(packing_modes, coeffs_joint)},
+            "relative_contribution_individual": {
+                mode: params["relative_contribution"]
+                for mode, params in interp_dict["interpolation"]["individual"][distance_measure][
+                    "fit_params"
+                ].items()
+            },
+            "relative_contribution_joint": {
+                mode: params["relative_contribution"]
+                for mode, params in interp_dict["interpolation"]["joint"]["fit_params"].items()
+            },
+        }
+
+        start_idx = end_idx
 
     log_file_path = None
     if results_dir is not None:
         log_file_path = results_dir / f"{baseline_mode}_occupancy_interpolation_coeffs{suffix}.log"
 
     log_occupancy_interpolation_coeffs(
-        interpolated_occupancy_dict, baseline_mode=baseline_mode, file_path=log_file_path
+        interp_dict, baseline_mode=baseline_mode, file_path=log_file_path
     )
 
-    return interpolated_occupancy_dict
+    return interp_dict
 
 
 def log_occupancy_interpolation_coeffs(
@@ -425,11 +556,44 @@ def log_occupancy_interpolation_coeffs(
         dist_logger = logger
 
     dist_logger.info(f"Baseline mode: {baseline_mode}")
-    for mode, params in interpolated_occupancy_dict["interpolation"]["fit_params"].items():
+    dist_logger.info("=" * 80)
+
+    # Log joint interpolation results
+    dist_logger.info("\nJoint Optimization (across all distance measures):")
+    dist_logger.info("-" * 80)
+    for mode, params in interpolated_occupancy_dict["interpolation"]["joint"]["fit_params"].items():
         dist_logger.info(
             f"Mode: {mode}, Coefficient: {params['coefficient']:.4f}, "
             f"Relative Contribution: {params['relative_contribution']:.4f}"
         )
+
+    # Log individual interpolation results for each distance measure
+    dist_logger.info("\n" + "=" * 80)
+    dist_logger.info("\nIndividual Optimization (per distance measure):")
+    dist_logger.info("-" * 80)
+    individual_interp = interpolated_occupancy_dict["interpolation"]["individual"]
+    for distance_measure, distance_data in individual_interp.items():
+        dist_logger.info(f"\nDistance Measure: {distance_measure}")
+        dist_logger.info(f"  MSE: {distance_data['mse']:.6f}")
+        for mode, params in distance_data["fit_params"].items():
+            dist_logger.info(
+                f"  Mode: {mode}, Coefficient: {params['coefficient']:.4f}, "
+                f"Relative Contribution: {params['relative_contribution']:.4f}"
+            )
+
+    # Log MSE comparison for each distance measure
+    dist_logger.info("\n" + "=" * 80)
+    dist_logger.info("\nMSE Comparison:")
+    dist_logger.info("-" * 80)
+    for distance_measure in interpolated_occupancy_dict["occupancy"].keys():
+        occupancy_data = interpolated_occupancy_dict["occupancy"][distance_measure]
+        mse_individual = occupancy_data["mse_individual"]
+        mse_joint = occupancy_data["mse_joint"]
+        dist_logger.info(
+            f"{distance_measure}: Individual MSE = {mse_individual:.6f}, "
+            f"Joint MSE = {mse_joint:.6f}"
+        )
+
     remove_file_handler_from_logger(dist_logger, file_path)
 
 
@@ -481,11 +645,28 @@ def get_binned_occupancy_dict(
     if results_dir is not None:
         save_path = results_dir / f"{distance_measure}_binned_occupancy{suffix}.dat"
 
-    # Check if we need to recalculate or load existing data
+    # Try to load cached occupancy data if not recalculating
     if not recalculate and save_path is not None and save_path.exists():
-        with open(save_path, "rb") as f:
-            binned_occupancy_dict = pickle.load(f)
-        return binned_occupancy_dict
+        try:
+            with open(save_path, "rb") as f:
+                binned_occupancy_dict = pickle.load(f)
+
+            # Validate that cached data matches requested modes
+            cached_modes = set(binned_occupancy_dict.keys())
+            requested_modes = set(channel_map.keys())
+            if cached_modes != requested_modes:
+                logger.warning(
+                    f"Cached binned occupancy data contains modes {cached_modes} but requested "
+                    f"modes are {requested_modes}. Recalculating binned occupancy."
+                )
+            else:
+                logger.info(f"Successfully loaded cached binned occupancy data from {save_path}")
+                return binned_occupancy_dict
+        except Exception as e:
+            logger.warning(
+                f"Error loading cached binned occupancy data from {save_path}: {e}. "
+                f"Recalculating binned occupancy."
+            )
 
     # Initialize occupancy dictionary
     binned_occupancy_dict = {}

@@ -103,7 +103,7 @@ if normalization is not None:
 # ### Read position data from outputs
 all_positions = get_position_data_from_outputs(
     structure_id=STRUCTURE_ID,
-    structure_name=STRUCTURE_NAME,
+    packing_id=STRUCTURE_NAME,
     packing_modes=packing_modes,
     base_datadir=base_datadir,
     results_dir=results_dir,

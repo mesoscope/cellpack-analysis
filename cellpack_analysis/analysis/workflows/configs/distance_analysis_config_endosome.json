@@ -1,5 +1,5 @@
 {
-    "name": "occupancy_analysis",
+    "name": "distance_analysis",
     "structure_id": "RAB5A",
     "packing_id": "endosome",
     "structure_name": "endosome",
@@ -8,39 +8,27 @@
         "random": "RAB5A",
         "nucleus_gradient_strong": "RAB5A",
         "membrane_gradient_strong": "RAB5A",
-        "apical_gradient": "RAB5A"
+        "apical_gradient_weak": "RAB5A"
     },
     "num_workers": 16,
     "packing_output_folder": "packing_outputs/8d_sphere_data/rules_shape/",
     "baseline_mode": "RAB5A",
     "distance_measures": [
-        "nearest",
-        "pairwise",
         "nucleus",
         "z"
     ],
-    "occupancy_distance_measures": [
-        "nucleus",
-        "z"
-    ],
-    "occupancy_params": {
-        "nucleus": {
-            "xlim": 6,
-            "ylim": 4
-        },
-        "z": {
-            "xlim": 8,
-            "ylim": 2
-        }
-    },
     "normalization": null,
     "save_format": "pdf",
+    "ks_significance_level": 0.05,
+    "n_bootstrap": 1000,
     "bandwidth": 0.4,
     "ingredient_key": "membrane_interior_endosome",
-    "recalculate": {
-        "run_occupancy_analysis": true
-    },
+    "recalculate": false,
     "analysis_steps": [
-        "run_occupancy_analysis"
+        "load_common_data",
+        "calculate_distances",
+        "plot_distance_distributions",
+        "run_emd_analysis",
+        "run_ks_analysis"
     ]
 }

@@ -212,7 +212,7 @@ class AnalysisRunner:
         logger.info("Loading position data")
         all_positions = get_position_data_from_outputs(
             structure_id=config.structure_id,
-            structure_name=config.packing_id,
+            packing_id=config.packing_id,
             packing_modes=config.packing_modes,
             base_datadir=config.base_datadir,
             results_dir=config.results_dir,
@@ -386,7 +386,7 @@ class AnalysisRunner:
         )
 
         # Plot KS results
-        _ = visualization.plot_ks_test_barplots(
+        _ = visualization.plot_ks_test_results(
             df_ks_bootstrap=df_ks_bootstrap,
             distance_measures=config.distance_measures,
             figures_dir=ks_figures_dir,
@@ -430,6 +430,9 @@ class AnalysisRunner:
                 occupancy_distance_measure,
             )
 
+        # Run interpolation analysis for occupancy data
+        self._run_occupancy_interpolation_analysis(config)
+
     def _run_single_occupancy_analysis(
         self,
         config: AnalysisConfig,
@@ -453,6 +456,7 @@ class AnalysisRunner:
             suffix=config.suffix,
             normalization=config.normalization,
             distance_measure=occupancy_distance_measure,
+            minimum_distance=-1,
         )
 
         # Plot illustration for occupancy distribution
@@ -468,7 +472,7 @@ class AnalysisRunner:
             save_format=config.save_format,
             xlim=config.occupancy_params.get(occupancy_distance_measure, {}).get("xlim", 6),
             bandwidth=config.occupancy_params.get(occupancy_distance_measure, {}).get(
-                "bandwidth", 0.4
+                "bandwidth", 0.2
             ),
         )
 
@@ -481,9 +485,11 @@ class AnalysisRunner:
             suffix=config.suffix,
             distance_measure=occupancy_distance_measure,
             bandwidth=config.occupancy_params.get(occupancy_distance_measure, {}).get(
-                "bandwidth", 0.4
+                "bandwidth", 0.2
             ),
             num_points=250,
+            x_min=0,
+            x_max=config.occupancy_params.get(occupancy_distance_measure, {}).get("xlim", 6),
         )
 
         self.shared_data["occupancy_dict"][occupancy_distance_measure] = occupancy_dict
@@ -496,70 +502,55 @@ class AnalysisRunner:
             suffix=config.suffix,
             normalization=config.normalization,
             distance_measure=occupancy_distance_measure,
+            save_format=config.save_format,
             xlim=config.occupancy_params.get(occupancy_distance_measure, {}).get("xlim", 6),
             ylim=config.occupancy_params.get(occupancy_distance_measure, {}).get("ylim", 4),
-            save_format=config.save_format,
+            fig_params={"dpi": 300, "figsize": (3.5, 2.5)},
         )
+
+    def _run_occupancy_interpolation_analysis(self, config: AnalysisConfig):
+        """Run interpolation analysis for occupancy data."""
+        if "occupancy_dict" not in self.shared_data:
+            logger.warning("Occupancy data not available. Running occupancy analysis first.")
+            self._run_occupancy_analysis(config)
+
+        logger.info("Running occupancy interpolation analysis")
+
+        interpolation_figures_dir = config.figures_dir / "interpolation"
+        interpolation_figures_dir.mkdir(exist_ok=True, parents=True)
 
         # Interpolate occupancy ratio and plot
         self.shared_data["interp_occupancy_dict"] = occupancy.interpolate_occupancy_dict(
-            occupancy_dict=self.shared_data["occupancy_dict"][occupancy_distance_measure],
-            baseline_mode=config.baseline_mode,
-            results_dir=config.results_dir,
-            suffix=f"_{occupancy_distance_measure}{config.suffix}",
-        )
-
-        _ = visualization.plot_occupancy_ratio_interpolation(
-            interpolated_occupancy_dict=self.shared_data["interp_occupancy_dict"],
-            baseline_mode=config.baseline_mode,
-            figures_dir=occupancy_figures_dir,
-            suffix=config.suffix,
-            distance_measure=occupancy_distance_measure,
-            xlim=config.occupancy_params[occupancy_distance_measure]["xlim"],
-            ylim=config.occupancy_params[occupancy_distance_measure]["ylim"],
-            save_format=config.save_format,
-        )
-
-        binned_occupancy_dict = occupancy.get_binned_occupancy_dict(
-            distance_kde_dict=distance_kde_dict,
+            occupancy_dict=self.shared_data["occupancy_dict"],
             channel_map=config.channel_map,
-            bin_width=0.4,
-            results_dir=config.results_dir,
-            recalculate=config.recalculate["run_occupancy_analysis"],
-            suffix=config.suffix,
-            distance_measure=occupancy_distance_measure,
-            x_max=config.occupancy_params[occupancy_distance_measure]["xlim"],
-        )
-
-        _ = visualization.plot_binned_occupancy_ratio(
-            binned_occupancy_dict=binned_occupancy_dict,
-            channel_map=config.channel_map,
-            figures_dir=occupancy_figures_dir,
-            suffix=config.suffix,
-            distance_measure=occupancy_distance_measure,
-            normalization=config.normalization,
-            xlim=config.occupancy_params[occupancy_distance_measure]["xlim"],
-            ylim=config.occupancy_params[occupancy_distance_measure]["ylim"],
-            save_format=config.save_format,
-        )
-
-        interp_binned_occupancy_dict = occupancy.interpolate_occupancy_dict(
-            occupancy_dict=binned_occupancy_dict,
             baseline_mode=config.baseline_mode,
             results_dir=config.results_dir,
-            suffix=f"_binned_{occupancy_distance_measure}{config.suffix}",
+            suffix=config.suffix,
         )
 
-        _ = visualization.plot_occupancy_ratio_interpolation(
-            interpolated_occupancy_dict=interp_binned_occupancy_dict,
-            baseline_mode=config.baseline_mode,
-            figures_dir=occupancy_figures_dir,
-            suffix=f"_binned_{occupancy_distance_measure}{config.suffix}",
-            distance_measure=occupancy_distance_measure,
-            xlim=config.occupancy_params[occupancy_distance_measure]["xlim"],
-            ylim=config.occupancy_params[occupancy_distance_measure]["ylim"],
-            save_format=config.save_format,
-        )
+        for occupancy_distance_measure in config.occupancy_distance_measures:
+            for plot_type in ["individual", "joint"]:
+                fig, ax = visualization.plot_occupancy_ratio(
+                    occupancy_dict=self.shared_data["occupancy_dict"][occupancy_distance_measure],
+                    channel_map=config.channel_map,
+                    baseline_mode=config.baseline_mode,
+                    suffix=config.suffix,
+                    normalization=config.normalization,
+                    distance_measure=occupancy_distance_measure,
+                    xlim=config.occupancy_params[occupancy_distance_measure]["xlim"],
+                    ylim=config.occupancy_params[occupancy_distance_measure]["ylim"],
+                    fig_params={"dpi": 300, "figsize": (3.5, 2.5)},
+                )
+                _ = visualization.add_baseline_occupancy_interpolation_to_plot(
+                    ax=ax,
+                    interpolated_occupancy_dict=self.shared_data["interp_occupancy_dict"],
+                    baseline_mode=config.baseline_mode,
+                    distance_measure=occupancy_distance_measure,
+                    figures_dir=interpolation_figures_dir,
+                    suffix=config.suffix,
+                    save_format=config.save_format,
+                    plot_type=plot_type,
+                )
 
 
 def main():

@@ -239,7 +239,7 @@ def plot_distance_distributions_kde(
     return fig, all_ax_dict
 
 
-def plot_ks_test_barplots(
+def plot_ks_test_results(
     df_ks_bootstrap: pd.DataFrame,
     distance_measures: list[str],
     suffix: str = "",
@@ -296,13 +296,15 @@ def plot_ks_test_barplots(
             "y": "packing_mode",
             "hue": "packing_mode",
             "legend": False,
+            # "linewidth": 0.5,
             "orient": "h",
             "palette": COLOR_PALETTE,
         }
-        sns.barplot(ax=ax, **plot_params)
+        # sns.boxplot(ax=ax, whis=(2.5, 97.5), fliersize=1, **plot_params)  # type: ignore
+        sns.barplot(ax=ax, **plot_params)  # type: ignore
         sns.despine(ax=ax)
         ax.set_xlim((0, 1))
-        ax.set_xlabel("Similar fraction")
+        ax.set_xlabel("Fraction")
         ax.set_ylabel("")
         if col == 0:
             ax.set_yticks(
@@ -442,7 +444,7 @@ def plot_emd_comparisons(
             "palette": COLOR_PALETTE,
             "linewidth": 0.5,
         }
-        sns.barplot(ax=ax_bar, **plot_params)
+        sns.boxplot(ax=ax_bar, showfliers=False, whis=(2.5, 97.5), **plot_params)  # type: ignore
         sns.violinplot(ax=ax_violin, **plot_params)
 
         for ax, plot_type in zip([ax_bar, ax_violin], ["barplot", "violinplot"], strict=False):
@@ -568,7 +570,10 @@ def plot_occupancy_illustration(
 
     occupied_kde = kde_dict[seed][baseline_mode]
     available_kde = kde_dict[seed]["available_distance"]
-    xvals = np.linspace(0, occupied_kde.dataset.max(), num_points)
+    xmax = occupied_kde.dataset.max()
+    if xlim is not None and xlim < xmax:
+        xmax = xlim
+    xvals = np.linspace(0, xmax, num_points)
     if bandwidth is not None:
         occupied_kde.set_bandwidth(bandwidth)
         available_kde.set_bandwidth(bandwidth)
@@ -679,6 +684,7 @@ def add_struct_radius_to_plot(
 def plot_occupancy_ratio(
     occupancy_dict: dict[str, dict[str, dict[str, Any]]],
     channel_map: dict[str, str],
+    baseline_mode: str | None = None,
     figures_dir: Path | None = None,
     suffix: str = "",
     normalization: str | None = None,
@@ -686,6 +692,7 @@ def plot_occupancy_ratio(
     xlim: float | None = None,
     ylim: float | None = None,
     save_format: str = "png",
+    fig_params: dict[str, Any] | None = None,
 ) -> tuple[Figure, Axes]:
     """
     Plot occupancy ratio for individual and combined data across packing modes.
@@ -718,9 +725,12 @@ def plot_occupancy_ratio(
     """
     logger.info("Plotting individual occupancy values")
 
+    if fig_params is None:
+        fig_params = {"dpi": 300, "figsize": (2.5, 2.5)}
+
     plt.rcParams.update({"font.size": 8})
 
-    fig, ax = plt.subplots(dpi=300, figsize=(2.5, 2.5))
+    fig, ax = plt.subplots(**fig_params)
 
     for mode in channel_map.keys():
 
@@ -746,15 +756,20 @@ def plot_occupancy_ratio(
         combined_xvals = occupancy_dict[mode]["combined"]["xvals"]
         combined_occupancy = occupancy_dict[mode]["combined"]["occupancy"]
 
+        plot_params = {
+            "color": COLOR_PALETTE.get(mode, "gray"),
+            "alpha": 0.8,
+            "linewidth": 1.5,
+            "label": MODE_LABELS.get(mode, mode),
+            "zorder": 2,
+        }
+        if mode == baseline_mode:
+            plot_params.update({"alpha": 1, "linewidth": 2.5, "zorder": 3})
         sns.lineplot(
             x=combined_xvals,
             y=combined_occupancy,
             ax=ax,
-            color=COLOR_PALETTE.get(mode, "gray"),
-            alpha=1.0,
-            linewidth=1.5,
-            label=MODE_LABELS.get(mode, mode),
-            zorder=2,
+            **plot_params,
         )
 
     ax.xaxis.set_major_locator(MaxNLocator(4, integer=True))
@@ -763,15 +778,15 @@ def plot_occupancy_ratio(
         ax.set_xlim((0, xlim))
     if ylim is not None:
         ax.set_ylim((0, ylim))
-    ax.axhline(1, color="gray", linestyle="--", zorder=1)
+    ax.axhline(1, linewidth=1, color="gray", linestyle="--", zorder=1)
     distance_label = DISTANCE_MEASURE_LABELS[distance_measure]
     if normalization is not None:
         distance_label = f"{distance_label} / {NORMALIZATION_LABELS[normalization]}"
     else:
         distance_label = f"{distance_label} (\u03bcm)"
     ax.set_xlabel(distance_label)
-
     ax.set_ylabel("Occupancy Ratio")
+    ax.legend().remove()
     sns.despine(fig=fig)
     fig.tight_layout()
     if figures_dir is not None:
@@ -788,12 +803,14 @@ def plot_occupancy_ratio(
 def plot_occupancy_ratio_interpolation(
     interpolated_occupancy_dict: dict[str, Any],
     baseline_mode: str = "SLC25A17",
+    distance_measure: str = "nucleus",
     figures_dir: Path | None = None,
     suffix: str = "",
-    distance_measure: str = "nucleus",
     xlim: float | None = None,
     ylim: float | None = None,
     save_format: str = "png",
+    plot_type: str = "individual",
+    fig_params: dict[str, Any] | None = None,
 ) -> tuple[Figure, Axes]:
     """
     Plot combined occupancy ratio with interpolated reconstruction.
@@ -804,56 +821,83 @@ def plot_occupancy_ratio_interpolation(
         Dictionary containing interpolated occupancy information
     baseline_mode
         Baseline packing mode for interpolation
+    distance_measure
+        The distance measure to plot
     figures_dir
         Directory to save the figures
     suffix
         Suffix to add to the figure filename
-    distance_measure
-        The distance measure to plot
     xlim
         X-axis limit for plots
     ylim
         Y-axis limit for plots
     save_format
         Format to save the figures in
+    plot_type
+        Type of plot to generate: "individual" or "joint"
 
     Returns
     -------
     :
         Tuple containing figure and axis objects
     """
-    logger.info("Plotting occupancy interpolation")
+    if distance_measure not in interpolated_occupancy_dict["occupancy"]:
+        raise ValueError(
+            f"Distance measure {distance_measure} not found in interpolated_occupancy_dict"
+        )
+
+    logger.info("Plotting occupancy interpolation for %s", distance_measure)
+
+    if fig_params is None:
+        fig_params = {"dpi": 300, "figsize": (3.5, 2.5)}
 
     plt.rcParams.update({"font.size": 8})
+    fig, ax = plt.subplots(**fig_params)
 
-    fig, ax = plt.subplots(dpi=300, figsize=(2.5, 2.5))
+    occupancy_dict = interpolated_occupancy_dict["occupancy"][distance_measure]
+    xvals = occupancy_dict["xvals"]
+    modes_dict = occupancy_dict["modes"]
 
-    xvals = interpolated_occupancy_dict["xvals"]
-    occupancy_dict = interpolated_occupancy_dict["occupancy"]
-    for mode, mode_occupancy in occupancy_dict.items():
-
+    # Plot combined occupancy for each mode
+    for mode, mode_occupancy in modes_dict.items():
+        plot_params = {
+            "color": COLOR_PALETTE.get(mode, "gray"),
+            "alpha": 0.7,
+            "linewidth": 1.5,
+            "label": MODE_LABELS.get(mode, mode),
+            "zorder": 1,
+        }
+        if mode == baseline_mode:
+            plot_params.update({"alpha": 1, "linewidth": 2.5, "zorder": 2})
         sns.lineplot(
             x=xvals,
             y=mode_occupancy,
             ax=ax,
-            color=COLOR_PALETTE.get(mode, "gray"),
-            alpha=1.0,
-            linewidth=1.5,
-            label=MODE_LABELS.get(mode, mode),
-            zorder=1,
+            **plot_params,
         )
 
-    # Plot interpolated reconstruction
+    # Plot interpolated reconstructions
+    occupancy_key = None
+    label = ""
+    if plot_type == "individual":
+        occupancy_key = "reconstructed_individual"
+        label = "Interpolated (Individual)"
+    elif plot_type == "joint":
+        occupancy_key = "reconstructed_joint"
+        label = "Interpolated (Joint)"
+    else:
+        raise ValueError(f"Invalid plot_type: {plot_type}. Must be 'individual' or 'joint'")
+
     sns.lineplot(
         x=xvals,
-        y=interpolated_occupancy_dict["interpolation"]["occupancy"],
+        y=occupancy_dict[occupancy_key],
         ax=ax,
         color=COLOR_PALETTE.get(baseline_mode, "gray"),
-        alpha=1.0,
-        linewidth=1.5,
+        label=label,
+        alpha=1,
+        linewidth=2,
+        zorder=3,
         linestyle="-.",
-        label="Interpolated",
-        zorder=2,
     )
 
     ax.xaxis.set_major_locator(MaxNLocator(4, integer=True))
@@ -862,14 +906,135 @@ def plot_occupancy_ratio_interpolation(
         ax.set_xlim((0, xlim))
     if ylim is not None:
         ax.set_ylim((0, ylim))
-    ax.axhline(1, color="gray", linestyle="--", zorder=0)
+    ax.axhline(1, linewidth=1, color="gray", linestyle="--", zorder=0)
     ax.set_xlabel(f"{DISTANCE_MEASURE_LABELS[distance_measure]} (\u03bcm)")
     ax.set_ylabel("Occupancy Ratio")
+    ax.set_title(f"{plot_type.capitalize()}, MSE: {occupancy_dict[f'mse_{plot_type}']:.4f}")
+    relative_contribution_text = [
+        f"{MODE_LABELS[key]}: {value:.0%}"
+        for key, value in occupancy_dict[f"relative_contribution_{plot_type}"].items()
+    ]
+    ax.text(
+        0.95,
+        0.95,
+        "\n".join(relative_contribution_text),
+        horizontalalignment="right",
+        verticalalignment="top",
+        transform=ax.transAxes,
+    )
+    sns.despine(fig=fig)
+    ax.legend().remove()
+    fig.tight_layout()
+    if figures_dir is not None:
+        fig.savefig(
+            figures_dir
+            / f"{distance_measure}_{plot_type}_interpolated_occupancy_ratio{suffix}.{save_format}",
+            dpi=300,
+        )
+
+    plt.show()
+
+    return fig, ax
+
+
+def add_baseline_occupancy_interpolation_to_plot(
+    ax: Axes,
+    interpolated_occupancy_dict: dict[str, Any],
+    baseline_mode: str = "SLC25A17",
+    distance_measure: str = "nucleus",
+    figures_dir: Path | None = None,
+    suffix: str = "",
+    save_format: str = "png",
+    plot_type: str = "individual",
+) -> tuple[Figure, Axes]:
+    """
+    Add interpolated baseline occupancy reconstruction to an existing plot.
+
+    Parameters
+    ----------
+    ax
+        Matplotlib Axes object to add the plot to
+    interpolated_occupancy_dict
+        Dictionary containing interpolated occupancy information
+    baseline_mode
+        Baseline packing mode for interpolation
+    distance_measure
+        The distance measure to plot
+    figures_dir
+        Directory to save the figures
+    suffix
+        Suffix to add to the figure filename
+    save_format
+        Format to save the figures in
+    plot_type
+        Type of plot to generate: "individual" or "joint"
+
+    Returns
+    -------
+    :
+        Tuple containing figure and axis objects
+    """
+    if distance_measure not in interpolated_occupancy_dict["occupancy"]:
+        raise ValueError(
+            f"Distance measure {distance_measure} not found in interpolated_occupancy_dict"
+        )
+
+    logger.info("Adding occupancy interpolation for %s", distance_measure)
+
+    plt.rcParams.update({"font.size": 8})
+    fig = ax.get_figure()
+    if fig is None:
+        raise ValueError("The axes object does not have an associated figure")
+    if not isinstance(fig, Figure):
+        raise ValueError("The axes object is not associated with a main Figure")
+
+    occupancy_dict = interpolated_occupancy_dict["occupancy"][distance_measure]
+    xvals = occupancy_dict["xvals"]
+
+    # Plot interpolated reconstructions
+    occupancy_key = None
+    label = ""
+    if plot_type == "individual":
+        occupancy_key = "reconstructed_individual"
+        label = "Interpolated (Individual)"
+    elif plot_type == "joint":
+        occupancy_key = "reconstructed_joint"
+        label = "Interpolated (Joint)"
+    else:
+        raise ValueError(f"Invalid plot_type: {plot_type}. Must be 'individual' or 'joint'")
+
+    sns.lineplot(
+        x=xvals,
+        y=occupancy_dict[occupancy_key],
+        ax=ax,
+        color=COLOR_PALETTE.get(baseline_mode, "gray"),
+        label=label,
+        alpha=1,
+        linewidth=2,
+        zorder=3,
+        linestyle="-.",
+    )
+
+    ax.set_title(f"{plot_type.capitalize()}, MSE: {occupancy_dict[f'mse_{plot_type}']:.4f}")
+    relative_contribution_text = [
+        f"{MODE_LABELS[key]}: {value:.0%}"
+        for key, value in occupancy_dict[f"relative_contribution_{plot_type}"].items()
+    ]
+    ax.text(
+        0.95,
+        0.95,
+        "\n".join(relative_contribution_text),
+        horizontalalignment="right",
+        verticalalignment="top",
+        transform=ax.transAxes,
+    )
+    ax.legend().remove()
     sns.despine(fig=fig)
     fig.tight_layout()
     if figures_dir is not None:
         fig.savefig(
-            figures_dir / f"{distance_measure}_interpolated_occupancy_ratio{suffix}.{save_format}",
+            figures_dir
+            / f"{distance_measure}_{plot_type}_interpolated_occupancy_ratio{suffix}.{save_format}",
             dpi=300,
         )
 
@@ -1014,7 +1179,7 @@ def plot_mean_and_std_occupancy_ratio_kde(
         ax.set_xlim((0, xlim))
     if ylim is not None:
         ax.set_ylim((0, ylim))
-    ax.axhline(1, color="gray", linestyle="--")
+    ax.axhline(1, linewidth=1, color="gray", linestyle="--")
     distance_label = DISTANCE_MEASURE_LABELS[distance_measure]
     if normalization is not None:
         distance_label = f"{distance_label} / {NORMALIZATION_LABELS[normalization]}"
@@ -1184,7 +1349,7 @@ def plot_binned_occupancy_ratio_calc(
         ax.set_xlim((0, cur_xlim[1]))
     if ylim is not None:
         ax.set_ylim((0, ylim))
-    ax.axhline(1, color="gray", linestyle="--", zorder=1)
+    ax.axhline(1, linewidth=1, color="gray", linestyle="--", zorder=1)
 
     distance_label = DISTANCE_MEASURE_LABELS[distance_measure]
     if normalization is not None:
@@ -1283,7 +1448,7 @@ def plot_binned_occupancy_ratio(
         ax.set_xlim((0, cur_xlim[1]))
     if ylim is not None:
         ax.set_ylim((0, ylim))
-    ax.axhline(1, color="gray", linestyle="--", zorder=1)
+    ax.axhline(1, linewidth=1, color="gray", linestyle="--", zorder=1)
 
     distance_label = DISTANCE_MEASURE_LABELS[distance_measure]
     if normalization is not None:

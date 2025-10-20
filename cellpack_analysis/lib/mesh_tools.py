@@ -275,10 +275,7 @@ def get_mesh_information_for_shape(
         )
 
     cytoplasm_point_inds = np.where(nuc_grid_distances > 0)[0]
-    mem_grid_distances = mem_grid_distances[cytoplasm_point_inds]
-    nuc_grid_distances = nuc_grid_distances[cytoplasm_point_inds]
     z_grid_distances = z_grid_distances[cytoplasm_point_inds]
-    scaled_nuc_grid_distances = scaled_nuc_grid_distances[cytoplasm_point_inds]
 
     nuc_mesh = trimesh.load_mesh(str(nuc_mesh_path))
     mem_mesh = trimesh.load_mesh(str(mem_mesh_path))

@@ -29,7 +29,7 @@ PROJECT_ROOT = get_project_root()
 
 def filter_invalids_from_distance_distribution_dict(
     distance_distribution_dict: dict[str, dict[str, dict[str, np.ndarray]]],
-    minimum_distance: float | None = 0,
+    minimum_distance: float | None = None,
 ) -> dict[str, dict[str, dict[str, np.ndarray]]]:
     """
     Filter out invalid values from distance distribution dictionary.
@@ -72,7 +72,7 @@ def filter_invalids_from_distance_distribution_dict(
 
 
 def filter_invalid_distances(
-    distances: np.ndarray, minimum_distance: float | None = 0
+    distances: np.ndarray, minimum_distance: float | None = None
 ) -> np.ndarray:
     """
     Remove NaN, infinite, and optionally filter distance values.
@@ -99,7 +99,6 @@ def _calculate_distances_for_cell_id(
     cell_id: str,
     positions: np.ndarray,
     mesh_dict: dict[str, Any],
-    minimum_distance: float | None = 0,
 ) -> tuple[str, dict[str, np.ndarray]]:
     """
     Calculate various distance measures for particles in a single cell.
@@ -116,14 +115,12 @@ def _calculate_distances_for_cell_id(
     mesh_dict
         Dictionary containing mesh information for the cell including
         'nuc_mesh', 'mem_mesh', and 'cell_bounds'
-    minimum_distance
-        Minimum distance to consider for filtering invalid distances
 
     Returns
     -------
     :
         Tuple of (cell_id, distance_dict) where distance_dict contains arrays
-        for 'pairwise', 'nearest', 'nucleus', 'scaled_nucleus', 'membrane', 'z'
+        for 'pairwise', 'nearest', 'nucleus', 'scaled_nucleus', 'membrane', 'z', 'scaled_z'
 
     Raises
     ------
@@ -144,40 +141,47 @@ def _calculate_distances_for_cell_id(
         mem_mesh,
         mem_distances,
     )
-    good_mask = (nuc_surface_distances > minimum_distance) & (mem_distances > 0)
-    good_inds = np.where(good_mask)[0]
-
-    logger.debug(f"Fraction bad inds: {1 - len(good_inds) / len(nuc_surface_distances):.2f}")
 
     # Nuc and membrane distances
-    nuc_distances = filter_invalid_distances(
-        nuc_surface_distances[good_inds], minimum_distance=minimum_distance
-    )
-    scaled_nuc_distances = filter_invalid_distances(
-        scaled_nuc_distances[good_inds], minimum_distance=minimum_distance
-    )
-    membrane_distances = filter_invalid_distances(
-        mem_distances[good_inds], minimum_distance=minimum_distance
-    )
+    nuc_distances = filter_invalid_distances(nuc_surface_distances)
+    scaled_nuc_distances = filter_invalid_distances(scaled_nuc_distances)
+    membrane_distances = filter_invalid_distances(mem_distances)
 
-    # Distance from z-axis
+    num_points = len(positions)
+    inside_nucleus_mask = nuc_surface_distances < 0
+    outside_membrane_mask = mem_distances < 0
+    num_inside_nucleus = inside_nucleus_mask.sum()
+    num_outside_membrane = outside_membrane_mask.sum()
+    fraction_inside_nucleus = num_inside_nucleus / num_points
+    fraction_outside_membrane = num_outside_membrane / num_points
+    fraction_non_cytoplasm = fraction_inside_nucleus + fraction_outside_membrane
+
+    logger.debug(f"Fraction non-cytoplasm positions: {fraction_non_cytoplasm:.2f}")
+    if fraction_non_cytoplasm > 0.1:
+        logger.warning(
+            f"More than 10% of positions are outside cytoplasm for cell {cell_id}: "
+            f"{fraction_non_cytoplasm:.2f}\n"
+            f"Inside nucleus: {num_inside_nucleus} / {num_points} = {fraction_inside_nucleus:.2f}, "
+            f"Outside membrane: {num_outside_membrane} / {num_points} = "
+            f"{fraction_outside_membrane:.2f}"
+        )
+
+    # Distance from z-surface
     z_min = mesh_dict[cell_id]["cell_bounds"][:, 2].min()
     z_distances = positions[:, 2] - z_min
-    z_distances = filter_invalid_distances(z_distances, minimum_distance=minimum_distance)
+    z_distances = filter_invalid_distances(z_distances)
 
     # Shape independent distance measures
     all_distances = cdist(positions, positions, metric="euclidean")
-    # Nearest neighbor distance
-    nearest_distances = np.min(all_distances + np.eye(len(positions)) * 1e6, axis=1)
-    nearest_distances = filter_invalid_distances(
-        nearest_distances, minimum_distance=minimum_distance
-    )
 
     # Pairwise distance
     pairwise_distances = squareform(all_distances)
-    pairwise_distances = filter_invalid_distances(
-        pairwise_distances, minimum_distance=minimum_distance
-    )
+    pairwise_distances = filter_invalid_distances(pairwise_distances)
+
+    # Nearest neighbor distance - mask diagonal to exclude self-distances
+    np.fill_diagonal(all_distances, np.inf)
+    nearest_distances = np.min(all_distances, axis=1)
+    nearest_distances = filter_invalid_distances(nearest_distances)
     distance_dict = {
         "pairwise": pairwise_distances,
         "nearest": nearest_distances,
@@ -198,7 +202,6 @@ def get_distance_dictionary(
     results_dir: Path | None = None,
     recalculate: bool = False,
     num_workers: int | None = None,
-    minimum_distance: float | None = 0,
 ) -> dict[str, dict[str, dict[str, np.ndarray]]]:
     """
     Calculate or load distance measures between particles in different modes.
@@ -229,21 +232,61 @@ def get_distance_dictionary(
     """
     if channel_map is None:
         channel_map = {}
+
+    # Try to load cached data if not recalculating
     if not recalculate and results_dir is not None:
-        # load saved distance dictionary
         logger.info(
             f"Loading saved distance dictionaries from {results_dir.relative_to(PROJECT_ROOT)}"
         )
         all_distance_dict = {}
+        cache_valid = True
+
+        # Check if all required distance measure files exist and are valid
         for distance_measure in distance_measures:
             file_path = results_dir / f"{distance_measure}_distances.dat"
-            if file_path.exists():
-                with open(file_path, "rb") as f:
-                    all_distance_dict[distance_measure] = pickle.load(f)
-            else:
+            if not file_path.exists():
                 logger.warning(f"File not found: {file_path.relative_to(PROJECT_ROOT)}")
-        if len(all_distance_dict) == len(distance_measures):
+                cache_valid = False
+                break
+
+            try:
+                with open(file_path, "rb") as f:
+                    distance_dict = pickle.load(f)
+
+                # Validate that cached data matches requested packing modes
+                cached_modes = set(distance_dict.keys())
+                requested_modes = set(all_positions.keys())
+                if cached_modes != requested_modes:
+                    logger.warning(
+                        f"Cached data in {file_path.relative_to(PROJECT_ROOT)} contains modes "
+                        f"{cached_modes} but requested modes are {requested_modes}. "
+                        f"Recalculating distances."
+                    )
+                    cache_valid = False
+                    break
+
+                all_distance_dict[distance_measure] = distance_dict
+                if not all([len(v) > 0 for v in distance_dict.values()]):
+                    logger.warning(
+                        f"Cached data in {file_path.relative_to(PROJECT_ROOT)} is empty. "
+                        f"Recalculating distances."
+                    )
+                    cache_valid = False
+                    break
+            except Exception as e:
+                logger.warning(
+                    f"Error loading cached data from {file_path.relative_to(PROJECT_ROOT)}: {e}"
+                )
+                cache_valid = False
+                break
+
+        # Return cached data if all checks passed
+        if cache_valid:
+            logger.info("Successfully loaded all cached distance dictionaries")
             return all_distance_dict
+        else:
+            logger.info("Cache validation failed, recalculating distances")
+
     logger.info("Calculating distance dictionaries")
 
     all_distance_dict = {
@@ -260,8 +303,9 @@ def get_distance_dictionary(
                     str(cell_id).split("_")[0],
                     positions,
                     mode_mesh_dict,
-                    minimum_distance,
-                ): (str(cell_id).split("_")[0])
+                ): (
+                    str(cell_id).split("_")[0]
+                )
                 for cell_id, positions in position_dict.items()
             }
             for future in tqdm(
@@ -326,21 +370,53 @@ def get_distance_dictionary_serial(
     """
     if channel_map is None:
         channel_map = {}
+
+    # Try to load cached data if not recalculating
     if not recalculate and results_dir is not None:
-        # load saved distance dictionary
         logger.info(
             f"Loading saved distance dictionaries from {results_dir.relative_to(PROJECT_ROOT)}"
         )
         all_distance_dict = {}
+        cache_valid = True
+
+        # Check if all required distance measure files exist and are valid
         for distance_measure in distance_measures:
             file_path = results_dir / f"{distance_measure}_distances.dat"
-            if file_path.exists():
-                with open(file_path, "rb") as f:
-                    all_distance_dict[distance_measure] = pickle.load(f)
-            else:
+            if not file_path.exists():
                 logger.warning(f"File not found: {file_path.relative_to(PROJECT_ROOT)}")
-        if len(all_distance_dict) == len(distance_measures):
+                cache_valid = False
+                break
+
+            try:
+                with open(file_path, "rb") as f:
+                    distance_dict = pickle.load(f)
+
+                # Validate that cached data matches requested packing modes
+                cached_modes = set(distance_dict.keys())
+                requested_modes = set(all_positions.keys())
+                if cached_modes != requested_modes:
+                    logger.warning(
+                        f"Cached data in {file_path.relative_to(PROJECT_ROOT)} contains modes "
+                        f"{cached_modes} but requested modes are {requested_modes}. "
+                        f"Recalculating distances."
+                    )
+                    cache_valid = False
+                    break
+
+                all_distance_dict[distance_measure] = distance_dict
+            except Exception as e:
+                logger.warning(
+                    f"Error loading cached data from {file_path.relative_to(PROJECT_ROOT)}: {e}"
+                )
+                cache_valid = False
+                break
+
+        # Return cached data if all checks passed
+        if cache_valid:
+            logger.info("Successfully loaded all cached distance dictionaries")
             return all_distance_dict
+        else:
+            logger.info("Cache validation failed, recalculating distances")
     logger.info("Calculating distance dictionaries")
 
     all_distance_dict = {}
@@ -755,20 +831,41 @@ def get_distance_distribution_kde(
         filename = f"{distance_measure}_distance_distribution_kde{suffix}.dat"
         save_file_path = save_dir / filename
 
-    # Check if results already exist and recalculate is False
-    # If so, load the existing results
-    # Otherwise, calculate the KDE
+    # Try to load cached KDE data if not recalculating
     if not recalculate and save_file_path is not None and save_file_path.exists():
-        with open(save_file_path, "rb") as f:
-            kde_dict = pickle.load(f)
-        return kde_dict
+        try:
+            with open(save_file_path, "rb") as f:
+                kde_dict = pickle.load(f)
+
+            # Validate that cached data matches requested modes
+            cached_modes = set()
+            for cell_data in kde_dict.values():
+                cached_modes.update(
+                    mode for mode in cell_data.keys() if mode != "available_distance"
+                )
+
+            requested_modes = set(channel_map.keys())
+            if cached_modes != requested_modes:
+                logger.warning(
+                    f"Cached KDE data contains modes {cached_modes} but requested modes are "
+                    f"{requested_modes}. Recalculating KDE."
+                )
+            else:
+                logger.info(
+                    f"Successfully loaded cached KDE data from "
+                    f"{save_file_path.relative_to(PROJECT_ROOT)}"
+                )
+                return kde_dict
+        except Exception as e:
+            logger.warning(
+                f"Error loading cached KDE data from "
+                f"{save_file_path.relative_to(PROJECT_ROOT)}: {e}. Recalculating KDE."
+            )
 
     # Initialize the KDE dictionary
     distance_dict = all_distance_dict[distance_measure]
     kde_dict = {}
     for mode, structure_id in channel_map.items():
-        logger.info(f"Calculating distance distribution kde for {mode}")
-
         mode_mesh_dict = mesh_information_dict.get(structure_id, {})
         mode_distances_dict = distance_dict[mode]
 

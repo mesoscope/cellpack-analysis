@@ -96,7 +96,7 @@ else:
 # ### Read position data from outputs
 all_positions = get_position_data_from_outputs(
     structure_id=STRUCTURE_ID,
-    structure_name=PACKING_ID,
+    packing_id=PACKING_ID,
     packing_modes=packing_modes,
     base_datadir=base_datadir,
     results_dir=results_dir,
@@ -230,7 +230,7 @@ df_ks_bootstrap = distance.bootstrap_ks_tests(
 )
 # %% [markdown]
 # ### Plot KS observed results
-fig_list, ax_list = visualization.plot_ks_test_barplots(
+fig_list, ax_list = visualization.plot_ks_test_results(
     df_ks_bootstrap=df_ks_bootstrap,
     distance_measures=distance_measures,
     figures_dir=ks_figures_dir,

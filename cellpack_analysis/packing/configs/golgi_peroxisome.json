@@ -55,11 +55,7 @@
     },
     "packings_to_run": {
         "rules": [
-            "random",
-            "nucleus_gradient_strong",
-            "membrane_gradient_strong",
-            "apical_gradient_weak",
-            "struct_gradient"
+            "struct_gradient_weak"
         ]
     }
 }

@@ -138,6 +138,7 @@ COLOR_PALETTE = {
     "nucleus_gradient_strong": colormap[9],
     "membrane_gradient_strong": colormap[6],
     "apical_gradient": colormap[10],
+    "apical_gradient_weak": colormap[10],
     "struct_gradient": colormap[7],
     "struct_gradient_weak": colormap[7],
     "SEC61B": colormap[7],
