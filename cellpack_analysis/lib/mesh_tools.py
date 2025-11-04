@@ -45,6 +45,48 @@ def get_list_of_grid_points(bounding_box: np.ndarray, spacing: float) -> np.ndar
     Parameters
     ----------
     bounding_box
+        Array defining the region of interest bounds with shape (2, 3)
+        where bounding_box[0] is min coordinates and bounding_box[1] is max coordinates
+    spacing
+        Distance between adjacent grid points
+
+    Returns
+    -------
+    :
+        2D array of grid point coordinates with shape (N, 3)
+    """
+    if bounding_box.shape != (2, 3):
+        raise ValueError(f"Expected bounding_box shape (2, 3), got {bounding_box.shape}")
+
+    if spacing <= 0:
+        raise ValueError(f"Spacing must be positive, got {spacing}")
+
+    # Calculate number of points in each dimension more accurately
+    # Use np.arange instead of mgrid slice notation for better control
+    min_coords = bounding_box[0]
+    max_coords = bounding_box[1]
+
+    # Generate coordinate arrays for each dimension
+    x_coords = np.arange(min_coords[0], max_coords[0] + spacing / 2, spacing)
+    y_coords = np.arange(min_coords[1], max_coords[1] + spacing / 2, spacing)
+    z_coords = np.arange(min_coords[2], max_coords[2] + spacing / 2, spacing)
+
+    # Create meshgrid and reshape more efficiently
+    xx, yy, zz = np.meshgrid(x_coords, y_coords, z_coords, indexing="ij")
+
+    # Stack and reshape in one operation
+    all_points = np.stack([xx.ravel(), yy.ravel(), zz.ravel()], axis=1)
+
+    return all_points
+
+
+def get_list_of_grid_points_mgrid(bounding_box: np.ndarray, spacing: float) -> np.ndarray:
+    """
+    Generate uniform grid points within a bounding box with specified spacing.
+
+    Parameters
+    ----------
+    bounding_box
         Array defining the region of interest bounds
     spacing
         Distance between adjacent grid points
@@ -295,6 +337,8 @@ def get_mesh_information_for_shape(
         "cell_diameter": cell_diameter,
         "nuc_bounds": nuc_bounds,
         "cell_bounds": cell_bounds,
+        "nuc_volume": nuc_mesh.volume,
+        "cell_volume": mem_mesh.volume,
         "intracellular_radius": intracellular_radius,
         "nuc_grid_distances": nuc_grid_distances,
         "mem_grid_distances": mem_grid_distances,

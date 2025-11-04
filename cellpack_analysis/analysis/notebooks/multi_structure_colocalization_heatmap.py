@@ -2,16 +2,11 @@
 # # Workflow to analyze multi-structure colocalization
 #
 # Compare colocalization of endosomes and peroxisomes with the ER and Golgi
-import itertools
 import logging
-import pickle
 
 import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
-from scipy.stats import wasserstein_distance
-from statannotations.Annotator import Annotator
-from tqdm import tqdm
 
 from cellpack_analysis.lib import distance
 from cellpack_analysis.lib.file_io import get_project_root
@@ -171,5 +166,21 @@ for packing_id, mode_dict in distance_dict.items():
     )
     df_list.append(df_plot)
 df_emd_all = pd.concat(df_list, axis=0).reset_index(drop=True)
+# %%
+distance_measure_to_plot = "nucleus"
+df_emd_plot = df_emd_all.query("distance_measure == @distance_measure_to_plot").copy()
+# %%
+fig, ax = plt.subplots(figsize=(6, 4))
+sns.violinplot(
+    data=df_emd_plot,
+    x="emd",
+    y="packing_mode_2",
+    hue="packing_mode_1",
+    palette=COLOR_PALETTE,
+    ax=ax,
+    orient="h",
+    cut=0,
+    split=True,
+)
 
 # %%

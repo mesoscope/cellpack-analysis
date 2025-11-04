@@ -1,0 +1,43 @@
+{
+    "structure_name": "golgi_peroxisome_no_struct",
+    "structure_id": "ST6GAL1",
+    "condition": "rules_shape",
+    "generate_recipes": true,
+    "generate_configs": true,
+    "use_additional_struct": false,
+    "use_mean_cell": false,
+    "use_cells_in_8d_sphere": true,
+    "gradient_structure_name": "peroxisome",
+    "get_counts_from_data": false,
+    "get_size_from_data": false,
+    "get_bounding_box_from_mesh": true,
+    "num_processes": 32,
+    "skip_completed": true,
+    "dry_run": false,
+    "recipe_data": {
+        "random": {},
+        "nucleus_gradient_strong": {
+            "gradients": [
+                "nucleus_gradient"
+            ]
+        },
+        "membrane_gradient_strong": {
+            "gradients": [
+                "membrane_gradient"
+            ]
+        },
+        "apical_gradient_weak": {
+            "gradients": [
+                "apical_gradient_weak"
+            ]
+        }
+    },
+    "packings_to_run": {
+        "rules": [
+            "random",
+            "nucleus_gradient_strong",
+            "membrane_gradient_strong",
+            "apical_gradient_weak"
+        ]
+    }
+}

@@ -1,7 +1,7 @@
 {
     "structure_name": "peroxisome",
     "structure_id": "SLC25A17",
-    "condition": "rules_shape",
+    "condition": "norm_weights",
     "generate_recipes": true,
     "generate_configs": true,
     "use_mean_cell": false,
@@ -14,12 +14,12 @@
     "dry_run": false,
     "recipe_data": {
         "random": {},
-        "nucleus_gradient_strong": {
+        "nucleus_gradient": {
             "gradients": [
                 "nucleus_gradient"
             ]
         },
-        "membrane_gradient_strong": {
+        "membrane_gradient": {
             "gradients": [
                 "membrane_gradient"
             ]
@@ -29,15 +29,25 @@
                 "apical_gradient"
             ]
         },
-        "apical_gradient_weak": {
+        "interpolated": {
             "gradients": [
-                "apical_gradient_weak"
-            ]
+                "nucleus_gradient",
+                "membrane_gradient",
+                "apical_gradient"
+            ],
+            "gradient_weights": {
+                "nucleus_gradient": 0.33,
+                "membrane_gradient": 0.34,
+                "apical_gradient": 0.33
+            }
         }
     },
     "packings_to_run": {
         "rules": [
-            "apical_gradient_weak"
+            "random",
+            "nucleus_gradient",
+            "membrane_gradient",
+            "apical_gradient"
         ]
     }
 }

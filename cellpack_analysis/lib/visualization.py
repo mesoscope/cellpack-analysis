@@ -693,6 +693,8 @@ def plot_occupancy_ratio(
     ylim: float | None = None,
     save_format: str = "png",
     fig_params: dict[str, Any] | None = None,
+    plot_individual: bool = True,
+    show_legend: bool = False,
 ) -> tuple[Figure, Axes]:
     """
     Plot occupancy ratio for individual and combined data across packing modes.
@@ -733,24 +735,24 @@ def plot_occupancy_ratio(
     fig, ax = plt.subplots(**fig_params)
 
     for mode in channel_map.keys():
+        if plot_individual:
+            for _cell_id, cell_id_dict in tqdm(
+                occupancy_dict[mode]["individual"].items(), desc=f"Plotting {mode} occupancy"
+            ):
 
-        for _cell_id, cell_id_dict in tqdm(
-            occupancy_dict[mode]["individual"].items(), desc=f"Plotting {mode} occupancy"
-        ):
+                xvals = cell_id_dict["xvals"]
+                occupancy = cell_id_dict["occupancy"]
 
-            xvals = cell_id_dict["xvals"]
-            occupancy = cell_id_dict["occupancy"]
-
-            sns.lineplot(
-                x=xvals,
-                y=occupancy,
-                ax=ax,
-                color=COLOR_PALETTE.get(mode, "gray"),
-                alpha=0.1,
-                linewidth=0.1,
-                label="_nolegend_",
-                zorder=0,
-            )
+                sns.lineplot(
+                    x=xvals,
+                    y=occupancy,
+                    ax=ax,
+                    color=COLOR_PALETTE.get(mode, "gray"),
+                    alpha=0.1,
+                    linewidth=0.1,
+                    label="_nolegend_",
+                    zorder=0,
+                )
 
         # overlay occupancy for combined data
         combined_xvals = occupancy_dict[mode]["combined"]["xvals"]
@@ -786,7 +788,8 @@ def plot_occupancy_ratio(
         distance_label = f"{distance_label} (\u03bcm)"
     ax.set_xlabel(distance_label)
     ax.set_ylabel("Occupancy Ratio")
-    ax.legend().remove()
+    if not show_legend:
+        ax.legend().remove()
     sns.despine(fig=fig)
     fig.tight_layout()
     if figures_dir is not None:
@@ -1016,19 +1019,15 @@ def add_baseline_occupancy_interpolation_to_plot(
     )
 
     ax.set_title(f"{plot_type.capitalize()}, MSE: {occupancy_dict[f'mse_{plot_type}']:.4f}")
-    relative_contribution_text = [
-        f"{MODE_LABELS[key]}: {value:.0%}"
-        for key, value in occupancy_dict[f"relative_contribution_{plot_type}"].items()
-    ]
-    ax.text(
-        0.95,
-        0.95,
-        "\n".join(relative_contribution_text),
-        horizontalalignment="right",
-        verticalalignment="top",
-        transform=ax.transAxes,
-    )
-    ax.legend().remove()
+
+    x, y = 1.05, 1.0
+
+    for i, (key, value) in enumerate(occupancy_dict[f"relative_contribution_{plot_type}"].items()):
+        color = COLOR_PALETTE.get(key, "gray")
+        text = f"{MODE_LABELS.get(key, key)}: {value:.0%}"
+        fig.text(x, y - i * 0.05, text, color=color, fontsize=4)
+    if ax.legend() is not None:
+        ax.legend().remove()
     sns.despine(fig=fig)
     fig.tight_layout()
     if figures_dir is not None:
@@ -1036,6 +1035,7 @@ def add_baseline_occupancy_interpolation_to_plot(
             figures_dir
             / f"{distance_measure}_{plot_type}_interpolated_occupancy_ratio{suffix}.{save_format}",
             dpi=300,
+            bbox_inches="tight",
         )
 
     plt.show()

@@ -1,0 +1,24 @@
+{
+    "name": "norm_weights",
+    "structure_id": "SLC25A17",
+    "packing_id": "peroxisome",
+    "structure_name": "peroxisome",
+    "packing_output_folder": "packing_outputs/8d_sphere_data/norm_weights/",
+    "channel_map": {
+        "SLC25A17": "SLC25A17",
+        "random": "SLC25A17",
+        "nucleus_gradient": "SLC25A17",
+        "membrane_gradient": "SLC25A17",
+        "apical_gradient": "SLC25A17"
+    },
+    "recalculate": true,
+    "occupancy_params": {
+        "plot_individual": true
+    },
+    "analysis_steps": [
+        "plot_distance_distributions",
+        "run_emd_analysis",
+        "run_ks_analysis",
+        "run_occupancy_analysis"
+    ]
+}

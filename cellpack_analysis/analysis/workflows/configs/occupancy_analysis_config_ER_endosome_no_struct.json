@@ -1,0 +1,17 @@
+{
+    "name": "occupancy_analysis",
+    "structure_id": "RAB5A",
+    "packing_id": "ER_endosome_no_struct",
+    "structure_name": "endosome",
+    "channel_map": {
+        "RAB5A": "RAB5A",
+        "random": "SEC61B",
+        "nucleus_gradient_strong": "SEC61B",
+        "membrane_gradient_strong": "SEC61B",
+        "apical_gradient_weak": "SEC61B"
+    },
+    "recalculate": true,
+    "analysis_steps": [
+        "run_occupancy_analysis"
+    ]
+}

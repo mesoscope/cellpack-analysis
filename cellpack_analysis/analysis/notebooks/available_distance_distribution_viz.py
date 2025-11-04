@@ -5,12 +5,17 @@ import logging
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
+
 from matplotlib.ticker import MaxNLocator
 from tqdm import tqdm
 
 from cellpack_analysis.lib.default_values import PIXEL_SIZE_IN_UM
 from cellpack_analysis.lib.distance import filter_invalid_distances
-from cellpack_analysis.lib.file_io import get_project_root
+from cellpack_analysis.lib.file_io import (
+    add_file_handler_to_logger,
+    get_project_root,
+    remove_file_handler_from_logger,
+)
 from cellpack_analysis.lib.label_tables import (
     COLOR_PALETTE,
     DISTANCE_LIMITS,
@@ -40,15 +45,96 @@ base_results_dir = project_root / "results"
 figures_dir = base_results_dir / "occupancy_analysis/available_space"
 figures_dir.mkdir(exist_ok=True, parents=True)
 # %% [markdown]
-# ## Plot cell diameter distributions
-fontsize = 6
-plt.rcParams.update({"font.size": fontsize})
+# ## Get mesh information dicts
+combined_mesh_information_dict = {}
 for structure_id in all_structures:
     mesh_information_dict = get_mesh_information_dict_for_structure(
         structure_id=structure_id,
         base_datadir=base_datadir,
         recalculate=False,
     )
+    combined_mesh_information_dict[structure_id] = mesh_information_dict
+# %% [markdown]
+# ## Log averages for cell metrics
+log_file_path = base_results_dir / "cell_metrics/punctate_cell_metrics.log"
+log_file_path.parent.mkdir(parents=True, exist_ok=True)
+logger = add_file_handler_to_logger(logger, log_file_path)
+for structure_id, mesh_information_dict in combined_mesh_information_dict.items():
+    logger.info(f"{structure_id} cell metrics:")
+    logger.info("===================================")
+    cell_volumes = []
+    nuc_volumes = []
+    cell_heights = []
+    nuc_heights = []
+    cell_diameters = []
+    nuc_diameters = []
+    intracellular_radii = []
+    for seed_dict in mesh_information_dict.values():
+        cell_volumes.append(seed_dict["cell_volume"] * (PIXEL_SIZE_IN_UM**3))
+        nuc_volumes.append(seed_dict["nuc_volume"] * (PIXEL_SIZE_IN_UM**3))
+
+        cell_bounds = seed_dict["cell_bounds"]
+        nuc_bounds = seed_dict["nuc_bounds"]
+        cell_bottom = cell_bounds[:, 2].min() * PIXEL_SIZE_IN_UM
+        cell_top = cell_bounds[:, 2].max() * PIXEL_SIZE_IN_UM
+        nuc_top = nuc_bounds[:, 2].max() * PIXEL_SIZE_IN_UM
+        cell_heights.append(cell_top - cell_bottom)
+        nuc_heights.append(nuc_top - cell_bottom)
+
+        cell_diameters.append(seed_dict["cell_diameter"] * PIXEL_SIZE_IN_UM)
+        nuc_diameters.append(seed_dict["nuc_diameter"] * PIXEL_SIZE_IN_UM)
+        intracellular_radii.append(seed_dict["intracellular_radius"] * PIXEL_SIZE_IN_UM)
+
+    mean_nuc_volume = np.mean(nuc_volumes).item()
+    std_nuc_volume = np.std(nuc_volumes).item()
+    mean_cell_volume = np.mean(cell_volumes).item()
+    std_cell_volume = np.std(cell_volumes).item()
+
+    mean_cell_height = np.mean(cell_heights).item()
+    std_cell_height = np.std(cell_heights).item()
+    mean_nuc_height = np.mean(nuc_heights).item()
+    std_nuc_height = np.std(nuc_heights).item()
+
+    mean_cell_diameter = np.mean(cell_diameters).item()
+    std_cell_diameter = np.std(cell_diameters).item()
+    mean_nuc_diameter = np.mean(nuc_diameters).item()
+    std_nuc_diameter = np.std(nuc_diameters).item()
+
+    mean_intracellular_radius = np.mean(intracellular_radii).item()
+    std_intracellular_radius = np.std(intracellular_radii).item()
+
+    logger.info(
+        f"{structure_id} cell volume: {mean_cell_volume:.2f} +/- {std_cell_volume:.2f} \u03bcm^3"
+    )
+    logger.info(
+        f"{structure_id} nucleus volume: {mean_nuc_volume:.2f} +/- {std_nuc_volume:.2f} \u03bcm^3"
+    )
+    logger.info(
+        f"{structure_id} cell height: {mean_cell_height:.2f} +/- {std_cell_height:.2f} \u03bcm"
+    )
+    logger.info(
+        f"{structure_id} nucleus height: {mean_nuc_height:.2f} +/- {std_nuc_height:.2f} \u03bcm"
+    )
+    logger.info(
+        f"{structure_id} cell diameter: {mean_cell_diameter:.2f} +/- {std_cell_diameter:.2f} \u03bcm"
+    )
+    logger.info(
+        f"{structure_id} nucleus diameter: {mean_nuc_diameter:.2f} +/- {std_nuc_diameter:.2f} \u03bcm"
+    )
+    logger.info(
+        f"{structure_id} intracellular radius: {mean_intracellular_radius:.2f} +/- "
+        f"{std_intracellular_radius:.2f} \u03bcm"
+    )
+    logger.info("===================================")
+    logger.info("===================================")
+logger = remove_file_handler_from_logger(logger, log_file_path)
+
+# %% [markdown]
+# ## Plot cell diameter distributions
+fontsize = 6
+plt.rcParams.update({"font.size": fontsize})
+for structure_id in all_structures:
+    mesh_information_dict = combined_mesh_information_dict[structure_id]
     intracellular_radii = [
         seed_dict["intracellular_radius"] * PIXEL_SIZE_IN_UM
         for seed_dict in mesh_information_dict.values()

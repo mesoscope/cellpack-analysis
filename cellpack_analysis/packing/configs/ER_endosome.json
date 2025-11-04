@@ -1,7 +1,7 @@
 {
     "structure_name": "ER_endosome",
     "structure_id": "SEC61B",
-    "condition": "rules_shape",
+    "condition": "norm_weights",
     "generate_recipes": true,
     "generate_configs": true,
     "use_additional_struct": true,
@@ -16,12 +16,12 @@
     "dry_run": false,
     "recipe_data": {
         "random": {},
-        "nucleus_gradient_strong": {
+        "nucleus_gradient": {
             "gradients": [
                 "nucleus_gradient"
             ]
         },
-        "membrane_gradient_strong": {
+        "membrane_gradient": {
             "gradients": [
                 "membrane_gradient"
             ]
@@ -36,18 +36,25 @@
                 "struct_gradient"
             ]
         },
-        "apical_gradient_weak": {
+        "interpolated": {
             "gradients": [
-                "apical_gradient_weak"
-            ]
+                "nucleus_gradient",
+                "membrane_gradient",
+                "struct_gradient"
+            ],
+            "gradient_weights": {
+                "nucleus_gradient": 0.19,
+                "membrane_gradient": 0.24,
+                "struct_gradient": 0.57
+            }
         }
     },
     "packings_to_run": {
         "rules": [
             "random",
-            "nucleus_gradient_strong",
-            "membrane_gradient_strong",
-            "apical_gradient_weak",
+            "nucleus_gradient",
+            "membrane_gradient",
+            "apical_gradient",
             "struct_gradient"
         ]
     }

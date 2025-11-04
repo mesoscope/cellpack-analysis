@@ -1,0 +1,24 @@
+{
+    "name": "norm_weights",
+    "structure_id": "RAB5A",
+    "packing_id": "ER_endosome",
+    "structure_name": "endosome",
+    "packing_output_folder": "packing_outputs/8d_sphere_data/norm_weights/",
+    "channel_map": {
+        "RAB5A": "RAB5A",
+        "random": "SEC61B",
+        "nucleus_gradient": "SEC61B",
+        "membrane_gradient": "SEC61B",
+        "apical_gradient": "SEC61B",
+        "struct_gradient": "SEC61B"
+    },
+    "recalculate": true,
+    "occupancy_params": {
+        "plot_individual": true
+    },
+    "analysis_steps": [
+        "plot_distance_distributions",
+        "run_emd_analysis",
+        "run_occupancy_analysis"
+    ]
+}

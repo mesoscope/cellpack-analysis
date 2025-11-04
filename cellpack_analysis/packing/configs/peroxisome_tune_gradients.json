@@ -1,0 +1,77 @@
+{
+    "structure_name": "peroxisome",
+    "structure_id": "SLC25A17",
+    "condition": "tune_gradients",
+    "generate_recipes": true,
+    "generate_configs": true,
+    "use_mean_cell": false,
+    "use_cells_in_8d_sphere": true,
+    "get_counts_from_data": true,
+    "get_size_from_data": true,
+    "get_bounding_box_from_mesh": true,
+    "num_processes": 32,
+    "skip_completed": true,
+    "dry_run": false,
+    "recipe_data": {
+        "random": {},
+        "membrane_gradient": {
+            "gradients": [
+                "membrane_gradient"
+            ]
+        },
+        "nucleus_gradient_0pt03": {
+            "gradients": [
+                "nucleus_gradient_0pt03"
+            ]
+        },
+        "nucleus_gradient_0pt05": {
+            "gradients": [
+                "nucleus_gradient_0pt05"
+            ]
+        },
+        "nucleus_gradient_0pt07": {
+            "gradients": [
+                "nucleus_gradient_0pt07"
+            ]
+        },
+        "nucleus_gradient_0pt1": {
+            "gradients": [
+                "nucleus_gradient_0pt1"
+            ]
+        },
+        "apical_gradient_0pt3": {
+            "gradients": [
+                "apical_gradient_0pt3"
+            ]
+        },
+        "apical_gradient_0pt5": {
+            "gradients": [
+                "apical_gradient_0pt5"
+            ]
+        },
+        "apical_gradient_0pt7": {
+            "gradients": [
+                "apical_gradient_0pt7"
+            ]
+        },
+        "apical_gradient_1": {
+            "gradients": [
+                "apical_gradient_1"
+            ]
+        }
+    },
+    "packings_to_run": {
+        "rules": [
+            "random",
+            "membrane_gradient",
+            "nucleus_gradient_0pt03",
+            "nucleus_gradient_0pt05",
+            "nucleus_gradient_0pt07",
+            "nucleus_gradient_0pt1",
+            "apical_gradient_0pt3",
+            "apical_gradient_0pt5",
+            "apical_gradient_0pt7",
+            "apical_gradient_1"
+        ]
+    }
+}

@@ -40,6 +40,7 @@ import time
 from pathlib import Path
 
 from cellpack_analysis import setup_logging
+from cellpack_analysis.analysis.workflows.configs import defaults
 from cellpack_analysis.lib import distance, occupancy, visualization
 from cellpack_analysis.lib.file_io import get_project_root
 from cellpack_analysis.lib.io import format_time
@@ -85,85 +86,71 @@ class AnalysisConfig:
     def _setup_parameters(self):
         """Set analysis parameters from config."""
         # Structure parameters
-        self.structure_id = self.config.get("structure_id", "SLC25A17")
-        self.packing_id = self.config.get("packing_id", "peroxisome")
-        self.structure_name = self.config.get("structure_name", "peroxisome")
+        self.structure_id = self.config.get("structure_id", defaults.STRUCTURE_ID)
+        self.packing_id = self.config.get("packing_id", defaults.PACKING_ID)
+        self.structure_name = self.config.get("structure_name", defaults.STRUCTURE_NAME)
 
         # Analysis parameters
-        self.name = self.config.get("name", "analysis")
+        self.name = self.config["name"]
         self.channel_map = self.config.get("channel_map", {self.structure_id: self.structure_id})
         self.packing_modes = list(self.channel_map.keys())
         self.packing_output_folder = self.config.get(
-            "packing_output_folder", "packing_outputs/8d_sphere_data/rules_shape/"
+            "packing_output_folder", defaults.PACKING_OUTPUT_FOLDER
         )
         self.baseline_mode = self.config.get("baseline_mode", self.structure_id)
 
         # Distance measures
-        self.distance_measures = self.config.get(
-            "distance_measures", ["nearest", "pairwise", "nucleus", "z"]
-        )
+        self.distance_measures = self.config.get("distance_measures", defaults.DISTANCE_MEASURES)
 
         # Normalization
-        self.normalization = self.config.get("normalization", None)
+        self.normalization = self.config.get("normalization")
         self.suffix = f"_normalized_{self.normalization}" if self.normalization else ""
 
         # Visualization
-        self.save_format = self.config.get("save_format", "svg")
+        self.save_format = self.config.get("save_format", defaults.SAVE_FORMAT)
 
         # Analysis-specific parameters
-        self.ks_significance_level = self.config.get("ks_significance_level", 0.05)
-        self.n_bootstrap = self.config.get("n_bootstrap", 1000)
-        self.bandwidth = self.config.get("bandwidth", 0.4)
+        self.ks_significance_level = self.config.get(
+            "ks_significance_level", defaults.KS_SIGNIFICANCE_LEVEL
+        )
+        self.n_bootstrap = self.config.get("n_bootstrap", defaults.N_BOOTSTRAP)
+        self.bandwidth = self.config.get("bandwidth", defaults.BANDWIDTH)
 
         # Occupancy analysis specific
         self.occupancy_distance_measures = self.config.get(
-            "occupancy_distance_measures", ["nucleus", "z"]
+            "occupancy_distance_measures", defaults.OCCUPANCY_DISTANCE_MEASURES
         )
-        self.occupancy_params = self.config.get(
-            "occupancy_params",
-            {
-                "nucleus": {"xlim": 6, "ylim": 4, "bandwidth": 0.4},
-                "z": {"xlim": 8, "ylim": 2, "bandwidth": 0.4},
-            },
-        )
+        self.occupancy_params = defaults.OCCUPANCY_PARAMS.copy()
+        self.occupancy_params.update(self.config.get("occupancy_params", {}))
 
         # Ingredient key for position data
         self.ingredient_key = self.config.get(
             "ingredient_key", f"membrane_interior_{self.structure_name}"
         )
 
-        # Recalculation flags
-        default_recalculate = {
-            "load_common_data": False,
-            "calculate_distances": False,
-            "plot_distance_distributions": False,
-            "run_emd_analysis": False,
-            "run_ks_analysis": False,
-            "run_occupancy_analysis": False,
-        }
-
         recalculate_config = self.config.get("recalculate")
         if isinstance(recalculate_config, bool):
             # If recalculate is a boolean, apply to all steps
-            self.recalculate = dict.fromkeys(default_recalculate.keys(), recalculate_config)
+            self.recalculate = dict.fromkeys(defaults.RECALCULATE.keys(), recalculate_config)
         elif isinstance(recalculate_config, dict):
             # If recalculate is a dict, update defaults with provided values
-            self.recalculate = default_recalculate.copy()
+            self.recalculate = defaults.RECALCULATE.copy()
             self.recalculate.update(recalculate_config)
         else:
             # If recalculate is None or invalid type, use defaults
-            self.recalculate = default_recalculate
+            self.recalculate = defaults.RECALCULATE
             if recalculate_config is not None:
                 logger.warning(
                     "Invalid 'recalculate' config."
                     " Using default recalculation settings (all False)."
                 )
         logger.info(f"Recalculation settings: {self.recalculate}")
-        # Analysis steps
-        self.analysis_steps = self.config.get("analysis_steps", [])
 
         # Parallel processing
-        self.num_workers = self.config.get("num_workers", 8)
+        self.num_workers = self.config.get("num_workers", defaults.NUM_WORKERS)
+
+        # Analysis steps
+        self.analysis_steps = self.config["analysis_steps"]
 
 
 class AnalysisRunner:
@@ -470,10 +457,8 @@ class AnalysisRunner:
             seed_index=743916,
             figures_dir=occupancy_figures_dir,
             save_format=config.save_format,
-            xlim=config.occupancy_params.get(occupancy_distance_measure, {}).get("xlim", 6),
-            bandwidth=config.occupancy_params.get(occupancy_distance_measure, {}).get(
-                "bandwidth", 0.2
-            ),
+            xlim=config.occupancy_params[occupancy_distance_measure]["xlim"],
+            bandwidth=config.occupancy_params[occupancy_distance_measure]["bandwidth"],
         )
 
         # Compute and store occupancy ratios
@@ -484,12 +469,10 @@ class AnalysisRunner:
             recalculate=config.recalculate["run_occupancy_analysis"],
             suffix=config.suffix,
             distance_measure=occupancy_distance_measure,
-            bandwidth=config.occupancy_params.get(occupancy_distance_measure, {}).get(
-                "bandwidth", 0.2
-            ),
+            bandwidth=config.occupancy_params[occupancy_distance_measure]["bandwidth"],
             num_points=250,
             x_min=0,
-            x_max=config.occupancy_params.get(occupancy_distance_measure, {}).get("xlim", 6),
+            x_max=config.occupancy_params[occupancy_distance_measure]["xlim"],
         )
 
         self.shared_data["occupancy_dict"][occupancy_distance_measure] = occupancy_dict
@@ -498,14 +481,17 @@ class AnalysisRunner:
         _ = visualization.plot_occupancy_ratio(
             occupancy_dict=self.shared_data["occupancy_dict"][occupancy_distance_measure],
             channel_map=config.channel_map,
+            baseline_mode=config.baseline_mode,
             figures_dir=occupancy_figures_dir,
             suffix=config.suffix,
             normalization=config.normalization,
             distance_measure=occupancy_distance_measure,
             save_format=config.save_format,
-            xlim=config.occupancy_params.get(occupancy_distance_measure, {}).get("xlim", 6),
-            ylim=config.occupancy_params.get(occupancy_distance_measure, {}).get("ylim", 4),
+            xlim=config.occupancy_params[occupancy_distance_measure]["xlim"],
+            ylim=config.occupancy_params[occupancy_distance_measure]["ylim"],
             fig_params={"dpi": 300, "figsize": (3.5, 2.5)},
+            plot_individual=config.occupancy_params.get("plot_individual", True),
+            show_legend=config.occupancy_params.get("show_legend", True),
         )
 
     def _run_occupancy_interpolation_analysis(self, config: AnalysisConfig):
@@ -530,7 +516,7 @@ class AnalysisRunner:
 
         for occupancy_distance_measure in config.occupancy_distance_measures:
             for plot_type in ["individual", "joint"]:
-                fig, ax = visualization.plot_occupancy_ratio(
+                _, ax = visualization.plot_occupancy_ratio(
                     occupancy_dict=self.shared_data["occupancy_dict"][occupancy_distance_measure],
                     channel_map=config.channel_map,
                     baseline_mode=config.baseline_mode,
@@ -540,6 +526,8 @@ class AnalysisRunner:
                     xlim=config.occupancy_params[occupancy_distance_measure]["xlim"],
                     ylim=config.occupancy_params[occupancy_distance_measure]["ylim"],
                     fig_params={"dpi": 300, "figsize": (3.5, 2.5)},
+                    plot_individual=config.occupancy_params.get("plot_individual", True),
+                    show_legend=config.occupancy_params.get("show_legend", True),
                 )
                 _ = visualization.add_baseline_occupancy_interpolation_to_plot(
                     ax=ax,

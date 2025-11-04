@@ -188,6 +188,9 @@ def get_kde_occupancy_dict(
             occupied_kde = distance_kde_dict[cell_id][mode]
             occupied_distances = occupied_kde.dataset
             combined_occupied_distances.extend(occupied_distances)
+            cell_xvals = np.linspace(
+                np.min(occupied_distances), np.max(occupied_distances), num_points
+            )
 
             available_kde = distance_kde_dict[cell_id]["available_distance"]
             if bandwidth is not None:
@@ -195,11 +198,13 @@ def get_kde_occupancy_dict(
                 available_kde.set_bandwidth(bandwidth)
 
             # Evaluate KDEs on x_vals
-            pdf_occupied = normalize_pdf(x_vals, occupied_kde.evaluate(x_vals))
-            pdf_available = normalize_pdf(x_vals, available_kde.evaluate(x_vals))
-            occupancy, pdf_occupied, pdf_available = pdf_ratio(x_vals, pdf_occupied, pdf_available)
+            pdf_occupied = normalize_pdf(cell_xvals, occupied_kde.evaluate(cell_xvals))
+            pdf_available = normalize_pdf(cell_xvals, available_kde.evaluate(cell_xvals))
+            occupancy, pdf_occupied, pdf_available = pdf_ratio(
+                cell_xvals, pdf_occupied, pdf_available
+            )
             kde_occupancy_dict[mode]["individual"][cell_id] = {
-                "xvals": x_vals,
+                "xvals": cell_xvals,
                 "occupancy": occupancy,
                 "pdf_occupied": pdf_occupied,
                 "pdf_available": pdf_available,
