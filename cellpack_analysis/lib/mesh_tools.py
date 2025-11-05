@@ -16,7 +16,9 @@ from tqdm import tqdm
 from trimesh import proximity
 from vtkmodules.util import numpy_support as vtknp
 
+from cellpack_analysis.lib.default_values import PIXEL_SIZE_IN_UM
 from cellpack_analysis.lib.get_cell_id_list import get_cell_id_list_for_structure
+from cellpack_analysis.lib.label_tables import AXIS_TO_INDEX_MAP
 
 logger = logging.getLogger(__name__)
 
@@ -901,3 +903,119 @@ def calculate_grid_distances(
     gc.collect()
 
     return nuc_distances, mem_distances, z_distances, scaled_nuc_distances
+
+
+def get_grid_points_slice(
+    all_grid_points: np.ndarray,
+    projection_axis: str,
+    spacing: float,
+) -> np.ndarray:
+    """
+    Select a slice of grid points at the median coordinate along the projection axis.
+
+    Parameters:
+    -----------
+    all_grid_points : np.ndarray
+        All grid points in pixels
+    projection_axis : str
+        Axis to project along ('x', 'y', or 'z')
+    spacing : float
+        Spacing between grid points in pixels
+
+    Returns:
+    --------
+    grid_points_slice : np.ndarray
+        Grid points for the selected slice in pixels
+    """
+    coord_values = all_grid_points[:, AXIS_TO_INDEX_MAP[projection_axis]]
+    median_coord = np.median(coord_values)
+    point_indexes = np.isclose(coord_values, median_coord, atol=spacing / 2)
+    logger.info(
+        f"Selected {projection_axis} slice at "
+        f"{projection_axis}={median_coord * PIXEL_SIZE_IN_UM:.2f} (\u03bcm) "
+        f"with {np.sum(point_indexes)} points"
+    )
+    grid_points_slice = all_grid_points[point_indexes]
+    return grid_points_slice
+
+
+def get_inside_outside_check(
+    nuc_mesh: trimesh.Trimesh,
+    mem_mesh: trimesh.Trimesh,
+    grid_points_slice: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Get inside-outside check for grid points with respect to a mesh.
+
+    Parameters
+    ----------
+    nuc_mesh
+        Nucleus mesh
+    mem_mesh
+        Membrane mesh
+    grid_points_slice : np.ndarray
+        Grid points to check in voxels
+
+    Returns
+    -------
+    :
+        Tuple of boolean arrays indicating points inside nucleus, inside membrane,
+        and inside membrane but outside nucleus
+    """
+
+    logger.info("Calculating nuc inside check")
+    inside_nuc = nuc_mesh.contains(grid_points_slice)
+    logger.info("Calculating mem inside check")
+    inside_mem = mem_mesh.contains(grid_points_slice)
+
+    inside_mem_outside_nuc = inside_mem & ~inside_nuc
+
+    return inside_nuc, inside_mem, inside_mem_outside_nuc
+
+
+def get_distances_from_mesh(
+    points: np.ndarray, mesh: trimesh.Trimesh, invert: bool = False
+) -> np.ndarray:
+    """
+    Calculate distances from points to a mesh and compute weights based on an exponential decay.
+
+    Parameters
+    ----------
+    points
+        Points to calculate distances for
+    mesh
+        Mesh to calculate distances to
+
+    Returns
+    -------
+    :
+        Distances in micrometers
+
+    """
+    distances = mesh.nearest.signed_distance(points)
+    if invert:
+        distances = -distances
+    distances_um = distances * PIXEL_SIZE_IN_UM
+    return distances_um
+
+
+def get_weights_from_distances(distances_um: np.ndarray, decay_length: float) -> np.ndarray:
+    """
+    Calculate weights based on distances using an exponential decay.
+
+    Parameters
+    ----------
+    distances_um
+        Distances in micrometers
+    decay_length
+        Decay length for the exponential weight calculation
+
+    Returns
+    -------
+    :
+        Weights based on exponential decay
+    """
+    scaled_distances = distances_um / np.max(distances_um)
+    weights = np.exp(-scaled_distances / decay_length)
+    weights /= np.max(weights)
+    return weights

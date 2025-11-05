@@ -32,7 +32,7 @@ start_time = time.time()
 # SEC61B: ER
 # ST6GAL1: Golgi
 STRUCTURE_ID = "SLC25A17"
-PACKING_ID = "ER_peroxisome"
+PACKING_ID = "peroxisome"
 STRUCTURE_NAME = "peroxisome"
 # %% [markdown]
 # ### Set packing modes to analyze
@@ -40,25 +40,24 @@ save_format = "pdf"
 packing_modes = [
     STRUCTURE_ID,
     "random",
-    "nucleus_gradient_strong",
-    "membrane_gradient_strong",
-    "apical_gradient_weak",
-    "struct_gradient",
+    "nucleus_gradient",
+    "membrane_gradient",
+    "apical_gradient",
 ]
 
 channel_map = {
     "SLC25A17": "SLC25A17",
     # "SLC25A17": "SLC25A17",
-    "random": "SEC61B",
-    "nucleus_gradient_strong": "SEC61B",
-    "membrane_gradient_strong": "SEC61B",
-    "apical_gradient_weak": "SEC61B",
+    "random": "SLC25A17",
+    "nucleus_gradient": "SLC25A17",
+    "membrane_gradient": "SLC25A17",
+    "apical_gradient": "SLC25A17",
     # "apical_gradient": "SLC25A17",
-    "struct_gradient": "SEC61B",
+    # "struct_gradient": "SEC61B",
 }
 
 # relative path to packing outputs
-packing_output_folder = "packing_outputs/8d_sphere_data/rules_shape/"
+packing_output_folder = "packing_outputs/8d_sphere_data/norm_weights/"
 baseline_mode = STRUCTURE_ID
 
 all_structures = list(set(channel_map.values()))
@@ -76,8 +75,8 @@ figures_dir.mkdir(exist_ok=True, parents=True)
 # %% [markdown]
 # ### Distance measures to use
 distance_measures = [
-    # "nearest",
-    # "pairwise",
+    "nearest",
+    "pairwise",
     "nucleus",
     # "scaled_nucleus",
     "z",
@@ -122,6 +121,7 @@ all_distance_dict = distance.get_distance_dictionary(
     channel_map=channel_map,
     results_dir=results_dir,
     recalculate=False,
+    num_workers=16,
 )
 
 all_distance_dict = distance.filter_invalids_from_distance_distribution_dict(
@@ -148,9 +148,8 @@ fig, axs = visualization.plot_distance_distributions_kde(
     figures_dir=distance_figures_dir,
     suffix=suffix,
     normalization=normalization,
-    overlay=True,
     distance_limits=DISTANCE_LIMITS,
-    bandwidth=0.4,
+    bandwidth=0.2,
     save_format=save_format,
 )
 # %% [markdown]
@@ -221,7 +220,7 @@ ks_test_df = distance.get_ks_test_df(
     baseline_mode=baseline_mode,
     significance_level=ks_significance_level,
     save_dir=results_dir,
-    recalculate=True,
+    recalculate=False,
 )
 # %% [markdown]
 # ### Bootstrap KS test

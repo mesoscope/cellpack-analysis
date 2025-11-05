@@ -5,7 +5,6 @@ import logging
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
-
 from matplotlib.ticker import MaxNLocator
 from tqdm import tqdm
 
@@ -26,6 +25,8 @@ from cellpack_analysis.lib.mesh_tools import get_mesh_information_dict_for_struc
 
 plt.rcParams["pdf.fonttype"] = 42
 plt.rcParams["ps.fonttype"] = 42
+fontsize = 6
+plt.rcParams["font.size"] = fontsize
 
 logger = logging.getLogger(__name__)
 
@@ -116,10 +117,12 @@ for structure_id, mesh_information_dict in combined_mesh_information_dict.items(
         f"{structure_id} nucleus height: {mean_nuc_height:.2f} +/- {std_nuc_height:.2f} \u03bcm"
     )
     logger.info(
-        f"{structure_id} cell diameter: {mean_cell_diameter:.2f} +/- {std_cell_diameter:.2f} \u03bcm"
+        f"{structure_id} cell diameter: {mean_cell_diameter:.2f} +/- "
+        f"{std_cell_diameter:.2f} \u03bcm"
     )
     logger.info(
-        f"{structure_id} nucleus diameter: {mean_nuc_diameter:.2f} +/- {std_nuc_diameter:.2f} \u03bcm"
+        f"{structure_id} nucleus diameter: {mean_nuc_diameter:.2f} +/- "
+        f"{std_nuc_diameter:.2f} \u03bcm"
     )
     logger.info(
         f"{structure_id} intracellular radius: {mean_intracellular_radius:.2f} +/- "
@@ -131,8 +134,6 @@ logger = remove_file_handler_from_logger(logger, log_file_path)
 
 # %% [markdown]
 # ## Plot cell diameter distributions
-fontsize = 6
-plt.rcParams.update({"font.size": fontsize})
 for structure_id in all_structures:
     mesh_information_dict = combined_mesh_information_dict[structure_id]
     intracellular_radii = [
@@ -187,6 +188,11 @@ minimum_distance = -1
 bandwidth = 0.2
 combined_distances = {}
 
+DISTANCE_YLIMS = {
+    "nucleus": (0, 0.35),
+    "z": (0, 0.25),
+}
+
 for row, distance_measure in enumerate(distance_measures):
     ax = axs[row]
 
@@ -198,6 +204,7 @@ for row, distance_measure in enumerate(distance_measures):
             base_datadir=base_datadir,
             recalculate=False,
         )
+        logger.info(f"Plotting {structure_id} - {distance_measure}")
         for cell_id in tqdm(mesh_information_dict.keys()):
             distances = mesh_information_dict[cell_id][GRID_DISTANCE_LABELS[distance_measure]]
             distances_to_plot = filter_invalid_distances(
@@ -207,7 +214,7 @@ for row, distance_measure in enumerate(distance_measures):
             sns.kdeplot(
                 distances_to_plot,
                 ax=ax,
-                color=COLOR_PALETTE[structure_id],
+                color="gray",
                 alpha=0.1,
                 linewidth=0.1,
                 cut=0,
@@ -222,16 +229,17 @@ for row, distance_measure in enumerate(distance_measures):
     sns.kdeplot(
         all_combined_distances,
         ax=ax,
-        color=COLOR_PALETTE["membrane"],
+        color="black",
         linewidth=1.5,
         cut=0,
         bw_method=bandwidth,
     )
     ax.set_xlabel(f"{DISTANCE_MEASURE_LABELS[distance_measure]} (\u03bcm)")
+    sns.despine(ax=ax)
+    ax.set_ylim(DISTANCE_YLIMS[distance_measure])
+    ax.set_xlim(DISTANCE_LIMITS[distance_measure])
     ax.xaxis.set_major_locator(MaxNLocator(5, integer=True))
     ax.yaxis.set_major_locator(MaxNLocator(3, integer=True))
-    sns.despine(ax=ax)
-    ax.set_xlim(DISTANCE_LIMITS[distance_measure])
 fig.tight_layout()
 fig.savefig(figures_dir / "grid_distance_distribution.pdf", bbox_inches="tight")
 

@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 from matplotlib.axes import Axes
+from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.figure import Figure
 from matplotlib.ticker import MaxNLocator
 from scipy.stats import gaussian_kde
@@ -21,6 +22,8 @@ from cellpack_analysis.lib.label_tables import (
     DISTANCE_MEASURE_LABELS,
     MODE_LABELS,
     NORMALIZATION_LABELS,
+    PROJECTION_TO_INDEX_MAP,
+    PROJECTION_TO_LABEL_MAP,
 )
 from cellpack_analysis.lib.occupancy import get_cell_id_map_from_distance_kde_dict
 from cellpack_analysis.lib.stats import create_padded_numpy_array, get_pdf_ratio, normalize_pdf
@@ -72,7 +75,6 @@ def plot_distance_distributions_kde(
     figures_dir: Path | None = None,
     suffix: str = "",
     normalization: str | None = None,
-    overlay: bool = True,
     distance_limits: dict[str, tuple[float, float]] | None = None,
     bandwidth: Literal["scott", "silverman"] | float = "scott",
     save_format: Literal["svg", "png", "pdf"] = "png",
@@ -170,16 +172,16 @@ def plot_distance_distributions_kde(
             combined_mode_distances = filter_invalid_distances(
                 combined_mode_distances, minimum_distance=minimum_distance
             )
-            if overlay:
-                sns.kdeplot(
-                    combined_mode_distances,
-                    ax=ax,
-                    color=mode_color,
-                    linewidth=0.7,
-                    label=mode_label,
-                    bw_method=bandwidth,
-                    cut=0,
-                )
+
+            sns.kdeplot(
+                combined_mode_distances,
+                ax=ax,
+                color=mode_color,
+                linewidth=0.7,
+                label=mode_label,
+                bw_method=bandwidth,
+                cut=0,
+            )
 
             # set axis limits
             if distance_limits is not None:
@@ -1466,5 +1468,86 @@ def plot_binned_occupancy_ratio(
             dpi=300,
         )
     plt.show()
+
+    return fig, ax
+
+
+def plot_grid_points_slice(
+    grid_points_slice: np.ndarray,
+    inside_mem_outside_nuc: np.ndarray,
+    inside_nuc: np.ndarray,
+    color_var: np.ndarray,
+    cbar_label: str,
+    dot_size: int = 2,
+    projection_axis: str = "z",
+    reverse_cmap: bool = False,
+):
+    """
+    Plot a slice of grid points with coloring based on a variable.
+
+    Parameters
+    ----------
+    grid_points_slice
+        Grid points for the slice in pixels
+    inside_mem_outside_nuc
+        Boolean mask for points inside membrane but outside nucleus
+    inside_nuc
+        Boolean mask for points inside nucleus
+    color_var
+        Values to use for coloring the cytoplasm points
+    cbar_label
+        Label for the colorbar
+    cell_id
+        Cell ID for file naming
+    figures_dir
+        Directory to save the figure
+    dot_size
+        Size of scatter plot points (default: 2)
+    projection_axis
+        Axis of projection ('x', 'y', or 'z')
+    reverse_cmap
+        Whether to reverse the colormap
+
+    Returns
+    -------
+    :
+        Matplotlib figure and axis objects
+    """
+    grid_points_um = grid_points_slice * PIXEL_SIZE_IN_UM
+    centroid = np.mean(grid_points_um, axis=0)
+    custom_cmap = LinearSegmentedColormap.from_list("cyan_to_magenta", ["cyan", "magenta"])
+    if reverse_cmap:
+        custom_cmap = custom_cmap.reversed()
+
+    fig, ax = plt.subplots(figsize=(2.5, 2.5), dpi=300)
+    x_index, y_index = PROJECTION_TO_INDEX_MAP[projection_axis]
+    x_label, y_label = PROJECTION_TO_LABEL_MAP[projection_axis]
+
+    # Plot cytoplasm points with weight coloring
+    sns.scatterplot(
+        x=grid_points_um[inside_mem_outside_nuc, x_index] - centroid[x_index],
+        y=grid_points_um[inside_mem_outside_nuc, y_index] - centroid[y_index],
+        c=color_var,
+        cmap=custom_cmap,
+        s=dot_size,
+    )
+
+    # Plot nucleus points in gray
+    sns.scatterplot(
+        x=grid_points_um[inside_nuc, x_index] - centroid[x_index],
+        y=grid_points_um[inside_nuc, y_index] - centroid[y_index],
+        c="gray",
+        s=dot_size,
+    )
+
+    ax.set_xlabel(f"{x_label} (\u03bcm)")
+    ax.set_ylabel(f"{y_label} (\u03bcm)")
+    ax.set_aspect("equal")
+    ax.xaxis.set_major_locator(MaxNLocator(5, integer=True))
+    ax.yaxis.set_major_locator(MaxNLocator(5, integer=True))
+    sns.despine(ax=ax)
+
+    cbar = plt.colorbar(ax.collections[0], ax=ax, shrink=0.8)
+    cbar.set_label(cbar_label, rotation=270, labelpad=15)
 
     return fig, ax

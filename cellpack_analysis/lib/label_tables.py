@@ -221,3 +221,13 @@ DUAL_STRUCTURE_SIM_CHANNEL_MAP = {
     "mem": 0,
     "nuc": 1,
 }
+
+
+AXIS_TO_INDEX_MAP = {"x": 0, "y": 1, "z": 2}
+"""Mapping from axis labels to their corresponding indices."""
+
+PROJECTION_TO_LABEL_MAP = {"x": "YZ", "y": "XZ", "z": "XY"}
+"""Mapping from projection axis to label strings."""
+
+PROJECTION_TO_INDEX_MAP = {"x": (1, 2), "y": (0, 2), "z": (0, 1)}
+"""Mapping from projection axis to index tuples."""
