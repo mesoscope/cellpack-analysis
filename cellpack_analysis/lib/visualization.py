@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 from matplotlib.axes import Axes
-from matplotlib.colors import LinearSegmentedColormap
+from matplotlib.colors import Colormap, LinearSegmentedColormap
 from matplotlib.figure import Figure
 from matplotlib.ticker import MaxNLocator
 from scipy.stats import gaussian_kde
@@ -282,7 +282,7 @@ def plot_ks_test_results(
     fig, axs = plt.subplots(
         1,
         num_cols,
-        figsize=(1.25 * num_cols, 2.5),
+        figsize=(1.25 * num_cols, 1.25),
         dpi=300,
         squeeze=False,
     )
@@ -294,30 +294,30 @@ def plot_ks_test_results(
 
         plot_params = {
             "data": df_distance_measure,
-            "x": "similar_fraction",
-            "y": "packing_mode",
+            "x": "packing_mode",
+            "y": "similar_fraction",
             "hue": "packing_mode",
             "legend": False,
-            # "linewidth": 0.5,
-            "orient": "h",
+            "orient": "v",
             "palette": COLOR_PALETTE,
+            "linewidth": 0.5,
+            "errorbar": "sd",
+            "err_kws": {"linewidth": 1},
         }
         # sns.boxplot(ax=ax, whis=(2.5, 97.5), fliersize=1, **plot_params)  # type: ignore
         sns.barplot(ax=ax, **plot_params)  # type: ignore
         sns.despine(ax=ax)
-        ax.set_xlim((0, 1))
-        ax.set_xlabel("Fraction")
-        ax.set_ylabel("")
-        if col == 0:
-            ax.set_yticks(
-                ax.get_yticks(),
-                labels=[
-                    MODE_LABELS.get(label.get_text(), label.get_text())
-                    for label in ax.get_yticklabels()
-                ],
-            )
-        else:
-            ax.set_yticks([])
+        ax.set_ylim((0, 1))
+        ax.set_ylabel("Fraction")
+        ax.set_xlabel("")
+        ax.set_xticks(
+            ax.get_xticks(),
+            labels=[
+                MODE_LABELS.get(label.get_text(), label.get_text())
+                for label in ax.get_xticklabels()
+            ],
+            rotation=45,
+        )
 
         if annotate_significance:
             packing_modes = df_distance_measure["packing_mode"].unique()
@@ -405,14 +405,14 @@ def plot_emd_comparisons(
     fig_bar, axs_bar = plt.subplots(
         1,
         num_cols,
-        figsize=(0.85 * num_cols, 2.5),
+        figsize=(1.25 * num_cols, 1.25),
         dpi=300,
         squeeze=False,
     )
     fig_violin, axs_violin = plt.subplots(
         1,
         num_cols,
-        figsize=(num_cols * 0.85, 2.5),
+        figsize=(1.25 * num_cols, 1.25),
         dpi=300,
         squeeze=False,
     )
@@ -423,13 +423,13 @@ def plot_emd_comparisons(
             query_str = (
                 f"distance_measure == '{distance_measure}' and " "packing_mode_1 == packing_mode_2"
             )
-            y_column = "packing_mode_1"
+            x_column = "packing_mode_1"
         else:  # baseline comparison
             query_str = (
                 f"distance_measure == '{distance_measure}' and "
                 f"packing_mode_1 == '{baseline_mode}' and packing_mode_2 != '{baseline_mode}'"
             )
-            y_column = "packing_mode_2"
+            x_column = "packing_mode_2"
 
         df_plot = df_emd.query(query_str)
 
@@ -438,11 +438,11 @@ def plot_emd_comparisons(
 
         plot_params = {
             "data": df_plot,
-            "x": "emd",
-            "y": y_column,
-            "hue": y_column,
+            "x": x_column,
+            "y": "emd",
+            "hue": x_column,
             "legend": False,
-            "orient": "h",
+            "orient": "v",
             "palette": COLOR_PALETTE,
             "linewidth": 0.5,
         }
@@ -451,28 +451,26 @@ def plot_emd_comparisons(
 
         for ax, plot_type in zip([ax_bar, ax_violin], ["barplot", "violinplot"], strict=False):
             sns.despine(ax=ax)
-            ax.set_xlabel("EMD")
-            ax.set_ylabel("")
-            ax.xaxis.set_major_locator(MaxNLocator(3, integer=True))
-            if col == 0:
-                ax.set_yticks(
-                    ax.get_yticks(),
-                    labels=[
-                        MODE_LABELS.get(label.get_text(), label.get_text())
-                        for label in ax.get_yticklabels()
-                    ],
-                )
-            else:
-                ax.set_yticks([])
+            ax.set_xlabel("")
+            ax.set_ylabel("EMD")
+            ax.yaxis.set_major_locator(MaxNLocator(3, integer=True))
+            ax.set_xticks(
+                ax.get_xticks(),
+                labels=[
+                    MODE_LABELS.get(label.get_text(), label.get_text())
+                    for label in ax.get_xticklabels()
+                ],
+                rotation=45,
+            )
 
             if annotate_significance:
                 if comparison_type == "intra_mode":
-                    packing_modes = df_plot[y_column].unique()
+                    packing_modes = df_plot[x_column].unique()
                     pairs = list(combinations(packing_modes, 2))
                     pairs = [pair for pair in pairs if baseline_mode in pair]
                 else:  # baseline comparison
                     packing_modes = [
-                        mode for mode in df_plot[y_column].unique() if mode != baseline_mode
+                        mode for mode in df_plot[x_column].unique() if mode != baseline_mode
                     ]
                     pairs = list(combinations(packing_modes, 2))
 
@@ -1022,12 +1020,21 @@ def add_baseline_occupancy_interpolation_to_plot(
 
     ax.set_title(f"{plot_type.capitalize()}, MSE: {occupancy_dict[f'mse_{plot_type}']:.4f}")
 
-    x, y = 1.05, 1.0
+    x, y = 0.95, 0.95
 
     for i, (key, value) in enumerate(occupancy_dict[f"relative_contribution_{plot_type}"].items()):
         color = COLOR_PALETTE.get(key, "gray")
         text = f"{MODE_LABELS.get(key, key)}: {value:.0%}"
-        fig.text(x, y - i * 0.05, text, color=color, fontsize=4)
+        ax.text(
+            x,
+            y - i * 0.05,
+            text,
+            color=color,
+            fontsize=4,
+            transform=ax.transAxes,
+            horizontalalignment="right",
+            verticalalignment="top",
+        )
     if ax.legend() is not None:
         ax.legend().remove()
     sns.despine(fig=fig)
@@ -1478,9 +1485,11 @@ def plot_grid_points_slice(
     inside_nuc: np.ndarray,
     color_var: np.ndarray,
     cbar_label: str,
-    dot_size: int = 2,
+    dot_size: float = 2,
     projection_axis: str = "z",
+    cmap: Colormap | str | None = None,
     reverse_cmap: bool = False,
+    clim: tuple[float, float] | None = None,
 ):
     """
     Plot a slice of grid points with coloring based on a variable.
@@ -1515,7 +1524,15 @@ def plot_grid_points_slice(
     """
     grid_points_um = grid_points_slice * PIXEL_SIZE_IN_UM
     centroid = np.mean(grid_points_um, axis=0)
-    custom_cmap = LinearSegmentedColormap.from_list("cyan_to_magenta", ["cyan", "magenta"])
+    # custom_cmap = LinearSegmentedColormap.from_list("cyan_to_magenta", ["cyan", "magenta"])
+    custom_cmap = LinearSegmentedColormap.from_list(
+        "gray_cutoff", plt.cm.get_cmap("gray")(np.linspace(0, 0.9, 32))
+    )
+    if cmap is not None:
+        if isinstance(cmap, Colormap):
+            custom_cmap = cmap
+        else:
+            custom_cmap = plt.get_cmap(cmap)
     if reverse_cmap:
         custom_cmap = custom_cmap.reversed()
 
@@ -1523,21 +1540,31 @@ def plot_grid_points_slice(
     x_index, y_index = PROJECTION_TO_INDEX_MAP[projection_axis]
     x_label, y_label = PROJECTION_TO_LABEL_MAP[projection_axis]
 
+    vmin, vmax = None, None
+    if clim is not None:
+        vmin, vmax = clim
+
     # Plot cytoplasm points with weight coloring
-    sns.scatterplot(
+    ax.scatter(
         x=grid_points_um[inside_mem_outside_nuc, x_index] - centroid[x_index],
         y=grid_points_um[inside_mem_outside_nuc, y_index] - centroid[y_index],
         c=color_var,
         cmap=custom_cmap,
         s=dot_size,
+        vmin=vmin,
+        vmax=vmax,
+        marker=".",
+        edgecolor="none",
     )
 
     # Plot nucleus points in gray
-    sns.scatterplot(
+    ax.scatter(
         x=grid_points_um[inside_nuc, x_index] - centroid[x_index],
         y=grid_points_um[inside_nuc, y_index] - centroid[y_index],
         c="gray",
         s=dot_size,
+        marker=".",
+        edgecolor="none",
     )
 
     ax.set_xlabel(f"{x_label} (\u03bcm)")

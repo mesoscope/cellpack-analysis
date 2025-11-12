@@ -12,7 +12,7 @@
     "get_size_from_data": false,
     "get_bounding_box_from_mesh": true,
     "num_processes": 32,
-    "skip_completed": true,
+    "skip_completed": false,
     "dry_run": false,
     "recipe_data": {
         "random": {},
@@ -43,19 +43,15 @@
                 "struct_gradient"
             ],
             "gradient_weights": {
-                "nucleus_gradient": 0.19,
-                "membrane_gradient": 0.24,
-                "struct_gradient": 0.57
+                "nucleus_gradient": 0.1715,
+                "membrane_gradient": 0.2979,
+                "struct_gradient": 0.5306
             }
         }
     },
     "packings_to_run": {
         "rules": [
-            "random",
-            "nucleus_gradient",
-            "membrane_gradient",
-            "apical_gradient",
-            "struct_gradient"
+            "interpolated"
         ]
     }
 }

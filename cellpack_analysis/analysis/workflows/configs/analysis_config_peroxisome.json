@@ -1,5 +1,5 @@
 {
-    "name": "norm_weights",
+    "name": "norm_weights_mixed_rule",
     "structure_id": "SLC25A17",
     "packing_id": "peroxisome",
     "structure_name": "peroxisome",
@@ -9,16 +9,18 @@
         "random": "SLC25A17",
         "nucleus_gradient": "SLC25A17",
         "membrane_gradient": "SLC25A17",
-        "apical_gradient": "SLC25A17"
+        "apical_gradient": "SLC25A17",
+        "interpolated": "SLC25A17"
     },
-    "recalculate": true,
+    "distance_measures": [
+        "nucleus",
+        "z"
+    ],
+    "recalculate": false,
     "occupancy_params": {
-        "plot_individual": true
+        "plot_individual": false
     },
     "analysis_steps": [
-        "plot_distance_distributions",
-        "run_emd_analysis",
-        "run_ks_analysis",
-        "run_occupancy_analysis"
+        "run_occupancy_emd_analysis"
     ]
 }

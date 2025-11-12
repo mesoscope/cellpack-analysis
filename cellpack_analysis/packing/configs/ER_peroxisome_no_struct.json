@@ -1,7 +1,7 @@
 {
     "structure_name": "ER_peroxisome_no_struct",
     "structure_id": "SEC61B",
-    "condition": "rules_shape",
+    "condition": "norm_weights",
     "generate_recipes": true,
     "generate_configs": true,
     "use_additional_struct": false,
@@ -16,28 +16,37 @@
     "dry_run": false,
     "recipe_data": {
         "random": {},
-        "nucleus_gradient_strong": {
+        "nucleus_gradient": {
             "gradients": [
                 "nucleus_gradient"
             ]
         },
-        "membrane_gradient_strong": {
+        "membrane_gradient": {
             "gradients": [
                 "membrane_gradient"
             ]
         },
-        "apical_gradient_weak": {
+        "apical_gradient": {
             "gradients": [
-                "apical_gradient_weak"
+                "apical_gradient"
             ]
+        },
+        "interpolated": {
+            "gradients": [
+                "nucleus_gradient",
+                "membrane_gradient",
+                "apical_gradient"
+            ],
+            "gradient_weights": {
+                "nucleus_gradient": 0.3376,
+                "membrane_gradient": 0.2396,
+                "apical_gradient": 0.4228
+            }
         }
     },
     "packings_to_run": {
         "rules": [
-            "random",
-            "nucleus_gradient_strong",
-            "membrane_gradient_strong",
-            "apical_gradient_weak"
+            "interpolated"
         ]
     }
 }

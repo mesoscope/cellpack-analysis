@@ -31,9 +31,9 @@ start_time = time.time()
 # RAB5A: early endosomes
 # SEC61B: ER
 # ST6GAL1: Golgi
-STRUCTURE_ID = "SLC25A17"
-PACKING_ID = "peroxisome"
-STRUCTURE_NAME = "peroxisome"
+STRUCTURE_ID = "RAB5A"
+PACKING_ID = "endosome"
+STRUCTURE_NAME = "endosome"
 # %% [markdown]
 # ### Set packing modes to analyze
 save_format = "pdf"
@@ -46,13 +46,12 @@ packing_modes = [
 ]
 
 channel_map = {
-    "SLC25A17": "SLC25A17",
-    # "SLC25A17": "SLC25A17",
-    "random": "SLC25A17",
-    "nucleus_gradient": "SLC25A17",
-    "membrane_gradient": "SLC25A17",
-    "apical_gradient": "SLC25A17",
-    # "apical_gradient": "SLC25A17",
+    "RAB5A": "RAB5A",
+    "random": "RAB5A",
+    "nucleus_gradient": "RAB5A",
+    "membrane_gradient": "RAB5A",
+    "apical_gradient": "RAB5A",
+    # "apical_gradient": "RAB5A",
     # "struct_gradient": "SEC61B",
 }
 
@@ -75,8 +74,8 @@ figures_dir.mkdir(exist_ok=True, parents=True)
 # %% [markdown]
 # ### Distance measures to use
 distance_measures = [
-    "nearest",
-    "pairwise",
+    # "nearest",
+    # "pairwise",
     "nucleus",
     # "scaled_nucleus",
     "z",

@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import pandas as pd
 from scipy.optimize import nnls
 from scipy.stats import gaussian_kde, ks_2samp, wasserstein_distance
 from tqdm import tqdm
@@ -12,6 +13,7 @@ from cellpack_analysis.lib.file_io import (
     add_file_handler_to_logger,
     remove_file_handler_from_logger,
 )
+from cellpack_analysis.lib.load_data import PROJECT_ROOT
 from cellpack_analysis.lib.stats import normalize_pdf, pdf_ratio
 
 logger = logging.getLogger(__name__)
@@ -236,6 +238,165 @@ def get_kde_occupancy_dict(
     return kde_occupancy_dict
 
 
+def get_occupancy_ks_test_df(
+    distance_measures: list[str],
+    packing_modes: list[str],
+    combined_occupancy_dict: dict[str, dict[str, dict[str, dict[str, np.ndarray]]]],
+    baseline_mode: str = "SLC25A17",
+    significance_level: float = 0.05,
+    save_dir: Path | None = None,
+    recalculate: bool = True,
+) -> pd.DataFrame:
+    """
+    Perform KS test between distance distributions of different packing modes and combine results.
+
+    Parameters
+    ----------
+    distance_measures
+        List of distance measures to compare
+    packing_modes
+        List of packing modes to compare
+    combined_occupancy_dict
+        Dictionary containing occupancy distributions for each packing mode and distance measure
+    baseline_mode
+        The packing mode to use as the baseline for comparison
+    significance_level
+        Significance level for the KS test
+    save_dir
+        Directory to save the results
+    recalculate
+        Whether to recalculate even if results exist
+
+    Returns
+    -------
+    :
+        DataFrame containing the KS observed results, with columns for cell_id, distance_measure,
+        packing_mode, and ks_observed
+    """
+    file_name = "occupancy_ks_observed_combined_df.parquet"
+    if not recalculate and save_dir is not None:
+        file_path = save_dir / file_name
+        if file_path.exists():
+            logger.info(f"Loading saved KS DataFrame from {file_path.relative_to(PROJECT_ROOT)}")
+            return pd.read_parquet(file_path)
+    record_list = []
+    for distance_measure in distance_measures:
+        occupancy_dict = combined_occupancy_dict[distance_measure]
+        logger.info(f"Calculating KS observed for distance measure: {distance_measure}")
+
+        # Collect all (mode, cell_id) combinations
+        all_pairs = []
+        for mode in packing_modes:
+            if mode == baseline_mode:
+                continue
+            for cell_id in occupancy_dict[mode]["individual"].keys():
+                all_pairs.append((mode, cell_id))
+
+        for mode, cell_id in tqdm(all_pairs, desc=f"KS tests for {distance_measure}"):
+            if (
+                cell_id not in occupancy_dict[baseline_mode]["individual"]
+                or cell_id not in occupancy_dict[mode]["individual"]
+            ):
+                logger.warning(f"Cell ID {cell_id} does not match in both modes, skipping KS test")
+                continue
+            occupancy_1 = occupancy_dict[baseline_mode]["individual"][cell_id]["occupancy"]
+            occupancy_2 = occupancy_dict[mode]["individual"][cell_id]["occupancy"]
+            ks_result = ks_2samp(occupancy_1, occupancy_2)
+            ks_stat, p_value = ks_result.statistic, ks_result.pvalue  # type:ignore
+            record_list.append(
+                {
+                    "distance_measure": distance_measure,
+                    "packing_mode": mode,
+                    "cell_id": cell_id,
+                    "ks_stat": ks_stat,
+                    "p_value": p_value,
+                    "different": p_value < significance_level,
+                    "similar": p_value >= significance_level,
+                }
+            )
+    ks_test_df = pd.DataFrame.from_records(record_list)
+    if save_dir is not None:
+        file_path = save_dir / file_name
+        ks_test_df.to_parquet(file_path, index=False)
+        logger.info(f"Saved KS observed DataFrame to {file_path.relative_to(PROJECT_ROOT)}")
+
+    return ks_test_df
+
+
+def get_occupancy_emd_df(
+    combined_occupancy_dict: dict[str, dict[str, dict[str, dict[str, np.ndarray]]]],
+    packing_modes: list[str],
+    distance_measures: list[str],
+    results_dir: Path | None = None,
+    recalculate: bool = False,
+    suffix: str = "",
+) -> pd.DataFrame:
+    """
+    Calculate pairwise EMD between packing mode occupancy for each distance measure.
+
+    Parameters
+    ----------
+    occupancy_dict
+        Dictionary containing occupancy measures for each packing mode
+    packing_modes
+        List of packing modes to calculate pairwise EMD for
+    distance_measures
+        List of distance measures to calculate pairwise EMD for
+    results_dir
+        Directory to save the EMD results
+    recalculate
+        Whether to recalculate the EMD even if results already exist
+    suffix
+        Suffix to add to the saved EMD file name
+
+    Returns
+    -------
+    :
+        DataFrame containing occupancy EMD for each distance measure
+    """
+    file_name = f"occupancy_emd{suffix}.parquet"
+    if not recalculate and results_dir is not None:
+        file_path = results_dir / file_name
+        if file_path.exists():
+            logger.info(f"Loading occupancy EMD from {file_path.relative_to(PROJECT_ROOT)}")
+            return pd.read_parquet(file_path)
+
+    record_list = []
+    for distance_measure in distance_measures:
+        occupancy_dict = combined_occupancy_dict[distance_measure]
+        logger.info("Calculating EMD for %s", distance_measure)
+        # Collect all (mode, cell_id) combinations
+        all_pairs = []
+        for mode in packing_modes:
+            for cell_id in occupancy_dict[mode]["individual"].keys():
+                all_pairs.append((mode, cell_id))
+
+        for i in tqdm(range(len(all_pairs)), desc=f"EMD calculations for {distance_measure}"):
+            mode_1, cell_id_1 = all_pairs[i]
+            occupancy_1 = occupancy_dict[mode_1]["individual"][cell_id_1]["occupancy"]
+            for j in range(i + 1, len(all_pairs)):
+                mode_2, cell_id_2 = all_pairs[j]
+                occupancy_2 = occupancy_dict[mode_2]["individual"][cell_id_2]["occupancy"]
+                emd = wasserstein_distance(occupancy_1, occupancy_2)
+                record_list.append(
+                    {
+                        "distance_measure": distance_measure,
+                        "packing_mode_1": mode_1,
+                        "packing_mode_2": mode_2,
+                        "cell_id_1": cell_id_1,
+                        "cell_id_2": cell_id_2,
+                        "emd": emd,
+                    }
+                )
+    df_emd = pd.DataFrame.from_records(record_list)
+    if results_dir is not None:
+        file_path = results_dir / file_name
+        df_emd.to_parquet(file_path, index=False)
+        logger.info(f"Saved pairwise EMD to {file_path.relative_to(PROJECT_ROOT)}")
+
+    return df_emd
+
+
 def get_occupancy_emd(
     distance_dict: dict[str, dict[str, np.ndarray]],
     kde_dict: dict[str, dict[str, dict[str, Any]]],
@@ -401,7 +562,9 @@ def interpolate_occupancy_dict(
             )
 
     # Get all packing modes (excluding baseline) from first distance measure
-    packing_modes = [mode for mode in channel_map.keys() if mode != baseline_mode]
+    packing_modes = [
+        mode for mode in channel_map.keys() if mode not in [baseline_mode, "interpolated"]
+    ]
 
     # Initialize result dictionary
     interp_dict = {

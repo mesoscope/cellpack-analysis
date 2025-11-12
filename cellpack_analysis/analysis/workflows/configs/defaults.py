@@ -52,6 +52,8 @@ RECALCULATE = {
     "run_emd_analysis": False,
     "run_ks_analysis": False,
     "run_occupancy_analysis": False,
+    "run_occupancy_emd_analysis": False,
+    "run_occupancy_interpolation_analysis": False,
 }
 """Default recalculation flags for analysis workflow."""
 

@@ -1,17 +1,16 @@
 {
     "name": "norm_weights_mixed_rule",
     "structure_id": "SLC25A17",
-    "packing_id": "golgi_peroxisome",
+    "packing_id": "peroxisome",
     "structure_name": "peroxisome",
     "packing_output_folder": "packing_outputs/8d_sphere_data/norm_weights/",
     "channel_map": {
         "SLC25A17": "SLC25A17",
-        "random": "ST6GAL1",
-        "nucleus_gradient": "ST6GAL1",
-        "membrane_gradient": "ST6GAL1",
-        "apical_gradient": "ST6GAL1",
-        "struct_gradient_weak": "ST6GAL1",
-        "interpolated": "ST6GAL1"
+        "random": "SLC25A17",
+        "nucleus_gradient": "SLC25A17",
+        "membrane_gradient": "SLC25A17",
+        "apical_gradient": "SLC25A17",
+        "interpolated": "SLC25A17"
     },
     "distance_measures": [
         "nucleus",
@@ -22,16 +21,16 @@
         "plot_individual": false,
         "nucleus": {
             "xlim": 6,
-            "ylim": 2.5,
+            "ylim": 3,
             "bandwidth": 0.2
         },
         "z": {
             "xlim": 8,
-            "ylim": 1.5,
+            "ylim": 2,
             "bandwidth": 0.2
         }
     },
     "analysis_steps": [
-        "run_occupancy_interpolation_analysis"
+        "run_occupancy_analysis"
     ]
 }

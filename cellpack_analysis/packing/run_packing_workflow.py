@@ -2,6 +2,7 @@
 
 import argparse
 import logging
+import sys
 import time
 from pathlib import Path
 
@@ -51,7 +52,7 @@ def _run_packing_workflow(workflow_config_path: Path):
         logger.info("Dry run. Skipping packing.")
         return
     logger.info("Packing recipes")
-    pack_recipes(workflow_config=workflow_config)
+    return pack_recipes(workflow_config=workflow_config)
 
 
 if __name__ == "__main__":
@@ -68,6 +69,10 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    _run_packing_workflow(workflow_config_path=Path(args.workflow_config_path))
+    total_failed = _run_packing_workflow(workflow_config_path=Path(args.workflow_config_path))
 
     logger.info(f"Total time: {format_time(time.time() - start)}")
+    if total_failed:
+        logger.info(f"Total failed packings: {total_failed}")
+        sys.exit(1)
+    sys.exit(0)

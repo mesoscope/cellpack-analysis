@@ -99,12 +99,16 @@ class AnalysisConfig:
         )
         self.baseline_mode = self.config.get("baseline_mode", self.structure_id)
 
+        # Naming
+        self.suffix = self.config.get("suffix", "")
+
         # Distance measures
         self.distance_measures = self.config.get("distance_measures", defaults.DISTANCE_MEASURES)
 
         # Normalization
         self.normalization = self.config.get("normalization")
-        self.suffix = f"_normalized_{self.normalization}" if self.normalization else ""
+        if self.normalization:
+            self.suffix += f"_norm_{self.normalization}"
 
         # Visualization
         self.save_format = self.config.get("save_format", defaults.SAVE_FORMAT)
@@ -179,6 +183,8 @@ class AnalysisRunner:
             "run_emd_analysis": self._run_emd_analysis,
             "run_ks_analysis": self._run_ks_analysis,
             "run_occupancy_analysis": self._run_occupancy_analysis,
+            "run_occupancy_emd_analysis": self._run_occupancy_emd_analysis,
+            "run_occupancy_interpolation_analysis": self._run_occupancy_interpolation_analysis,
         }
 
         if step in step_method_map:
@@ -417,9 +423,6 @@ class AnalysisRunner:
                 occupancy_distance_measure,
             )
 
-        # Run interpolation analysis for occupancy data
-        self._run_occupancy_interpolation_analysis(config)
-
     def _run_single_occupancy_analysis(
         self,
         config: AnalysisConfig,
@@ -494,6 +497,51 @@ class AnalysisRunner:
             show_legend=config.occupancy_params.get("show_legend", True),
         )
 
+    def _run_occupancy_emd_analysis(self, config: AnalysisConfig):
+        """Run occupancy EMD analysis."""
+        if "occupancy_dict" not in self.shared_data:
+            logger.warning("Occupancy data not available. Running occupancy analysis first.")
+            self._run_occupancy_analysis(config)
+
+        occupancy_emd_figures_dir = config.figures_dir / "occupancy_emd"
+        occupancy_emd_figures_dir.mkdir(exist_ok=True, parents=True)
+
+        logger.info("Running occupancy EMD analysis")
+
+        # Compute occupancy EMD
+        self.shared_data["occupancy_emd_df"] = occupancy.get_occupancy_emd_df(
+            combined_occupancy_dict=self.shared_data["occupancy_dict"],
+            packing_modes=config.packing_modes,
+            distance_measures=config.occupancy_distance_measures,
+            results_dir=config.results_dir,
+            recalculate=config.recalculate["run_occupancy_emd_analysis"],
+            suffix=config.suffix,
+        )
+
+        # Plot occupancy EMD comparisons
+        _ = visualization.plot_emd_comparisons(
+            df_emd=self.shared_data["occupancy_emd_df"],
+            distance_measures=config.occupancy_distance_measures,
+            comparison_type="baseline",
+            baseline_mode=config.baseline_mode,
+            figures_dir=occupancy_emd_figures_dir,
+            suffix=config.suffix,
+            save_format=config.save_format,
+        )
+
+        occupancy_emd_log_file_path = (
+            config.results_dir
+            / f"{config.packing_id}_occupancy_emd_central_tendencies{config.suffix}.log"
+        )
+        distance.log_central_tendencies_for_emd(
+            df_emd=self.shared_data["occupancy_emd_df"],
+            distance_measures=config.occupancy_distance_measures,
+            packing_modes=config.packing_modes,
+            baseline_mode=config.baseline_mode,
+            log_file_path=occupancy_emd_log_file_path,
+            comparison_type="baseline",
+        )
+
     def _run_occupancy_interpolation_analysis(self, config: AnalysisConfig):
         """Run interpolation analysis for occupancy data."""
         if "occupancy_dict" not in self.shared_data:
@@ -526,7 +574,7 @@ class AnalysisRunner:
                     xlim=config.occupancy_params[occupancy_distance_measure]["xlim"],
                     ylim=config.occupancy_params[occupancy_distance_measure]["ylim"],
                     fig_params={"dpi": 300, "figsize": (3.5, 2.5)},
-                    plot_individual=config.occupancy_params.get("plot_individual", True),
+                    plot_individual=False,
                     show_legend=config.occupancy_params.get("show_legend", True),
                 )
                 _ = visualization.add_baseline_occupancy_interpolation_to_plot(

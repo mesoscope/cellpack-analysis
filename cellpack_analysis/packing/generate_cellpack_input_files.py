@@ -402,6 +402,7 @@ def generate_configs(workflow_config: Any) -> None:
 
     packing_info = workflow_config.data.get("packings_to_run", {})
     rule_list = packing_info.get("rules", [])
+    config_template["name"] = workflow_config.condition
 
     for rule in rule_list:
         rule_config_path = (

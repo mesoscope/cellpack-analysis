@@ -34,22 +34,19 @@
                 "uniform",
                 "nucleus_gradient",
                 "membrane_gradient",
-                "apical_gradient_weak"
+                "apical_gradient"
             ],
             "gradient_weights": {
-                "uniform": 0.62,
-                "nucleus_gradient": 0.24,
-                "membrane_gradient": 0.5,
-                "apical_gradient_weak": 0.10
+                "uniform": 0.5583,
+                "nucleus_gradient": 0.2388,
+                "membrane_gradient": 0.1088,
+                "apical_gradient": 0.0950
             }
         }
     },
     "packings_to_run": {
         "rules": [
-            "random",
-            "nucleus_gradient",
-            "membrane_gradient",
-            "apical_gradient"
+            "interpolated"
         ]
     }
 }
