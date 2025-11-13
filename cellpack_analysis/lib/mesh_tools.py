@@ -999,7 +999,9 @@ def get_distances_from_mesh(
     return distances_um
 
 
-def get_weights_from_distances(distances_um: np.ndarray, decay_length: float) -> np.ndarray:
+def get_weights_from_distances(
+    distances_um: np.ndarray, decay_length: float | None = None
+) -> np.ndarray:
     """
     Calculate weights based on distances using an exponential decay.
 
@@ -1016,6 +1018,9 @@ def get_weights_from_distances(distances_um: np.ndarray, decay_length: float) ->
         Weights based on exponential decay
     """
     scaled_distances = distances_um / np.max(distances_um)
-    weights = np.exp(-scaled_distances / decay_length)
-    weights /= np.max(weights)
+    if decay_length is not None:
+        weights = np.exp(-scaled_distances / decay_length)
+        weights /= np.max(weights)
+    else:
+        weights = 1 - scaled_distances
     return weights

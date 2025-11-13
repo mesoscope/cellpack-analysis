@@ -125,10 +125,10 @@ bounds = mem_mesh.bounds
 bounding_box = round_away_from_zero(bounds)
 all_grid_points = get_list_of_grid_points(bounding_box, SPACING)
 logger.info(f"Total grid points to check: {all_grid_points.shape[0]}")
-recalculate = True
+recalculate = False
 # %% [markdown]
 # ## Set up distance calculation configurations
-decay_length = 0.2
+decay_length = 0.1
 
 # Define distance calculation configurations
 distance_configs = {
@@ -207,7 +207,7 @@ for projection_axis in ["x", "y", "z"]:
 
 # %% [markdown]
 # ## Set dot size for plotting
-dot_size = 3
+dot_size = 6
 
 # %% [markdown]
 # ## Plot distance and weight maps for all combinations (including mixed weights)

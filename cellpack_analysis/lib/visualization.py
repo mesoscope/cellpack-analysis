@@ -1526,7 +1526,7 @@ def plot_grid_points_slice(
     centroid = np.mean(grid_points_um, axis=0)
     # custom_cmap = LinearSegmentedColormap.from_list("cyan_to_magenta", ["cyan", "magenta"])
     custom_cmap = LinearSegmentedColormap.from_list(
-        "gray_cutoff", plt.cm.get_cmap("gray")(np.linspace(0, 0.9, 32))
+        "gray_cutoff", plt.cm.get_cmap("gray")(np.linspace(0, 0.9, 256))
     )
     if cmap is not None:
         if isinstance(cmap, Colormap):
@@ -1557,11 +1557,11 @@ def plot_grid_points_slice(
         edgecolor="none",
     )
 
-    # Plot nucleus points in gray
+    # Plot nucleus points
     ax.scatter(
         x=grid_points_um[inside_nuc, x_index] - centroid[x_index],
         y=grid_points_um[inside_nuc, y_index] - centroid[y_index],
-        c="gray",
+        c="green",
         s=dot_size,
         marker=".",
         edgecolor="none",
