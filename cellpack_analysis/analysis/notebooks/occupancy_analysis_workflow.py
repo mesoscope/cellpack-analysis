@@ -5,6 +5,7 @@
 import logging
 import time
 
+import numpy as np
 from IPython.display import display
 
 from cellpack_analysis.lib import distance, occupancy, visualization
@@ -218,7 +219,7 @@ occupancy_emd_df = occupancy.get_occupancy_emd_df(
     packing_modes=packing_modes,
     distance_measures=occupancy_distance_measures,
     results_dir=results_dir,
-    recalculate=True,
+    recalculate=False,
     suffix=suffix,
 )
 # %% [markdown]
@@ -240,7 +241,7 @@ occupancy_ks_observed_df = occupancy.get_occupancy_ks_test_df(
     combined_occupancy_dict=combined_occupancy_dict,
     baseline_mode=baseline_mode,
     save_dir=results_dir,
-    recalculate=True,
+    recalculate=False,
 )
 # %% [markdown]
 # ## Bootstrap KS test
@@ -261,20 +262,23 @@ visualization.plot_ks_test_results(
     save_format=save_format,
 )
 # %% [markdown]
-# ### Interpolate occupancy ratio
+# ### Interpolate occupancy ratio and explore solution space
 interp_occupancy_dict = occupancy.interpolate_occupancy_dict(
     occupancy_dict=combined_occupancy_dict,
     channel_map=channel_map,
     baseline_mode=baseline_mode,
     results_dir=results_dir,
     suffix=suffix,
+    explore_alternatives=True,  # Enable solution space exploration
+    n_bootstrap=100,  # Number of bootstrap samples
+    alpha_range=np.logspace(-4, 2, 15),  # Range for regularization
 )
 # %% [markdown]
 # ### Plot interpolated occupancy ratio
 interp_figures_dir = figures_dir / "interpolation"
 interp_figures_dir.mkdir(exist_ok=True, parents=True)
 for occupancy_distance_measure in occupancy_distance_measures:
-    for plot_type in ["individual", "joint"]:
+    for plot_type in ["joint"]:
         fig, ax = visualization.plot_occupancy_ratio(
             occupancy_dict=combined_occupancy_dict[occupancy_distance_measure],
             channel_map=channel_map,
