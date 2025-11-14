@@ -171,6 +171,8 @@ def process_rule_dict(
             updated_recipe = process_gradient_data(
                 recipe_entry, updated_recipe, gradient_structure_name
             )
+        if recipe_key == "gradient_weights":
+            updated_recipe["objects"][gradient_structure_name]["gradient_weights"] = recipe_entry
 
     return updated_recipe
 
@@ -347,6 +349,8 @@ def generate_recipes(workflow_config: Any) -> None:
     stats_df = get_structure_stats_dataframe().set_index("CellId")
 
     for rule_name, rule_dict in recipe_data.items():
+        if rule_name not in workflow_config.data.get("packings_to_run", {}).get("rules", []):
+            continue
         logger.info(f"Generating recipes for rule: {rule_name}")
         with tqdm(total=len(cell_id_list)) as pbar:
             with concurrent.futures.ProcessPoolExecutor(max_workers=num_processes) as executor:
@@ -398,6 +402,7 @@ def generate_configs(workflow_config: Any) -> None:
 
     packing_info = workflow_config.data.get("packings_to_run", {})
     rule_list = packing_info.get("rules", [])
+    config_template["name"] = workflow_config.condition
 
     for rule in rule_list:
         rule_config_path = (

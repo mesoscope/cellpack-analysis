@@ -10,7 +10,7 @@ Example:
 
 Available structures:
     - SLC25A17 (peroxisomes)
-    - RAB5A (early endosomes)  
+    - RAB5A (early endosomes)
 """
 
 import argparse
@@ -28,6 +28,7 @@ from cellpack_analysis.lib.file_io import get_datadir_path
 from cellpack_analysis.lib.label_tables import STRUCTURE_NAME_DICT
 
 logger = logging.getLogger(__name__)
+
 
 def get_positions_from_single_image(
     file_path: Path,
@@ -138,6 +139,7 @@ def get_positions_from_single_image(
         struct_mem_distances,
     )
 
+
 def extract_structure_coordinates(
     file_path_list: list[Path],
     structure_id: str,
@@ -166,7 +168,14 @@ def extract_structure_coordinates(
     distances_dict = {}
 
     with ProcessPoolExecutor(max_workers=num_processes) as executor:
-        for _, (cell_id, positions, nuc_centroid, mem_centroid, nuc_distances, mem_distances) in tqdm(
+        for _, (
+            cell_id,
+            positions,
+            nuc_centroid,
+            mem_centroid,
+            nuc_distances,
+            mem_distances,
+        ) in tqdm(
             zip(
                 file_path_list,
                 executor.map(get_positions_from_single_image, file_path_list),
@@ -200,6 +209,7 @@ def extract_structure_coordinates(
     with open(save_path, "w") as f:
         json.dump(distances_dict, f, indent=4, sort_keys=True)
     logger.info(f"Saved distances to {save_path}")
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(
@@ -250,7 +260,7 @@ def main() -> int:
     logger.info(f"Results will be saved to {structure_data_dir}")
 
     img_path = structure_data_dir / "segmented"
-    if not img_path.exists(): 
+    if not img_path.exists():
         logger.error(f"Segmented image directory {img_path} does not exist.")
         logger.error("Please run get_structure_images.py first to download images.")
         return 1
@@ -270,6 +280,7 @@ def main() -> int:
     )
 
     return 0
+
 
 if __name__ == "__main__":
     exit(main())

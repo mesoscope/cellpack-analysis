@@ -1,7 +1,7 @@
 {
     "structure_name": "golgi_endosome",
     "structure_id": "ST6GAL1",
-    "condition": "rules_shape",
+    "condition": "norm_weights",
     "generate_recipes": true,
     "generate_configs": true,
     "use_additional_struct": true,
@@ -12,16 +12,16 @@
     "get_size_from_data": false,
     "get_bounding_box_from_mesh": true,
     "num_processes": 32,
-    "skip_completed": true,
+    "skip_completed": false,
     "dry_run": false,
     "recipe_data": {
         "random": {},
-        "nucleus_gradient_strong": {
+        "nucleus_gradient": {
             "gradients": [
                 "nucleus_gradient"
             ]
         },
-        "membrane_gradient_strong": {
+        "membrane_gradient": {
             "gradients": [
                 "membrane_gradient"
             ]
@@ -31,31 +31,29 @@
                 "apical_gradient"
             ]
         },
-        "struct_gradient": {
-            "gradients": [
-                "struct_gradient"
-            ]
-        },
-        "nuc_apical_gradient": {
-            "gradients": [
-                "nucleus_gradient",
-                "apical_gradient"
-            ]
-        },
         "struct_gradient_weak": {
             "gradients": [
                 "struct_gradient_weak"
             ]
         },
-        "apical_gradient_weak": {
+        "interpolated": {
             "gradients": [
-                "apical_gradient_weak"
-            ]
+                "uniform",
+                "nucleus_gradient",
+                "membrane_gradient",
+                "struct_gradient_weak"
+            ],
+            "gradient_weights": {
+                "uniform": 0.7659,
+                "nucleus_gradient": 0.2027,
+                "membrane_gradient": 0.079,
+                "struct_gradient_weak": 0.0235
+            }
         }
     },
     "packings_to_run": {
         "rules": [
-            "apical_gradient_weak"
+            "interpolated"
         ]
     }
 }

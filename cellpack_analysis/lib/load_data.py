@@ -101,7 +101,7 @@ def get_positions_dictionary_from_file(
 def _get_mode_file_path(
     mode: str,
     structure_id: str,
-    structure_name: str,
+    packing_id: str,
     base_datadir: Path,
     packing_output_folder: str,
 ) -> Path:
@@ -111,9 +111,9 @@ def _get_mode_file_path(
             base_datadir / f"structure_data/{structure_id}/sample_8d/positions_{structure_id}.json"
         )
     else:  # cellPACK outputs
-        subfolder = f"{mode}/{structure_name}/spheresSST/"
+        subfolder = f"{mode}/{packing_id}/spheresSST/"
         data_folder = base_datadir / f"{packing_output_folder}/{subfolder}"
-        mode_position_filename = f"all_positions_{structure_name}_analyze_{mode}.json"
+        mode_position_filename = f"all_positions_{packing_id}_analyze_{mode}.json"
         return data_folder / mode_position_filename
 
 
@@ -142,7 +142,7 @@ def _ensure_positions_file_exists(
 def _load_positions_for_mode(
     mode: str,
     structure_id: str,
-    structure_name: str,
+    packing_id: str,
     base_datadir: Path,
     packing_output_folder: str,
     ingredient_key: str,
@@ -150,7 +150,7 @@ def _load_positions_for_mode(
 ) -> dict[str, np.ndarray]:
     """Load positions for a single packing mode."""
     mode_file_path = _get_mode_file_path(
-        mode, structure_id, structure_name, base_datadir, packing_output_folder
+        mode, structure_id, packing_id, base_datadir, packing_output_folder
     )
 
     _ensure_positions_file_exists(mode_file_path, mode, ingredient_key, recalculate)
@@ -168,7 +168,7 @@ def _load_positions_for_mode(
 
 def get_position_data_from_outputs(
     structure_id: str,
-    structure_name: str,
+    packing_id: str,
     packing_modes: list[str],
     base_datadir: Path,
     results_dir: Path,
@@ -183,8 +183,8 @@ def get_position_data_from_outputs(
     ----------
     structure_id
         ID of the structure
-    structure_name
-        Name of the structure
+    packing_id
+        ID of the packing
     packing_modes
         List of packing modes to retrieve data for
     base_datadir
@@ -196,7 +196,7 @@ def get_position_data_from_outputs(
     recalculate
         Whether to recalculate the position data
     ingredient_key
-        Key for the ingredient in the raw data, defaults to membrane_interior_{structure_name}
+        Key for the ingredient in the raw data, defaults to membrane_interior_{packing_id}
 
     Returns
     -------
@@ -204,15 +204,22 @@ def get_position_data_from_outputs(
         Dictionary containing position data for each packing mode with structure
         {mode: {cell_id: positions_array}}
     """
-    save_file_path = results_dir / f"{structure_name}_positions.dat"
+    save_file_path = results_dir / f"{packing_id}_positions.dat"
 
     # Load cached results if available
     if not recalculate and save_file_path.exists():
         logger.info(f"Loading positions from {save_file_path.relative_to(PROJECT_ROOT)}")
         with open(save_file_path, "rb") as f:
-            return pickle.load(f)
+            all_positions = pickle.load(f)
+            if set(all_positions.keys()) == set(packing_modes):
+                return all_positions
+            else:
+                logger.warning(
+                    f"Cached data in {save_file_path} does not match requested packing modes.\n"
+                    f"Recalculating positions."
+                )
 
-    ingredient_key = ingredient_key or f"membrane_interior_{structure_name}"
+    ingredient_key = ingredient_key or f"membrane_interior_{packing_id}"
     logger.info("Reading position data from outputs")
 
     all_positions = {}
@@ -220,7 +227,7 @@ def get_position_data_from_outputs(
         all_positions[mode] = _load_positions_for_mode(
             mode,
             structure_id,
-            structure_name,
+            packing_id,
             base_datadir,
             packing_output_folder,
             ingredient_key,

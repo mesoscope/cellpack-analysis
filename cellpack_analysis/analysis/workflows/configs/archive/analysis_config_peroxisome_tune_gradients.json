@@ -1,0 +1,27 @@
+{
+    "name": "tune_gradients",
+    "structure_id": "SLC25A17",
+    "packing_id": "peroxisome",
+    "structure_name": "peroxisome",
+    "packing_output_folder": "packing_outputs/8d_sphere_data/tune_gradients/",
+    "occupancy_params": {
+        "plot_individual": false
+    },
+    "channel_map": {
+        "SLC25A17": "SLC25A17",
+        "random": "SLC25A17",
+        "membrane_gradient": "SLC25A17",
+        "nucleus_gradient_0pt03": "SLC25A17",
+        "nucleus_gradient_0pt05": "SLC25A17",
+        "nucleus_gradient_0pt07": "SLC25A17",
+        "nucleus_gradient_0pt1": "SLC25A17",
+        "apical_gradient_0pt3": "SLC25A17",
+        "apical_gradient_0pt5": "SLC25A17",
+        "apical_gradient_0pt7": "SLC25A17",
+        "apical_gradient_1": "SLC25A17"
+    },
+    "recalculate": false,
+    "analysis_steps": [
+        "run_occupancy_analysis"
+    ]
+}

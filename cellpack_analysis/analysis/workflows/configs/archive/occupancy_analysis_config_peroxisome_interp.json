@@ -1,0 +1,18 @@
+{
+    "name": "occupancy_interpolation",
+    "structure_id": "SLC25A17",
+    "packing_id": "peroxisome",
+    "structure_name": "peroxisome",
+    "channel_map": {
+        "SLC25A17": "SLC25A17",
+        "random": "SLC25A17",
+        "nucleus_gradient_strong": "SLC25A17",
+        "membrane_gradient_strong": "SLC25A17",
+        "apical_gradient_weak": "SLC25A17",
+        "interpolated": "SLC25A17"
+    },
+    "recalculate": false,
+    "analysis_steps": [
+        "run_occupancy_analysis"
+    ]
+}

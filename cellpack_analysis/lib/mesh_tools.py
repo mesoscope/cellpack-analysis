@@ -16,7 +16,9 @@ from tqdm import tqdm
 from trimesh import proximity
 from vtkmodules.util import numpy_support as vtknp
 
+from cellpack_analysis.lib.default_values import PIXEL_SIZE_IN_UM
 from cellpack_analysis.lib.get_cell_id_list import get_cell_id_list_for_structure
+from cellpack_analysis.lib.label_tables import AXIS_TO_INDEX_MAP
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +41,48 @@ def round_away_from_zero(array: np.ndarray) -> np.ndarray:
 
 
 def get_list_of_grid_points(bounding_box: np.ndarray, spacing: float) -> np.ndarray:
+    """
+    Generate uniform grid points within a bounding box with specified spacing.
+
+    Parameters
+    ----------
+    bounding_box
+        Array defining the region of interest bounds with shape (2, 3)
+        where bounding_box[0] is min coordinates and bounding_box[1] is max coordinates
+    spacing
+        Distance between adjacent grid points
+
+    Returns
+    -------
+    :
+        2D array of grid point coordinates with shape (N, 3)
+    """
+    if bounding_box.shape != (2, 3):
+        raise ValueError(f"Expected bounding_box shape (2, 3), got {bounding_box.shape}")
+
+    if spacing <= 0:
+        raise ValueError(f"Spacing must be positive, got {spacing}")
+
+    # Calculate number of points in each dimension more accurately
+    # Use np.arange instead of mgrid slice notation for better control
+    min_coords = bounding_box[0]
+    max_coords = bounding_box[1]
+
+    # Generate coordinate arrays for each dimension
+    x_coords = np.arange(min_coords[0], max_coords[0] + spacing / 2, spacing)
+    y_coords = np.arange(min_coords[1], max_coords[1] + spacing / 2, spacing)
+    z_coords = np.arange(min_coords[2], max_coords[2] + spacing / 2, spacing)
+
+    # Create meshgrid and reshape more efficiently
+    xx, yy, zz = np.meshgrid(x_coords, y_coords, z_coords, indexing="ij")
+
+    # Stack and reshape in one operation
+    all_points = np.stack([xx.ravel(), yy.ravel(), zz.ravel()], axis=1)
+
+    return all_points
+
+
+def get_list_of_grid_points_mgrid(bounding_box: np.ndarray, spacing: float) -> np.ndarray:
     """
     Generate uniform grid points within a bounding box with specified spacing.
 
@@ -275,10 +319,7 @@ def get_mesh_information_for_shape(
         )
 
     cytoplasm_point_inds = np.where(nuc_grid_distances > 0)[0]
-    mem_grid_distances = mem_grid_distances[cytoplasm_point_inds]
-    nuc_grid_distances = nuc_grid_distances[cytoplasm_point_inds]
     z_grid_distances = z_grid_distances[cytoplasm_point_inds]
-    scaled_nuc_grid_distances = scaled_nuc_grid_distances[cytoplasm_point_inds]
 
     nuc_mesh = trimesh.load_mesh(str(nuc_mesh_path))
     mem_mesh = trimesh.load_mesh(str(mem_mesh_path))
@@ -298,6 +339,8 @@ def get_mesh_information_for_shape(
         "cell_diameter": cell_diameter,
         "nuc_bounds": nuc_bounds,
         "cell_bounds": cell_bounds,
+        "nuc_volume": nuc_mesh.volume,
+        "cell_volume": mem_mesh.volume,
         "intracellular_radius": intracellular_radius,
         "nuc_grid_distances": nuc_grid_distances,
         "mem_grid_distances": mem_grid_distances,
@@ -860,3 +903,124 @@ def calculate_grid_distances(
     gc.collect()
 
     return nuc_distances, mem_distances, z_distances, scaled_nuc_distances
+
+
+def get_grid_points_slice(
+    all_grid_points: np.ndarray,
+    projection_axis: str,
+    spacing: float,
+) -> np.ndarray:
+    """
+    Select a slice of grid points at the median coordinate along the projection axis.
+
+    Parameters:
+    -----------
+    all_grid_points : np.ndarray
+        All grid points in pixels
+    projection_axis : str
+        Axis to project along ('x', 'y', or 'z')
+    spacing : float
+        Spacing between grid points in pixels
+
+    Returns:
+    --------
+    grid_points_slice : np.ndarray
+        Grid points for the selected slice in pixels
+    """
+    coord_values = all_grid_points[:, AXIS_TO_INDEX_MAP[projection_axis]]
+    median_coord = np.median(coord_values)
+    point_indexes = np.isclose(coord_values, median_coord, atol=spacing / 2)
+    logger.info(
+        f"Selected {projection_axis} slice at "
+        f"{projection_axis}={median_coord * PIXEL_SIZE_IN_UM:.2f} (\u03bcm) "
+        f"with {np.sum(point_indexes)} points"
+    )
+    grid_points_slice = all_grid_points[point_indexes]
+    return grid_points_slice
+
+
+def get_inside_outside_check(
+    nuc_mesh: trimesh.Trimesh,
+    mem_mesh: trimesh.Trimesh,
+    grid_points_slice: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Get inside-outside check for grid points with respect to a mesh.
+
+    Parameters
+    ----------
+    nuc_mesh
+        Nucleus mesh
+    mem_mesh
+        Membrane mesh
+    grid_points_slice : np.ndarray
+        Grid points to check in voxels
+
+    Returns
+    -------
+    :
+        Tuple of boolean arrays indicating points inside nucleus, inside membrane,
+        and inside membrane but outside nucleus
+    """
+
+    logger.info("Calculating nuc inside check")
+    inside_nuc = nuc_mesh.contains(grid_points_slice)
+    logger.info("Calculating mem inside check")
+    inside_mem = mem_mesh.contains(grid_points_slice)
+
+    inside_mem_outside_nuc = inside_mem & ~inside_nuc
+
+    return inside_nuc, inside_mem, inside_mem_outside_nuc
+
+
+def get_distances_from_mesh(
+    points: np.ndarray, mesh: trimesh.Trimesh, invert: bool = False
+) -> np.ndarray:
+    """
+    Calculate distances from points to a mesh and compute weights based on an exponential decay.
+
+    Parameters
+    ----------
+    points
+        Points to calculate distances for
+    mesh
+        Mesh to calculate distances to
+
+    Returns
+    -------
+    :
+        Distances in micrometers
+
+    """
+    distances = mesh.nearest.signed_distance(points)
+    if invert:
+        distances = -distances
+    distances_um = distances * PIXEL_SIZE_IN_UM
+    return distances_um
+
+
+def get_weights_from_distances(
+    distances_um: np.ndarray, decay_length: float | None = None
+) -> np.ndarray:
+    """
+    Calculate weights based on distances using an exponential decay.
+
+    Parameters
+    ----------
+    distances_um
+        Distances in micrometers
+    decay_length
+        Decay length for the exponential weight calculation
+
+    Returns
+    -------
+    :
+        Weights based on exponential decay
+    """
+    scaled_distances = distances_um / np.max(distances_um)
+    if decay_length is not None:
+        weights = np.exp(-scaled_distances / decay_length)
+        weights /= np.max(weights)
+    else:
+        weights = 1 - scaled_distances
+    return weights

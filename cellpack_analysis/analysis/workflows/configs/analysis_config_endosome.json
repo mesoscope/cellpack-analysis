@@ -1,0 +1,26 @@
+{
+    "name": "norm_weights_mixed_rule",
+    "structure_id": "RAB5A",
+    "packing_id": "endosome",
+    "structure_name": "endosome",
+    "packing_output_folder": "packing_outputs/8d_sphere_data/norm_weights/",
+    "channel_map": {
+        "RAB5A": "RAB5A",
+        "random": "RAB5A",
+        "nucleus_gradient": "RAB5A",
+        "membrane_gradient": "RAB5A",
+        "apical_gradient": "RAB5A",
+        "interpolated": "RAB5A"
+    },
+    "distance_measures": [
+        "nucleus",
+        "z"
+    ],
+    "recalculate": false,
+    "occupancy_params": {
+        "plot_individual": false
+    },
+    "analysis_steps": [
+        "run_occupancy_emd_analysis"
+    ]
+}

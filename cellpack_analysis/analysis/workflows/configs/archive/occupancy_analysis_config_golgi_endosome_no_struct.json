@@ -1,0 +1,17 @@
+{
+    "name": "occupancy_analysis",
+    "structure_id": "RAB5A",
+    "packing_id": "golgi_endosome_no_struct",
+    "structure_name": "endosome",
+    "channel_map": {
+        "RAB5A": "RAB5A",
+        "random": "ST6GAL1",
+        "nucleus_gradient_strong": "ST6GAL1",
+        "membrane_gradient_strong": "ST6GAL1",
+        "apical_gradient_weak": "ST6GAL1"
+    },
+    "recalculate": true,
+    "analysis_steps": [
+        "run_occupancy_analysis"
+    ]
+}

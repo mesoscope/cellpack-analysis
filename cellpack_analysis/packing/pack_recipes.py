@@ -258,7 +258,7 @@ def run_single_packing(recipe_path: str | Path, config_path: str | Path) -> bool
         return False
 
 
-def pack_recipes(workflow_config: Any) -> None:
+def pack_recipes(workflow_config: Any) -> int:
     """
     Pack recipes using cellPACK.
 
@@ -329,3 +329,5 @@ def pack_recipes(workflow_config: Any) -> None:
         total_failed_count += failed_count
     logger.info(f"Packing complete. Total time: {format_time(time.time() - start)}")
     logger.info(f"Total count: {total_count}, Total failed: {total_failed_count}")
+
+    return total_failed_count

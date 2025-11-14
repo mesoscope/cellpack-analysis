@@ -1,0 +1,38 @@
+{
+    "name": "norm_weights_mixed_rule",
+    "structure_id": "SLC25A17",
+    "packing_id": "ER_peroxisome_no_struct",
+    "structure_name": "peroxisome",
+    "packing_output_folder": "packing_outputs/8d_sphere_data/norm_weights/",
+    "channel_map": {
+        "SLC25A17": "SLC25A17",
+        "random": "SEC61B",
+        "nucleus_gradient": "SEC61B",
+        "membrane_gradient": "SEC61B",
+        "apical_gradient": "SEC61B",
+        "interpolated": "SEC61B"
+    },
+    "distance_measures": [
+        "nucleus",
+        "z"
+    ],
+    "recalculate": false,
+    "occupancy_params": {
+        "plot_individual": false,
+        "nucleus": {
+            "xlim": 6,
+            "ylim": 2,
+            "bandwidth": 0.2
+        },
+        "z": {
+            "xlim": 8,
+            "ylim": 1.5,
+            "bandwidth": 0.2
+        }
+    },
+    "analysis_steps": [
+        "run_occupancy_analysis",
+        "run_occupancy_interpolation_analysis",
+        "run_occupancy_emd_analysis"
+    ]
+}
