@@ -1,5 +1,8 @@
 name: Add Issues to Project
-
+permissions:
+  contents: write
+  pages: write
+  id-token: write
 on:
   issues:
     types:

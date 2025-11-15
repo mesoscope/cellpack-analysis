@@ -1,5 +1,8 @@
 name: build
-
+permissions:
+  contents: write
+  pages: write
+  id-token: write
 on: [push, workflow_dispatch]
 
 jobs:
