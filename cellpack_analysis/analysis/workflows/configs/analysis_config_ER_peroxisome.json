@@ -19,21 +19,11 @@
     ],
     "recalculate": false,
     "occupancy_params": {
-        "plot_individual": false,
-        "nucleus": {
-            "xlim": 6,
-            "ylim": 2,
-            "bandwidth": 0.2
-        },
-        "z": {
-            "xlim": 8,
-            "ylim": 1.5,
-            "bandwidth": 0.2
-        }
+        "plot_individual": true,
+        "show_legend": false
     },
     "analysis_steps": [
         "run_occupancy_analysis",
-        "run_occupancy_interpolation_analysis",
-        "run_occupancy_emd_analysis"
+        "run_occupancy_interpolation_analysis"
     ]
 }

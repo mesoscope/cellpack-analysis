@@ -94,7 +94,6 @@ source-exclude = [
     ".cache",
     ".pytest_cache",
     ".ruff_cache",
-    ".tox",
     ".venv",
     ".vscode",
     "data",
