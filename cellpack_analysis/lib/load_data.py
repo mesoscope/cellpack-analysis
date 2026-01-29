@@ -147,6 +147,7 @@ def _load_positions_for_mode(
     packing_output_folder: str,
     ingredient_key: str,
     recalculate: bool,
+    drop_random_seed: bool | None = None,
 ) -> dict[str, np.ndarray]:
     """Load positions for a single packing mode."""
     mode_file_path = _get_mode_file_path(
@@ -159,7 +160,9 @@ def _load_positions_for_mode(
     positions = get_positions_dictionary_from_file(
         mode_file_path,
         ingredient_key=ingredient_key,
-        drop_random_seed=mode not in STATIC_SHAPE_MODES,
+        drop_random_seed=(
+            drop_random_seed if drop_random_seed is not None else mode not in STATIC_SHAPE_MODES
+        ),
     )
 
     logger.info(f"Read {len(positions)} cell_ids for {mode}")
@@ -175,6 +178,7 @@ def get_position_data_from_outputs(
     packing_output_folder: str,
     recalculate: bool = False,
     ingredient_key: str | None = None,
+    drop_random_seed: bool | None = None,
 ) -> dict[str, dict[str, np.ndarray]]:
     """
     Retrieve position data from packing outputs.
@@ -197,6 +201,8 @@ def get_position_data_from_outputs(
         Whether to recalculate the position data
     ingredient_key
         Key for the ingredient in the raw data, defaults to membrane_interior_{packing_id}
+    drop_random_seed
+        Whether to remove random seed suffix from keys
 
     Returns
     -------
@@ -225,13 +231,14 @@ def get_position_data_from_outputs(
     all_positions = {}
     for mode in packing_modes:
         all_positions[mode] = _load_positions_for_mode(
-            mode,
-            structure_id,
-            packing_id,
-            base_datadir,
-            packing_output_folder,
-            ingredient_key,
-            recalculate,
+            mode=mode,
+            structure_id=structure_id,
+            packing_id=packing_id,
+            base_datadir=base_datadir,
+            packing_output_folder=packing_output_folder,
+            ingredient_key=ingredient_key,
+            recalculate=recalculate,
+            drop_random_seed=drop_random_seed,
         )
 
     # Cache results

@@ -54,7 +54,7 @@ project_root = get_project_root()
 base_datadir = project_root / "data"
 base_results_dir = project_root / "results"
 
-results_dir = base_results_dir / f"biological_variation/{STRUCTURE_NAME}"
+results_dir = base_results_dir / f"biological_variation_test/{STRUCTURE_NAME}"
 results_dir.mkdir(exist_ok=True, parents=True)
 
 figures_dir = results_dir / "figures"
@@ -133,7 +133,6 @@ fig, axs = visualization.plot_distance_distributions_kde(
     figures_dir=distance_figures_dir,
     suffix=suffix,
     normalization=normalization,
-    overlay=True,
     distance_limits=DISTANCE_LIMITS,
     bandwidth=0.4,
     save_format=save_format,

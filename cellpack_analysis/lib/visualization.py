@@ -1578,3 +1578,72 @@ def plot_grid_points_slice(
     cbar.set_label(cbar_label, rotation=270, labelpad=15)
 
     return fig, ax
+
+
+def plot_envelope_for_cell(
+    cell_results: dict[str, dict], model: str, metric: str, title: str | None = None
+) -> None:
+    """
+    Plot ECDF envelope for single cell, model, and metric.
+
+    Displays observed ECDF against Monte Carlo envelope with mean curve.
+
+    Parameters
+    ----------
+    cell_results
+        Result dictionary for one cell from analyze_cell_from_metrics
+    model
+        Name of null model to plot
+    metric
+        Name of distance metric to plot
+    title
+        Optional custom plot title. If None, auto-generates from model/metric
+    """
+    info = cell_results[model]["per_metric"][metric]
+    r = info["r"]
+    plt.figure(figsize=(6, 4))
+    plt.fill_between(r, info["lo"], info["hi"], color="lightgray", alpha=0.7, label="MC envelope")
+    plt.plot(r, info["mu"], "--", color="dimgray", label="Sim mean")
+    plt.plot(r, info["obs_curve"], color="crimson", lw=2, label="Observed")
+    ttl = title or f"Cell: {metric} vs {model} (p={info['pval']:.3f})"
+    plt.title(ttl)
+    plt.xlabel("r")
+    plt.ylabel("ECDF")
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+
+
+def plot_rejection_bars(
+    rej_rates_dict: pd.Series, title: str = "Rejection rates (q < alpha)"
+) -> None:
+    """
+    Plot bar chart of rejection rates across models or metrics.
+
+    Handles both joint rejection rates (single bars per model) and
+    per-metric rates (grouped bars per model/metric combination).
+
+    Parameters
+    ----------
+    rej_rates_dict
+        Series with rejection rates, optionally with MultiIndex for per-metric rates
+    title
+        Plot title
+    """
+    if isinstance(rej_rates_dict, pd.Series) and isinstance(rej_rates_dict.index, pd.MultiIndex):
+        # per-metric: make a grouped bar
+        df = rej_rates_dict.unstack(level="metric")
+        ax = df.plot(kind="bar", figsize=(8, 4))
+        ax.set_ylabel("Fraction of cells rejected")
+        ax.set_title(title)
+        plt.xticks(rotation=0)
+        plt.tight_layout()
+        plt.show()
+    else:
+        ser = pd.Series(rej_rates_dict)
+        ax = ser.plot(kind="bar", figsize=(6, 4), color="steelblue")
+        ax.set_ylabel("Fraction of cells rejected")
+        ax.set_title(title)
+        plt.xticks(rotation=0)
+        plt.tight_layout()
+        plt.show()

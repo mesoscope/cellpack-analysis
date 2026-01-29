@@ -18,7 +18,7 @@ from cellpack_analysis.lib.file_io import (
     remove_file_handler_from_logger,
 )
 from cellpack_analysis.lib.get_structure_stats_dataframe import get_structure_stats_dataframe
-from cellpack_analysis.lib.label_tables import GRID_DISTANCE_LABELS, MODE_LABELS
+from cellpack_analysis.lib.label_tables import GRID_DISTANCE_LABELS, MODE_LABELS, STATIC_SHAPE_MODES
 from cellpack_analysis.lib.mesh_tools import calc_scaled_distance_to_nucleus_surface
 from cellpack_analysis.lib.stats import ripley_k
 
@@ -202,6 +202,7 @@ def get_distance_dictionary(
     results_dir: Path | None = None,
     recalculate: bool = False,
     num_workers: int | None = None,
+    drop_random_seed: bool | None = None,
 ) -> dict[str, dict[str, dict[str, np.ndarray]]]:
     """
     Calculate or load distance measures between particles in different modes.
@@ -221,9 +222,10 @@ def get_distance_dictionary(
     recalculate
         If True, recalculate the distance measures
     num_workers
-        Number of parallel workers to use for distance calculations
-    minimum_distance
-        Minimum distance to consider for filtering invalid distances
+        Number of parallel workers to use for distance calculations. If None or 1,
+        uses serial processing
+    drop_random_seed
+        Whether to drop random seed from cell IDs
 
     Returns
     -------
@@ -293,29 +295,62 @@ def get_distance_dictionary(
         distance_measure: {mode: {} for mode in all_positions.keys()}
         for distance_measure in distance_measures
     }
+
+    # Determine if we should use parallel processing
+    use_parallel = num_workers is not None and num_workers > 1
+
     for mode, position_dict in all_positions.items():
         mode_mesh_dict = mesh_information_dict.get(channel_map.get(mode, mode), {})
+        split_cellid_for_mode = (
+            drop_random_seed if drop_random_seed is not None else (mode not in STATIC_SHAPE_MODES)
+        )
 
-        with ThreadPoolExecutor(max_workers=num_workers) as executor:
-            futures = {
-                executor.submit(
-                    _calculate_distances_for_cell_id,
-                    str(cell_id).split("_")[0],
-                    positions,
-                    mode_mesh_dict,
-                ): (
-                    str(cell_id).split("_")[0]
-                )
-                for cell_id, positions in position_dict.items()
-            }
-            for future in tqdm(
-                as_completed(futures),
+        if use_parallel:
+            # Parallel execution
+            with ThreadPoolExecutor(max_workers=num_workers) as executor:
+                futures = {
+                    executor.submit(
+                        _calculate_distances_for_cell_id,
+                        str(cell_id).split("_")[0],
+                        positions,
+                        mode_mesh_dict,
+                    ): (
+                        str(cell_id).split("_")[0] if split_cellid_for_mode else str(cell_id)
+                    )
+                    for cell_id, positions in position_dict.items()
+                }
+                for future in tqdm(
+                    as_completed(futures),
+                    desc=f"Calculating distances for {MODE_LABELS.get(mode, mode)}",
+                    total=len(futures),
+                ):
+                    cell_id = futures[future]
+                    try:
+                        _, distances_dict = future.result()
+                    except Exception as e:
+                        logger.error(f"Error calculating distances for cell {cell_id}: {e}")
+                        continue
+
+                    for distance_measure in distance_measures:
+                        if distance_measure not in distances_dict:
+                            raise ValueError(f"Distance measure {distance_measure} not found")
+                        all_distance_dict[distance_measure][mode][cell_id] = distances_dict[
+                            distance_measure
+                        ]
+        else:
+            # Serial execution
+            for cell_id, positions in tqdm(
+                position_dict.items(),
                 desc=f"Calculating distances for {MODE_LABELS.get(mode, mode)}",
-                total=len(futures),
+                total=len(position_dict),
             ):
-                cell_id = futures[future]
+                split_cell_id = str(cell_id).split("_")[0] if split_cellid_for_mode else cell_id
                 try:
-                    _, distances_dict = future.result()
+                    _, distances_dict = _calculate_distances_for_cell_id(
+                        cell_id=split_cell_id,
+                        positions=positions,
+                        mesh_dict=mode_mesh_dict,
+                    )
                 except Exception as e:
                     logger.error(f"Error calculating distances for cell {cell_id}: {e}")
                     continue
@@ -323,134 +358,17 @@ def get_distance_dictionary(
                 for distance_measure in distance_measures:
                     if distance_measure not in distances_dict:
                         raise ValueError(f"Distance measure {distance_measure} not found")
+                    # Want to keep the original cell id with seed if not dropped
                     all_distance_dict[distance_measure][mode][cell_id] = distances_dict[
                         distance_measure
                     ]
 
-    # save distance dictionaries
+    # save distance dictionaries with compression and efficient format
     if results_dir is not None:
         for distance_measure, distance_dict in all_distance_dict.items():
             file_path = results_dir / f"{distance_measure}_distances.dat"
             with open(file_path, "wb") as f:
-                pickle.dump(distance_dict, f)
-
-    return all_distance_dict
-
-
-def get_distance_dictionary_serial(
-    all_positions: dict[str, dict[str, np.ndarray]],
-    distance_measures: list[str],
-    mesh_information_dict: dict[str, dict[str, Any]],
-    channel_map: dict[str, str] | None = None,
-    results_dir: Path | None = None,
-    recalculate: bool = False,
-) -> dict[str, dict[str, dict[str, np.ndarray]]]:
-    """
-    Calculate or load distance measures between particles in different modes.
-
-    Parameters
-    ----------
-    all_positions
-        A dictionary containing positions of particles in different packing modes
-    distance_measures
-        List of distance measures to calculate
-    mesh_information_dict
-        A dictionary containing mesh information
-    channel_map
-        Mapping between modes and channel names
-    results_dir
-        The directory to save or load distance dictionaries
-    recalculate
-        If True, recalculate the distance measures
-
-    Returns
-    -------
-    :
-        A dictionary containing distance measures between particles in different modes
-    """
-    if channel_map is None:
-        channel_map = {}
-
-    # Try to load cached data if not recalculating
-    if not recalculate and results_dir is not None:
-        logger.info(
-            f"Loading saved distance dictionaries from {results_dir.relative_to(PROJECT_ROOT)}"
-        )
-        all_distance_dict = {}
-        cache_valid = True
-
-        # Check if all required distance measure files exist and are valid
-        for distance_measure in distance_measures:
-            file_path = results_dir / f"{distance_measure}_distances.dat"
-            if not file_path.exists():
-                logger.warning(f"File not found: {file_path.relative_to(PROJECT_ROOT)}")
-                cache_valid = False
-                break
-
-            try:
-                with open(file_path, "rb") as f:
-                    distance_dict = pickle.load(f)
-
-                # Validate that cached data matches requested packing modes
-                cached_modes = set(distance_dict.keys())
-                requested_modes = set(all_positions.keys())
-                if cached_modes != requested_modes:
-                    logger.warning(
-                        f"Cached data in {file_path.relative_to(PROJECT_ROOT)} contains modes "
-                        f"{cached_modes} but requested modes are {requested_modes}. "
-                        f"Recalculating distances."
-                    )
-                    cache_valid = False
-                    break
-
-                all_distance_dict[distance_measure] = distance_dict
-            except Exception as e:
-                logger.warning(
-                    f"Error loading cached data from {file_path.relative_to(PROJECT_ROOT)}: {e}"
-                )
-                cache_valid = False
-                break
-
-        # Return cached data if all checks passed
-        if cache_valid:
-            logger.info("Successfully loaded all cached distance dictionaries")
-            return all_distance_dict
-        else:
-            logger.info("Cache validation failed, recalculating distances")
-    logger.info("Calculating distance dictionaries")
-
-    all_distance_dict = {}
-    for mode, position_dict in all_positions.items():
-        mode_mesh_dict = mesh_information_dict.get(channel_map.get(mode, mode), {})
-
-        for cell_id, positions in tqdm(
-            position_dict.items(),
-            desc=f"Calculating distances for {MODE_LABELS.get(mode, mode)}",
-            total=len(position_dict),
-        ):
-            cell_id = str(cell_id).split("_")[0]
-            _, distances_dict = _calculate_distances_for_cell_id(
-                cell_id=cell_id,
-                positions=positions,
-                mesh_dict=mode_mesh_dict,
-            )
-            for distance_measure in distance_measures:
-                if distance_measure not in distances_dict:
-                    raise ValueError(f"Distance measure {distance_measure} not found")
-                if distance_measure not in all_distance_dict:
-                    all_distance_dict[distance_measure] = {}
-                if mode not in all_distance_dict[distance_measure]:
-                    all_distance_dict[distance_measure][mode] = {}
-                all_distance_dict[distance_measure][mode][cell_id] = distances_dict[
-                    distance_measure
-                ]
-
-    # save distance dictionaries
-    if results_dir is not None:
-        for distance_measure, distance_dict in all_distance_dict.items():
-            file_path = results_dir / f"{distance_measure}_distances.dat"
-            with open(file_path, "wb") as f:
-                pickle.dump(distance_dict, f)
+                pickle.dump(distance_dict, f, protocol=pickle.HIGHEST_PROTOCOL)
 
     return all_distance_dict
 
