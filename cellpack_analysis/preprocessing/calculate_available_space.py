@@ -9,6 +9,7 @@ The distance is calculated using the signed distance function from the trimesh l
 distances are saved in a grid directory for each cell_id.
 Distances are normalized by the cell diameter and saved in the grid directory.
 """
+
 import argparse
 import logging
 from concurrent.futures import ProcessPoolExecutor, as_completed
