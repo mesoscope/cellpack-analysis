@@ -17,15 +17,15 @@ Key steps:
 import logging
 import time
 
+from matplotlib import pyplot as plt
+from tqdm import tqdm
+
 from cellpack_analysis.lib import distance
 from cellpack_analysis.lib.file_io import get_project_root
+from cellpack_analysis.lib.label_tables import DISTANCE_MEASURE_LABELS, MODE_LABELS
 from cellpack_analysis.lib.load_data import get_position_data_from_outputs
 from cellpack_analysis.lib.mesh_tools import get_mesh_information_dict_for_structure
-from cellpack_analysis.lib.stats import (
-    analyze_cell_from_metrics,
-    normalize_distances,
-    summarize_across_cells,
-)
+from cellpack_analysis.lib.stats import monte_carlo_per_cell, summarize_across_cells
 from cellpack_analysis.lib.visualization import plot_envelope_for_cell, plot_rejection_bars
 
 logger = logging.getLogger(__name__)
@@ -39,19 +39,19 @@ start_time = time.time()
 # RAB5A: early endosomes
 # SEC61B: ER
 # ST6GAL1: Golgi
-STRUCTURE_ID = "SLC25A17"
-PACKING_ID = "peroxisome"
-STRUCTURE_NAME = "peroxisome"
-CONDITION = "replicate"
+STRUCTURE_ID = "RAB5A"
+PACKING_ID = "endosome"
+STRUCTURE_NAME = "endosome"
+CONDITION = "replicate_99"
 # %% [markdown]
 # ### Set packing modes to analyze
 save_format = "pdf"
 channel_map = {
-    "SLC25A17": "SLC25A17",
-    "random": "SLC25A17",
-    # "nucleus_gradient": "SLC25A17",
-    # "membrane_gradient": "SLC25A17",
-    # "apical_gradient": "SLC25A17",
+    STRUCTURE_ID: STRUCTURE_ID,
+    "random": STRUCTURE_ID,
+    "nucleus_gradient": STRUCTURE_ID,
+    "membrane_gradient": STRUCTURE_ID,
+    "apical_gradient": STRUCTURE_ID,
 }
 
 # relative path to packing outputs
@@ -77,7 +77,6 @@ distance_measures = [
     "nearest",
     "pairwise",
     "nucleus",
-    # "scaled_nucleus",
     "z",
     "membrane",
 ]
@@ -99,8 +98,7 @@ all_positions = get_position_data_from_outputs(
     results_dir=results_dir,
     packing_output_folder=packing_output_folder,
     ingredient_key=f"membrane_interior_{STRUCTURE_NAME}",
-    recalculate=False,
-    drop_random_seed=False,
+    recalculate=True,
 )
 # %% [markdown]
 # ### Get mesh information
@@ -109,27 +107,26 @@ for structure_id in all_structures:
     mesh_information_dict = get_mesh_information_dict_for_structure(
         structure_id=structure_id,
         base_datadir=base_datadir,
-        recalculate=False,
+        recalculate=True,
     )
     combined_mesh_information_dict[structure_id] = mesh_information_dict
 # %% [markdown]
 # ### Calculate distance measures and normalize
-all_distance_dict = distance.get_distance_dictionary_serial(
+all_distance_dict = distance.get_distance_dictionary(
     all_positions=all_positions,
     distance_measures=distance_measures,
     mesh_information_dict=combined_mesh_information_dict,
     channel_map=channel_map,
     results_dir=results_dir,
     recalculate=True,
-    # num_workers=8,
-    drop_random_seed=False,
+    num_workers=64,
 )
 
 all_distance_dict = distance.filter_invalids_from_distance_distribution_dict(
     distance_distribution_dict=all_distance_dict, minimum_distance=None
 )
 
-all_distance_dict = normalize_distances(
+all_distance_dict = distance.normalize_distance_dictionary(
     all_distance_dict=all_distance_dict,
     mesh_information_dict=combined_mesh_information_dict,
     channel_map=channel_map,
@@ -138,67 +135,118 @@ all_distance_dict = normalize_distances(
 
 # %%
 # Configuration
-C = 305  # number of cells
-models = ["unbiased", "towards_nucleus", "towards_membrane", "towards_apical"]
-R = 64  # number of simulation replicates per model
-metrics_order = ["dist_nucleus", "dist_membrane", "dist_apical", "dist_basal", "nn", "pair"]
-
+num_cells = len(next(iter(all_distance_dict.values())).get(baseline_mode, {}))
+num_replicates = len(
+    next(iter(next(iter(all_distance_dict.values())).get("random", {}).values())).values()
+)  # number of simulation replicates per model
+alpha = 0.05
+simulated_packing_modes = [mode for mode in packing_modes if mode != baseline_mode]
+logger.info(
+    "Configuration: num_cells=%s, num_replicates=%s, alpha=%s, simulated_packing_modes=%s",
+    num_cells,
+    num_replicates,
+    alpha,
+    simulated_packing_modes,
+)
+# %%
 # Initialize data containers
 # obs_metrics_all[c] -> dict {metric_name: 1D array of distances}
-obs_metrics_all = [{} for _ in range(C)]
+obs_metrics_all = [{} for _ in range(num_cells)]
 
 # sims_metrics_all[c][model] -> list of R dicts, each {metric_name: 1D array}
-sims_metrics_all = [{model: [] for model in models} for _ in range(C)]
+sims_metrics_all = [
+    {mode: [{} for _ in range(num_replicates)] for mode in simulated_packing_modes}
+    for _ in range(num_cells)
+]
+# %%
+for measure, measure_dict in all_distance_dict.items():
+    for mode, mode_dict in measure_dict.items():
+        for cell_idx, (cell_id, seed_dict) in enumerate(mode_dict.items()):
+            # Observed data
+            for seed_idx, (seed, distances) in enumerate(seed_dict.items()):
+                if mode == baseline_mode:
+                    obs_metrics_all[cell_idx][measure] = distances
+                else:
+                    # Simulation data
+                    sims_metrics_all[cell_idx][mode][seed_idx][measure] = distances
 
-# TODO: Populate obs_metrics_all and sims_metrics_all from your data pipeline
-# Example structure:
-# obs_metrics_all[0] = {
-#     'dist_nucleus': np.array([...]),
-#     'dist_membrane': np.array([...]),
-#     'nn': np.array([...]),
-#     ...
-# }
-# sims_metrics_all[0]['unbiased'] = [
-#     {'dist_nucleus': np.array([...]), ...},  # replicate 1
-#     {'dist_nucleus': np.array([...]), ...},  # replicate 2
-#     ...
-# ]
-
-# ---- Run per-cell analysis ----
+# %%
+# Get monte carlo envelopes per cell
 all_results = []
-for c in range(C):
+for cell_idx in tqdm(range(num_cells)):
     # Skip cells with missing data
-    if not obs_metrics_all[c] or not all(sims_metrics_all[c][m] for m in models):
-        print(f"Warning: Cell {c} has missing data, skipping")
+    if not obs_metrics_all[cell_idx] or not all(
+        sims_metrics_all[cell_idx][m] for m in simulated_packing_modes
+    ):
+        logger.warning("Cell index %s has missing data, skipping", cell_idx)
         continue
 
-    res_c = analyze_cell_from_metrics(
-        obs_metrics=obs_metrics_all[c],
-        sims_metrics_per_model=sims_metrics_all[c],
-        alpha=0.05,
-        metrics_order=metrics_order,
+    cell_result = monte_carlo_per_cell(
+        observed_distances=obs_metrics_all[cell_idx],
+        simulated_distances_by_mode=sims_metrics_all[cell_idx],
+        alpha=alpha,
+        distance_measures=distance_measures,
         r_grid_size=150,
+        statistic="supremum",
     )
-    all_results.append(res_c)
-
-    if (c + 1) % 50 == 0:
-        print(f"Processed {c + 1}/{C} cells")
-
-# ---- Summarize across 305 cells ----
-summary = summarize_across_cells(all_results, alpha=0.05)
+    all_results.append(cell_result)
+# %%
+# Summarize across all cells
+summary = summarize_across_cells(all_results, alpha=alpha)
 
 # Optional: save tables
-summary["per_metric_pvals"].to_csv("per_metric_pvals.csv", index_label="cell_id")
-summary["per_metric_qvals"].to_csv("per_metric_qvals.csv", index_label="cell_id")
-summary["joint_pvals"].to_csv("joint_pvals.csv", index_label="cell_id")
-summary["joint_qvals"].to_csv("joint_qvals.csv", index_label="cell_id")
+summary["per_distance_measure_pvals"].to_csv(
+    results_dir / "per_distance_measure_pvals.csv", index_label="cell_id"
+)
+summary["per_distance_measure_qvals"].to_csv(
+    results_dir / "per_distance_measure_qvals.csv", index_label="cell_id"
+)
+summary["joint_pvals"].to_csv(results_dir / "joint_pvals.csv", index_label="cell_id")
+summary["joint_qvals"].to_csv(results_dir / "joint_qvals.csv", index_label="cell_id")
 
-# ---- Quick visualizations ----
-# 1) For a specific cell, model, metric
-plot_envelope_for_cell(all_results[0], model="unbiased", metric="nn", title="Cell 0: NN vs CSR")
+# %%
+# Plot Monte Carlo envelopes for a specific cell, rule, distance measure
+fig, axs = plt.subplots(
+    len(distance_measures) // 2, 3, dpi=300, figsize=(7, 7), squeeze=False, sharey=True
+)
+axs = axs.flatten()
+cell_idx = 0
+packing_mode = "random"
+for ct, distance_measure in enumerate(distance_measures):
+    ax = axs[ct]
+    fig, ax = plot_envelope_for_cell(
+        all_results[cell_idx],
+        packing_mode=packing_mode,
+        distance_measure=distance_measure,
+        title=DISTANCE_MEASURE_LABELS[distance_measure],
+        ax=ax,
+    )
+fig.suptitle(f"Cell {cell_idx} envelopes for {MODE_LABELS[packing_mode]}")
+fig.tight_layout()
+plt.show()
+fig.savefig(
+    figures_dir / f"cell_{cell_idx}_envelopes_{packing_mode}{suffix}.{save_format}",
+    format=save_format,
+)
+# %%
+# Plot joint test rejections by packing mode (combined over all distance measures)
+fig, ax = plot_rejection_bars(
+    summary["rejection_joint"], title=f"Joint rejections (q<{alpha}) by packing mode"
+)
+plt.show()
+fig.savefig(
+    figures_dir / f"joint_rejections_by_packing_mode{suffix}.{save_format}",
+    format=save_format,
+)
+# %%
+# Plot per distance measure rejections by packing mode
+fig, ax = plot_rejection_bars(
+    summary["rejection_per_distance_measure"], title=f"Per distance measure rejections (q<{alpha})"
+)
+plt.show()
+fig.savefig(
+    figures_dir / f"per_distance_measure_rejections_by_packing_mode{suffix}.{save_format}",
+    format=save_format,
+)
 
-# 2) Rejection bars (joint)
-plot_rejection_bars(summary["rejection_joint"], title="Joint rejections (q<0.05) by model")
-
-# 3) Rejection bars per-metric
-plot_rejection_bars(summary["rejection_per_metric"], title="Per-metric rejections (q<0.05)")
+# %%

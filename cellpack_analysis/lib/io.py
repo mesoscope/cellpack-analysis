@@ -9,6 +9,27 @@ from cellpack_analysis.lib.file_io import get_datadir_path
 logger = logging.getLogger(__name__)
 
 
+def count_all_keys(d: dict) -> int:
+    """
+    Count all keys in a dictionary, including nested dictionaries.
+
+    Parameters
+    ----------
+    d
+        Dictionary to count keys from
+
+    Returns
+    -------
+    :
+        Total number of keys at all nesting levels
+    """
+    count = len(d)  # Count keys at current level
+    for value in d.values():
+        if isinstance(value, dict):
+            count += count_all_keys(value)  # Recursively count nested keys
+    return count
+
+
 def format_time(seconds):
     """Format time in seconds to a human readable format."""
     if seconds == np.inf:

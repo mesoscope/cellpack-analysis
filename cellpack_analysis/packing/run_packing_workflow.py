@@ -35,23 +35,23 @@ def _run_packing_workflow(workflow_config_path: Path):
     -------
         None
     """
-    workflow_config = WorkflowConfig(config_file_path=workflow_config_path)
-
-    # ## Generate cellPACK input files if needed
-    if workflow_config.generate_recipes:
-        logger.info("Generating cellPACK input files")
-        generate_recipes(workflow_config=workflow_config)
+    workflow_config = WorkflowConfig(workflow_config_path=workflow_config_path)
 
     # ## update cellpack config file
     if workflow_config.generate_configs:
         logger.info("Updating cellPACK config file")
         generate_configs(workflow_config=workflow_config)
 
+    # ## Generate cellPACK input files if needed
+    if workflow_config.generate_recipes:
+        logger.info("Generating cellPACK input files")
+        generate_recipes(workflow_config=workflow_config)
+
     # ## pack recipes
-    if workflow_config.dry_run:
-        logger.info("Dry run. Skipping packing.")
-        return
-    logger.info("Packing recipes")
+    # if workflow_config.dry_run:
+    #     logger.info("Dry run. Skipping packing.")
+    #     return
+    logger.info("Submitting recipes")
     return pack_recipes(workflow_config=workflow_config)
 
 
@@ -66,8 +66,22 @@ if __name__ == "__main__":
         help="Path to the packing configuration file",
         default=default_values.WORKFLOW_CONFIG_PATH,
     )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Enable debug logging",
+    )
 
     args = parser.parse_args()
+
+    if args.verbose:
+        # Set root logger and all handlers to DEBUG
+        root_logger = logging.getLogger()
+        root_logger.setLevel(logging.DEBUG)
+        for handler in root_logger.handlers:
+            handler.setLevel(logging.DEBUG)
+        logger.setLevel(logging.DEBUG)
 
     total_failed = _run_packing_workflow(workflow_config_path=Path(args.workflow_config_path))
 

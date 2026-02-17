@@ -3,18 +3,27 @@
 
 import logging
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import seaborn as sns
+from matplotlib.ticker import MaxNLocator
 
-from cellpack_analysis.lib.file_io import get_datadir_path
+from cellpack_analysis.lib.file_io import get_datadir_path, get_results_path
 from cellpack_analysis.lib.get_variance_dataset import get_variance_dataframe
+from cellpack_analysis.lib.label_tables import COLOR_PALETTE
 
 logger = logging.getLogger(__name__)
+
+plt.rcParams["pdf.fonttype"] = 42
+plt.rcParams["ps.fonttype"] = 42
+fontsize = 6
+plt.rcParams["font.size"] = fontsize
 
 # %% [markdown]
 # ## Load the variance dataframe
 meta_df = get_variance_dataframe()
-structures_of_interest = ["SLC25A17", "RAB5A", "LAMP1"]
+structures_of_interest = ["SLC25A17", "RAB5A"]
 
 # %% [markdown]
 # Process each structure and calculate statistics
@@ -84,3 +93,40 @@ df_stats = pd.DataFrame(stats_data)
 df_stats_path = get_datadir_path() / "structure_stats.parquet"
 df_stats.to_parquet(df_stats_path)
 # %% [markdown]
+# Create histograms of counts and sizes for structures of interest
+figures_dir = get_results_path() / "cell_metrics/figures"
+figures_dir.mkdir(parents=True, exist_ok=True)
+for structure_id in structures_of_interest:
+    for measurement_name, measurement_label in [
+        ("count", "Number of puncta"),
+        ("volume", "Volume per puncta (µm\u00b3)"),
+        ("radius", "Radius per puncta (µm)"),
+        ("sphericity", "Sphericity"),
+    ]:
+        measurement_values = (
+            df_stats.loc[df_stats["structure_name"] == structure_id, measurement_name]
+            .dropna()
+            .to_numpy()
+        )
+        fig, ax = plt.subplots(figsize=(2.5, 2.5), dpi=300)
+        sns.histplot(
+            measurement_values,
+            ax=ax,
+            color=COLOR_PALETTE[structure_id],
+            # linewidth=0,
+            bins=12,
+            # alpha=0.7,
+        )
+        ax.set_xlabel(measurement_label)
+        ax.set_ylabel("Number of cells")
+        ax.xaxis.set_major_locator(MaxNLocator(5, integer=True))
+        ax.yaxis.set_major_locator(MaxNLocator(3, integer=True))
+        sns.despine(ax=ax)
+        fig.tight_layout()
+        fig.savefig(
+            figures_dir / f"{measurement_name}_distribution_{structure_id}.pdf",
+            bbox_inches="tight",
+        )
+        plt.show()
+
+# %%

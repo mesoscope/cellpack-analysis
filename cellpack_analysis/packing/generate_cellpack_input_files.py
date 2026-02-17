@@ -186,7 +186,7 @@ def update_and_save_recipe(
     grid_path: str | Path,
     mesh_path: str | Path,
     generated_recipe_path: str | Path,
-    multiple_replicates: bool,
+    number_of_replicates: int,
     count: int | None = None,
     radius: float | None = None,
     get_bounding_box_from_mesh: bool = False,
@@ -214,8 +214,8 @@ def update_and_save_recipe(
         The path to the mesh file
     generated_recipe_path
         The path to save the generated recipe
-    multiple_replicates
-        Indicates whether multiple replicates are used
+    number_of_replicates
+        The number of replicates to pack
     count
         The count of the structure
     radius
@@ -246,8 +246,15 @@ def update_and_save_recipe(
         updated_recipe["bounding_box"] = bounding_box
 
     # update seed if needed
-    if not multiple_replicates and isinstance(cell_id, int):
-        updated_recipe["randomness_seed"] = cell_id
+    # this ensures that the same cell ID will have the same seed across different rules,
+    # which is important for comparing results across rules
+    # but also each cell ID will have a different seed, which is important for ensuring variability
+    # across cells
+    if number_of_replicates == 1 and cell_id != "mean":
+        try:
+            updated_recipe["randomness_seed"] = int(cell_id)
+        except ValueError:
+            pass
 
     # update grid path
     updated_recipe["grid_file_path"] = f"{grid_path}/{cell_id}_grid.dat"
@@ -376,7 +383,7 @@ def generate_recipes(workflow_config: Any) -> None:
                         grid_path=workflow_config.grid_path,
                         mesh_path=workflow_config.mesh_path,
                         generated_recipe_path=workflow_config.generated_recipe_path,
-                        multiple_replicates=workflow_config.multiple_replicates,
+                        number_of_replicates=workflow_config.number_of_replicates,
                         count=count,
                         radius=radius,
                         get_bounding_box_from_mesh=workflow_config.get_bounding_box_from_mesh,
@@ -403,6 +410,23 @@ def generate_configs(workflow_config: Any) -> None:
     packing_info = workflow_config.data.get("packings_to_run", {})
     rule_list = packing_info.get("rules", [])
     config_template["name"] = workflow_config.condition
+
+    if (
+        "number_of_packings" in config_template
+        and config_template["number_of_packings"] != workflow_config.number_of_replicates
+    ):
+        logger.warning(
+            f"Number of packings in config template ({config_template['number_of_packings']}) "
+            f"does not match number of replicates in workflow config"
+            f" ({workflow_config.number_of_replicates}). "
+            f"Using number of replicates from workflow config."
+        )
+    config_template["number_of_packings"] = workflow_config.number_of_replicates
+
+    # Only set seed list in config when number_of_replicates > 1 or using mean cell
+    # For single replicates with real cell IDs, seed is set per-recipe instead
+    if workflow_config.number_of_replicates > 1 or workflow_config.use_mean_cell:
+        config_template["randomness_seed"] = list(range(workflow_config.number_of_replicates))
 
     for rule in rule_list:
         rule_config_path = (

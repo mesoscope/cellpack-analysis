@@ -54,7 +54,15 @@ def check_recipe_completed(
     """
     recipe_data = read_json(recipe_path)
     number_of_packings = config_data.get("number_of_packings", 1)
-    seed_vals = recipe_data.get("randomness_seed", [0])
+
+    if config_data.get("randomness_seed") is not None:
+        seed_vals = config_data["randomness_seed"]
+    elif recipe_data.get("randomness_seed") is not None:
+        seed_vals = recipe_data["randomness_seed"]
+    elif number_of_packings > 1:
+        seed_vals = list(range(number_of_packings))
+    else:
+        seed_vals = [0]
     if isinstance(seed_vals, int):
         seed_vals = [seed_vals]
 
@@ -71,25 +79,22 @@ def check_recipe_completed(
     else:
         raise ValueError("check_type must be 'image' or 'simularium'")
 
-    if len(seed_vals) == number_of_packings:
-        # usually this means only packing one seed
-        # check whether all files exist explicitly
-        result_file_list = [
-            folder_to_check
-            / (
-                f"{prefix}_{recipe_data['name']}_{config_data['name']}_"
-                f"{recipe_data['version']}_seed_{seed_val}.{suffix}"
-            )
-            for seed_val in seed_vals
-        ]
-    else:
-        result_file_list = list(
-            folder_to_check.glob(
-                f"{prefix}_{recipe_data['name']}_{config_data['name']}_"
-                f"{recipe_data['version']}_seed_*.{suffix}"
-            )
+    result_file_list = [
+        folder_to_check
+        / (
+            f"{prefix}_{recipe_data['name']}_{config_data['name']}_"
+            f"{recipe_data['version']}_seed_{seed_val}.{suffix}"
         )
+        for seed_val in seed_vals
+    ]
+
     num_existing_files = sum([result_file.exists() for result_file in result_file_list])
+    logger.debug(
+        "Checking recipe %s: found %d existing result files out of %d expected",
+        recipe_path,
+        num_existing_files,
+        number_of_packings,
+    )
 
     return num_existing_files == number_of_packings
 
@@ -296,6 +301,10 @@ def pack_recipes(workflow_config: Any) -> int:
                         f"Skipping packing for completed recipe {recipe_path}. "
                         f"{skipped_count} skipped"
                     )
+                    continue
+
+                if workflow_config.dry_run:
+                    logger.debug(f"Dry run: would have submitted packing for {recipe_path}")
                     continue
 
                 futures.append(

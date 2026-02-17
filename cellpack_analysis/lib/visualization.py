@@ -15,16 +15,9 @@ from scipy.stats import gaussian_kde
 from statannotations.Annotator import Annotator
 from tqdm import tqdm
 
+from cellpack_analysis.lib import label_tables
 from cellpack_analysis.lib.default_values import PIXEL_SIZE_IN_UM
 from cellpack_analysis.lib.distance import filter_invalid_distances, get_scaled_structure_radius
-from cellpack_analysis.lib.label_tables import (
-    COLOR_PALETTE,
-    DISTANCE_MEASURE_LABELS,
-    MODE_LABELS,
-    NORMALIZATION_LABELS,
-    PROJECTION_TO_INDEX_MAP,
-    PROJECTION_TO_LABEL_MAP,
-)
 from cellpack_analysis.lib.occupancy import get_cell_id_map_from_distance_kde_dict
 from cellpack_analysis.lib.stats import create_padded_numpy_array, get_pdf_ratio, normalize_pdf
 
@@ -71,7 +64,7 @@ def plot_cell_diameter_distribution(
 def plot_distance_distributions_kde(
     distance_measures: list[str],
     packing_modes: list[str],
-    all_distance_dict: dict[str, dict[str, dict[str, np.ndarray]]],
+    all_distance_dict: dict[str, dict[str, dict[str, dict[str, np.ndarray]]]],
     figures_dir: Path | None = None,
     suffix: str = "",
     normalization: str | None = None,
@@ -91,6 +84,7 @@ def plot_distance_distributions_kde(
         List of packing modes to plot
     all_distance_dict
         Dictionary containing distance distributions for each packing mode and distance measure
+        {distance_measure: {mode: {cell_id: {seed:distances}}}}
     figures_dir
         Directory to save the figures, if None figures will not be saved
     suffix
@@ -136,39 +130,46 @@ def plot_distance_distributions_kde(
         if normalization is not None:
             unit = ""
             distance_label = (
-                f"{DISTANCE_MEASURE_LABELS[distance_measure]}"
-                f" / {NORMALIZATION_LABELS[normalization]}"
+                f"{label_tables.DISTANCE_MEASURE_LABELS[distance_measure]}"
+                f" / {label_tables.NORMALIZATION_LABELS[normalization]}"
             )
         elif "scaled" in distance_measure:
             unit = ""
-            distance_label = DISTANCE_MEASURE_LABELS[distance_measure]
+            distance_label = label_tables.DISTANCE_MEASURE_LABELS[distance_measure]
         else:
             unit = "\u03bcm"
-            distance_label = f"{DISTANCE_MEASURE_LABELS[distance_measure]} ({unit})"
+            distance_label = f"{label_tables.DISTANCE_MEASURE_LABELS[distance_measure]} ({unit})"
 
         for row, mode in enumerate(packing_modes):
             logger.info(f"Plotting distance distribution for: {distance_measure}, Mode: {mode}")
 
             ax = axs[row, col]
             mode_dict = distance_dict[mode]
-            mode_color = COLOR_PALETTE.get(mode, "gray")
-            mode_label = MODE_LABELS.get(mode, mode)
+            mode_color = label_tables.COLOR_PALETTE.get(mode, "gray")
+            mode_label = label_tables.MODE_LABELS.get(mode, mode)
 
             # kde plots of individual distance distributions
-            for _, distances in tqdm(mode_dict.items(), total=len(mode_dict)):
-                sns.kdeplot(
-                    distances,
-                    ax=ax,
-                    color=mode_color,
-                    linewidth=0.15,
-                    alpha=0.05,
-                    bw_method=bandwidth,
-                    cut=0,
-                )
-                # break
+            for _, seed_distance_dict in tqdm(mode_dict.items(), total=len(mode_dict)):
+                for _, distances in seed_distance_dict.items():
+                    sns.kdeplot(
+                        distances,
+                        ax=ax,
+                        color=mode_color,
+                        linewidth=0.15,
+                        alpha=0.05,
+                        bw_method=bandwidth,
+                        cut=0,
+                    )
+                    # break
 
             # kde plot of combined distance distribution
-            combined_mode_distances = np.concatenate(list(mode_dict.values()))
+            combined_mode_distances = np.concatenate(
+                [
+                    distances
+                    for seed_distance_dict in mode_dict.values()
+                    for distances in seed_distance_dict.values()
+                ]
+            )
             combined_mode_distances = filter_invalid_distances(
                 combined_mode_distances, minimum_distance=minimum_distance
             )
@@ -222,10 +223,6 @@ def plot_distance_distributions_kde(
             ax.xaxis.set_major_locator(MaxNLocator(3, integer=True))
             ax.yaxis.set_major_locator(MaxNLocator(2, integer=True))
 
-            # remove top and right spines
-            # ax.spines["top"].set_visible(False)
-            # ax.spines["right"].set_visible(False)
-
     if figures_dir is not None:
         fig.tight_layout()
         plt.show()
@@ -236,7 +233,6 @@ def plot_distance_distributions_kde(
             bbox_inches="tight",
         )
         plt.close(fig)
-        # break
 
     return fig, all_ax_dict
 
@@ -299,7 +295,7 @@ def plot_ks_test_results(
             "hue": "packing_mode",
             "legend": False,
             "orient": "v",
-            "palette": COLOR_PALETTE,
+            "palette": label_tables.COLOR_PALETTE,
             "linewidth": 0.5,
             "errorbar": "sd",
             "err_kws": {"linewidth": 1},
@@ -313,7 +309,7 @@ def plot_ks_test_results(
         ax.set_xticks(
             ax.get_xticks(),
             labels=[
-                MODE_LABELS.get(label.get_text(), label.get_text())
+                label_tables.MODE_LABELS.get(label.get_text(), label.get_text())
                 for label in ax.get_xticklabels()
             ],
             rotation=45,
@@ -443,7 +439,7 @@ def plot_emd_comparisons(
             "hue": x_column,
             "legend": False,
             "orient": "v",
-            "palette": COLOR_PALETTE,
+            "palette": label_tables.COLOR_PALETTE,
             "linewidth": 0.5,
         }
         sns.boxplot(ax=ax_bar, showfliers=False, whis=(2.5, 97.5), **plot_params)  # type: ignore
@@ -457,7 +453,7 @@ def plot_emd_comparisons(
             ax.set_xticks(
                 ax.get_xticks(),
                 labels=[
-                    MODE_LABELS.get(label.get_text(), label.get_text())
+                    label_tables.MODE_LABELS.get(label.get_text(), label.get_text())
                     for label in ax.get_xticklabels()
                 ],
                 rotation=45,
@@ -503,7 +499,7 @@ def plot_emd_comparisons(
 
 def plot_occupancy_illustration(
     kde_dict: dict[str, dict[str, gaussian_kde]],
-    baseline_mode: str = "random",
+    packing_mode: str = "random",
     figures_dir: Path | None = None,
     suffix: str = "",
     distance_measure: str = "nucleus",
@@ -511,7 +507,7 @@ def plot_occupancy_illustration(
     method: Literal["pdf", "cumulative"] = "pdf",
     xlim: float | None = None,
     num_points: int = 250,
-    seed_index: int | None = None,
+    cellid_index: int | None = None,
     save_format: str = "png",
     bandwidth: Literal["scott", "silverman"] | float | None = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, Figure, list[Axes]]:
@@ -522,8 +518,9 @@ def plot_occupancy_illustration(
     ----------
     kde_dict
         Dictionary containing KDE information
-    baseline_mode
-        Baseline packing mode to illustrate
+        {cell_id:{mode:gaussian_kde, "available":gaussian_kde}}
+    packing_mode
+        Packing mode to illustrate
     figures_dir
         Directory to save the figures
     suffix
@@ -538,7 +535,7 @@ def plot_occupancy_illustration(
         X-axis limit for plots
     num_points
         Number of points for KDE evaluation
-    seed_index
+    cellid_index
         Index of seed to use for illustration
     save_format
         Format to save the figures in
@@ -553,23 +550,29 @@ def plot_occupancy_illustration(
     plt.rcParams.update({"font.size": 6})
     fig, axs = plt.subplots(nrows=3, ncols=1, dpi=300, figsize=(2.5, 2.5), sharex=True)
 
-    all_cell_ids = [cell_id for cell_id in kde_dict.keys() if baseline_mode in kde_dict[cell_id]]
-    if seed_index is not None:
-        if str(seed_index) in all_cell_ids:
-            seed = str(seed_index)
-        elif seed_index < len(all_cell_ids):
-            seed = all_cell_ids[seed_index]
+    all_cell_ids = [cell_id for cell_id in kde_dict.keys() if packing_mode in kde_dict[cell_id]]
+
+    if cellid_index is not None:
+        if str(cellid_index) in all_cell_ids:
+            cell_id = str(cellid_index)
+        elif cellid_index < len(all_cell_ids):
+            cell_id = all_cell_ids[cellid_index]
         else:
-            seed = all_cell_ids[0]
+            cell_id = all_cell_ids[0]
             logger.warning(
-                f"Seed index {seed_index} out of range. Using first cell ID {seed} instead."
+                f"Seed index {cellid_index} out of range. Using first cell ID {cell_id} instead."
             )
     else:
-        seed = all_cell_ids[0]
-    logger.info(f"Using seed {seed} for occupancy illustration")
+        cell_id = all_cell_ids[0]
+    logger.info(f"Using cell ID {cell_id} for occupancy illustration")
 
-    occupied_kde = kde_dict[seed][baseline_mode]
-    available_kde = kde_dict[seed]["available_distance"]
+    # Use first seed available for the baseline mode
+    seeds = kde_dict[cell_id]["occupied"].keys()
+    if not seeds:
+        raise ValueError(f"No seeds found for cell ID {cell_id} in occupied KDE data")
+    seed = next(iter(seeds))
+    occupied_kde = kde_dict[cell_id]["occupied"][seed][packing_mode]
+    available_kde = kde_dict[cell_id]["available"]
     xmax = occupied_kde.dataset.max()
     if xlim is not None and xlim < xmax:
         xmax = xlim
@@ -616,9 +619,11 @@ def plot_occupancy_illustration(
     ax.set_ylabel("Occupancy ratio")
 
     for ax in axs:
-        distance_label = DISTANCE_MEASURE_LABELS[distance_measure]
+        distance_label = label_tables.DISTANCE_MEASURE_LABELS[distance_measure]
         if normalization is not None:
-            distance_label = f"{distance_label} / {NORMALIZATION_LABELS[normalization]}"
+            distance_label = (
+                f"{distance_label} / {label_tables.NORMALIZATION_LABELS[normalization]}"
+            )
         elif "scaled" not in distance_measure:
             distance_label = f"{distance_label} (\u03bcm)"
         ax.xaxis.set_major_locator(MaxNLocator(4, integer=True))
@@ -747,7 +752,7 @@ def plot_occupancy_ratio(
                     x=xvals,
                     y=occupancy,
                     ax=ax,
-                    color=COLOR_PALETTE.get(mode, "gray"),
+                    color=label_tables.COLOR_PALETTE.get(mode, "gray"),
                     alpha=0.1,
                     linewidth=0.1,
                     label="_nolegend_",
@@ -759,10 +764,10 @@ def plot_occupancy_ratio(
         combined_occupancy = occupancy_dict[mode]["combined"]["occupancy"]
 
         plot_params = {
-            "color": COLOR_PALETTE.get(mode, "gray"),
+            "color": label_tables.COLOR_PALETTE.get(mode, "gray"),
             "alpha": 0.8,
             "linewidth": 1.5,
-            "label": MODE_LABELS.get(mode, mode),
+            "label": label_tables.MODE_LABELS.get(mode, mode),
             "zorder": 2,
         }
         if mode == baseline_mode:
@@ -781,9 +786,9 @@ def plot_occupancy_ratio(
     if ylim is not None:
         ax.set_ylim((0, ylim))
     ax.axhline(1, linewidth=1, color="gray", linestyle="--", zorder=1)
-    distance_label = DISTANCE_MEASURE_LABELS[distance_measure]
+    distance_label = label_tables.DISTANCE_MEASURE_LABELS[distance_measure]
     if normalization is not None:
-        distance_label = f"{distance_label} / {NORMALIZATION_LABELS[normalization]}"
+        distance_label = f"{distance_label} / {label_tables.NORMALIZATION_LABELS[normalization]}"
     else:
         distance_label = f"{distance_label} (\u03bcm)"
     ax.set_xlabel(distance_label)
@@ -864,10 +869,10 @@ def plot_occupancy_ratio_interpolation(
     # Plot combined occupancy for each mode
     for mode, mode_occupancy in modes_dict.items():
         plot_params = {
-            "color": COLOR_PALETTE.get(mode, "gray"),
+            "color": label_tables.COLOR_PALETTE.get(mode, "gray"),
             "alpha": 0.7,
             "linewidth": 1.5,
-            "label": MODE_LABELS.get(mode, mode),
+            "label": label_tables.MODE_LABELS.get(mode, mode),
             "zorder": 1,
         }
         if mode == baseline_mode:
@@ -895,7 +900,7 @@ def plot_occupancy_ratio_interpolation(
         x=xvals,
         y=occupancy_dict[occupancy_key],
         ax=ax,
-        color=COLOR_PALETTE.get(baseline_mode, "gray"),
+        color=label_tables.COLOR_PALETTE.get(baseline_mode, "gray"),
         label=label,
         alpha=1,
         linewidth=2,
@@ -910,11 +915,11 @@ def plot_occupancy_ratio_interpolation(
     if ylim is not None:
         ax.set_ylim((0, ylim))
     ax.axhline(1, linewidth=1, color="gray", linestyle="--", zorder=0)
-    ax.set_xlabel(f"{DISTANCE_MEASURE_LABELS[distance_measure]} (\u03bcm)")
+    ax.set_xlabel(f"{label_tables.DISTANCE_MEASURE_LABELS[distance_measure]} (\u03bcm)")
     ax.set_ylabel("Occupancy Ratio")
     ax.set_title(f"{plot_type.capitalize()}, MSE: {occupancy_dict[f'mse_{plot_type}']:.4f}")
     relative_contribution_text = [
-        f"{MODE_LABELS[key]}: {value:.0%}"
+        f"{label_tables.MODE_LABELS[key]}: {value:.0%}"
         for key, value in occupancy_dict[f"relative_contribution_{plot_type}"].items()
     ]
     ax.text(
@@ -1010,7 +1015,7 @@ def add_baseline_occupancy_interpolation_to_plot(
         x=xvals,
         y=occupancy_dict[occupancy_key],
         ax=ax,
-        color=COLOR_PALETTE.get(baseline_mode, "gray"),
+        color=label_tables.COLOR_PALETTE.get(baseline_mode, "gray"),
         label=label,
         alpha=1,
         linewidth=2,
@@ -1023,8 +1028,8 @@ def add_baseline_occupancy_interpolation_to_plot(
     x, y = 0.95, 0.95
 
     for i, (key, value) in enumerate(occupancy_dict[f"relative_contribution_{plot_type}"].items()):
-        color = COLOR_PALETTE.get(key, "gray")
-        text = f"{MODE_LABELS.get(key, key)}: {value:.0%}"
+        color = label_tables.COLOR_PALETTE.get(key, "gray")
+        text = f"{label_tables.MODE_LABELS.get(key, key)}: {value:.0%}"
         ax.text(
             x,
             y - i * 0.05,
@@ -1113,7 +1118,7 @@ def plot_mean_and_std_occupancy_ratio_kde(
     fig, ax = plt.subplots(dpi=300, figsize=(6, 6))
     for _ct, mode in enumerate(packing_modes):
 
-        color = COLOR_PALETTE.get(mode, "gray")
+        color = label_tables.COLOR_PALETTE.get(mode, "gray")
 
         logger.info(f"Calculating occupancy for {mode}")
         mode_dict = distance_dict[mode]
@@ -1167,7 +1172,7 @@ def plot_mean_and_std_occupancy_ratio_kde(
             all_xvals,
             mean_yvals,
             c=color,
-            label=MODE_LABELS.get(mode, mode),
+            label=label_tables.MODE_LABELS.get(mode, mode),
             lw=3,
             zorder=2,
         )
@@ -1189,9 +1194,9 @@ def plot_mean_and_std_occupancy_ratio_kde(
     if ylim is not None:
         ax.set_ylim((0, ylim))
     ax.axhline(1, linewidth=1, color="gray", linestyle="--")
-    distance_label = DISTANCE_MEASURE_LABELS[distance_measure]
+    distance_label = label_tables.DISTANCE_MEASURE_LABELS[distance_measure]
     if normalization is not None:
-        distance_label = f"{distance_label} / {NORMALIZATION_LABELS[normalization]}"
+        distance_label = f"{distance_label} / {label_tables.NORMALIZATION_LABELS[normalization]}"
     else:
         distance_label = f"{distance_label} (\u03bcm)"
     ax.legend(handles=lines)
@@ -1307,7 +1312,7 @@ def plot_binned_occupancy_ratio_calc(
             # sns.lineplot(
             #     x=bin_centers,
             #     y=occupied_space_counts[cell_id] / available_space_counts[cell_id],
-            #     color=COLOR_PALETTE.get(mode, "gray"),
+            #     color=label_tables.COLOR_PALETTE.get(mode, "gray"),
             #     alpha=0.1,
             #     linewidth=0.1,
             #     ax=ax,
@@ -1332,8 +1337,8 @@ def plot_binned_occupancy_ratio_calc(
         sns.lineplot(
             x=bin_centers,
             y=mean_occupancy_ratio,
-            label=MODE_LABELS.get(mode, mode),
-            color=COLOR_PALETTE.get(mode, "gray"),
+            label=label_tables.MODE_LABELS.get(mode, mode),
+            color=label_tables.COLOR_PALETTE.get(mode, "gray"),
             ax=ax,
             linewidth=1.5,
             zorder=2,
@@ -1343,7 +1348,7 @@ def plot_binned_occupancy_ratio_calc(
             mean_occupancy_ratio - std_occupancy_ratio,
             mean_occupancy_ratio + std_occupancy_ratio,
             alpha=0.1,
-            color=COLOR_PALETTE.get(mode, "gray"),
+            color=label_tables.COLOR_PALETTE.get(mode, "gray"),
             linewidth=0,
             label="_nolegend_",
             zorder=0,
@@ -1360,9 +1365,9 @@ def plot_binned_occupancy_ratio_calc(
         ax.set_ylim((0, ylim))
     ax.axhline(1, linewidth=1, color="gray", linestyle="--", zorder=1)
 
-    distance_label = DISTANCE_MEASURE_LABELS[distance_measure]
+    distance_label = label_tables.DISTANCE_MEASURE_LABELS[distance_measure]
     if normalization is not None:
-        distance_label = f"{distance_label} / {NORMALIZATION_LABELS[normalization]}"
+        distance_label = f"{distance_label} / {label_tables.NORMALIZATION_LABELS[normalization]}"
     else:
         distance_label = f"{distance_label} (\u03bcm)"
     ax.set_xlabel(distance_label)
@@ -1431,8 +1436,8 @@ def plot_binned_occupancy_ratio(
         sns.lineplot(
             x=combined_xvals,
             y=combined_occupancy,
-            label=MODE_LABELS.get(mode, mode),
-            color=COLOR_PALETTE.get(mode, "gray"),
+            label=label_tables.MODE_LABELS.get(mode, mode),
+            color=label_tables.COLOR_PALETTE.get(mode, "gray"),
             ax=ax,
             linewidth=1.5,
             zorder=2,
@@ -1442,7 +1447,7 @@ def plot_binned_occupancy_ratio(
             combined_occupancy - std_occupancy,
             combined_occupancy + std_occupancy,
             alpha=0.1,
-            color=COLOR_PALETTE.get(mode, "gray"),
+            color=label_tables.COLOR_PALETTE.get(mode, "gray"),
             linewidth=0,
             label="_nolegend_",
             zorder=0,
@@ -1459,9 +1464,9 @@ def plot_binned_occupancy_ratio(
         ax.set_ylim((0, ylim))
     ax.axhline(1, linewidth=1, color="gray", linestyle="--", zorder=1)
 
-    distance_label = DISTANCE_MEASURE_LABELS[distance_measure]
+    distance_label = label_tables.DISTANCE_MEASURE_LABELS[distance_measure]
     if normalization is not None:
-        distance_label = f"{distance_label} / {NORMALIZATION_LABELS[normalization]}"
+        distance_label = f"{distance_label} / {label_tables.NORMALIZATION_LABELS[normalization]}"
     else:
         distance_label = f"{distance_label} (\u03bcm)"
     ax.set_xlabel(distance_label)
@@ -1537,8 +1542,8 @@ def plot_grid_points_slice(
         custom_cmap = custom_cmap.reversed()
 
     fig, ax = plt.subplots(figsize=(2.5, 2.5), dpi=300)
-    x_index, y_index = PROJECTION_TO_INDEX_MAP[projection_axis]
-    x_label, y_label = PROJECTION_TO_LABEL_MAP[projection_axis]
+    x_index, y_index = label_tables.PROJECTION_TO_INDEX_MAP[projection_axis]
+    x_label, y_label = label_tables.PROJECTION_TO_LABEL_MAP[projection_axis]
 
     vmin, vmax = None, None
     if clim is not None:
@@ -1581,69 +1586,130 @@ def plot_grid_points_slice(
 
 
 def plot_envelope_for_cell(
-    cell_results: dict[str, dict], model: str, metric: str, title: str | None = None
-) -> None:
+    cell_results: dict[str, dict],
+    packing_mode: str,
+    distance_measure: str,
+    title: str | None = None,
+    ax: Axes | None = None,
+) -> tuple[Figure, Axes]:
     """
-    Plot ECDF envelope for single cell, model, and metric.
+    Plot ECDF envelope for single cell, model, and distance measure.
 
     Displays observed ECDF against Monte Carlo envelope with mean curve.
 
     Parameters
     ----------
     cell_results
-        Result dictionary for one cell from analyze_cell_from_metrics
-    model
-        Name of null model to plot
-    metric
-        Name of distance metric to plot
+        Result dictionary for one cell from monte_carlo_per_cell
+        {packing_mode: {"per_distance_measure": {distance_measure: {info}}}}
+    packing_mode
+        Name of packing mode to compare
+    distance_measure
+        Name of distance measure to plot
     title
-        Optional custom plot title. If None, auto-generates from model/metric
+        Optional custom plot title. If None, auto-generates from packing_mode/distance_measure
+    ax
+        Optional Matplotlib Axes to plot on. If None, creates a new figure.
     """
-    info = cell_results[model]["per_metric"][metric]
+    info = cell_results[packing_mode]["per_distance_measure"][distance_measure]
     r = info["r"]
-    plt.figure(figsize=(6, 4))
-    plt.fill_between(r, info["lo"], info["hi"], color="lightgray", alpha=0.7, label="MC envelope")
-    plt.plot(r, info["mu"], "--", color="dimgray", label="Sim mean")
-    plt.plot(r, info["obs_curve"], color="crimson", lw=2, label="Observed")
-    ttl = title or f"Cell: {metric} vs {model} (p={info['pval']:.3f})"
-    plt.title(ttl)
-    plt.xlabel("r")
-    plt.ylabel("ECDF")
-    plt.legend()
+    if ax is None:
+        fig, ax = plt.subplots(dpi=300, figsize=(4, 4))
+    else:
+        fig = ax.get_figure(root=True)
+        if fig is None:
+            raise ValueError("The provided Axes object does not have an associated Figure")
+    ax.fill_between(r, info["lo"], info["hi"], color="lightgray", alpha=0.7, label="MC envelope")
+    ax.plot(r, info["mu"], "--", color="dimgray", label="Sim mean")
+    ax.plot(r, info["obs_curve"], color="crimson", lw=2, label="Observed")
+    ttl = title or (
+        f"Cell: {distance_measure} vs {label_tables.MODE_LABELS.get(packing_mode, packing_mode)} "
+        f"(p={info['pval']:.3f})"
+    )
+    ax.set_title(ttl)
+    ax.set_xlabel("r")
+    ax.set_ylabel("ECDF")
+    # ax.legend()
+    sns.despine(ax=ax)
     plt.tight_layout()
-    plt.show()
+    return fig, ax
 
 
 def plot_rejection_bars(
-    rej_rates_dict: pd.Series, title: str = "Rejection rates (q < alpha)"
-) -> None:
+    rej_rates_dict: pd.Series,
+    title: str = "Rejection rates (q < alpha)",
+    ax: Axes | None = None,
+) -> tuple[Figure, Axes]:
     """
-    Plot bar chart of rejection rates across models or metrics.
+    Plot bar chart of rejection rates across packing modes or distance measures.
 
-    Handles both joint rejection rates (single bars per model) and
-    per-metric rates (grouped bars per model/metric combination).
+    Handles both joint rejection rates (single bars per packing mode) and
+    per-distance measure rates (grouped bars per packing mode/distance measure combination).
 
     Parameters
     ----------
-    rej_rates_dict
-        Series with rejection rates, optionally with MultiIndex for per-metric rates
+    rej_rates_dict: pd.Series
+        Series with rejection rates, optionally with MultiIndex for per-distance measure rates
     title
         Plot title
+    ax
+        Optional Matplotlib Axes to plot on. If None, creates a new figure.
+
+    Returns
+    -------
+    :
+        Tuple containing figure and axis objects
     """
+    if ax is None:
+        fig, ax = plt.subplots(dpi=300, figsize=(6, 4))
+    else:
+        fig = ax.get_figure(root=True)
+        if fig is None:
+            raise ValueError("The provided Axes object does not have an associated Figure")
     if isinstance(rej_rates_dict, pd.Series) and isinstance(rej_rates_dict.index, pd.MultiIndex):
-        # per-metric: make a grouped bar
-        df = rej_rates_dict.unstack(level="metric")
-        ax = df.plot(kind="bar", figsize=(8, 4))
+        # per-distance measure: make a grouped bar
+        df = rej_rates_dict.unstack(level="distance_measure").reset_index()
+        # pivot to a long format for seaborn
+        df = df.melt(
+            id_vars="packing_mode", var_name="distance_measure", value_name="rejection_rate"
+        )
+
+        df.rename(
+            columns={"packing_mode": "Packing Mode", "distance_measure": "Distance Measure"},
+            inplace=True,
+        )
+        ax = sns.barplot(
+            data=df,
+            x="Packing Mode",
+            y="rejection_rate",
+            hue="Distance Measure",
+            palette=label_tables.COLOR_PALETTE,
+            ax=ax,
+        )
         ax.set_ylabel("Fraction of cells rejected")
         ax.set_title(title)
-        plt.xticks(rotation=0)
-        plt.tight_layout()
-        plt.show()
+        ax.legend(bbox_to_anchor=(1.05, 1), loc="upper left", frameon=False)
     else:
         ser = pd.Series(rej_rates_dict)
-        ax = ser.plot(kind="bar", figsize=(6, 4), color="steelblue")
+        ax = sns.barplot(
+            x=ser.index,
+            y=ser.values,
+            hue=ser.index,
+            palette=label_tables.COLOR_PALETTE,
+            ax=ax,
+            legend=False,
+        )
         ax.set_ylabel("Fraction of cells rejected")
         ax.set_title(title)
-        plt.xticks(rotation=0)
-        plt.tight_layout()
-        plt.show()
+        ax.set_xlabel("Packing mode")
+    ax.set_ylim(0, 1)
+    ax.set_xticks(
+        ax.get_xticks(),
+        labels=[
+            label_tables.MODE_LABELS.get(label.get_text(), label.get_text())
+            for label in ax.get_xticklabels()
+        ],
+    )
+    sns.despine(fig=fig)
+    plt.tight_layout()
+    return fig, ax

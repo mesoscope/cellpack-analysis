@@ -88,6 +88,9 @@ MODE_LABELS = {
     "planar_gradient_Z_moderate_invert": "Basal",
     "struct_gradient": "Structure",
     "struct_gradient_weak": "Structure",
+    "1_random": "Spacing 100nm",
+    "2_random": "Spacing 200nm",
+    "4_random": "Spacing 400nm",
 }
 
 # Packing modes in the mean shape - do not have a cell ID associated
@@ -163,6 +166,15 @@ DISTANCE_LIMITS = {
     "membrane": (0.0, 3.2),
 }
 
+STATS_LABELS = {
+    "cell_volumes": "Cell Volume (µm\u00b3)",
+    "nuc_volumes": "Nuclear Volume (µm\u00b3)",
+    "cell_heights": "Cell Height (µm)",
+    "nuc_heights": "Nuclear Height (µm)",
+    "cell_diameters": "Cell Diameter (µm)",
+    "nuc_diameters": "Nuclear Diameter (µm)",
+    "intracellular_radii": "Intracellular Radius (µm)",
+}
 
 # Color palette for plotting
 COLOR_PALETTE = {
@@ -191,6 +203,10 @@ COLOR_PALETTE = {
     "membrane": colormap[6],
     "nucleus": colormap[9],
     "interpolated": "black",
+    "pairwise": "gray",
+    "nearest": "darkgray",
+    "z": colormap[10],
+    "scaled_nucleus": adjust_color_saturation(colormap[10], 0.5),
     # parameter sweep plotting
     "nucleus_gradient_0pt03": adjust_color_saturation(colormap[9], 0.1),
     "nucleus_gradient_0pt05": adjust_color_saturation(colormap[9], 0.4),
@@ -200,6 +216,9 @@ COLOR_PALETTE = {
     "apical_gradient_0pt5": adjust_color_saturation(colormap[10], 0.4),
     "apical_gradient_0pt7": adjust_color_saturation(colormap[10], 0.7),
     "apical_gradient_1": adjust_color_saturation(colormap[10], 0.9),
+    "1_random": adjust_color_saturation(colormap[3], 0.4),
+    "2_random": adjust_color_saturation(colormap[3], 0.6),
+    "4_random": adjust_color_saturation(colormap[3], 0.8),
 }
 
 

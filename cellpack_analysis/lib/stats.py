@@ -1,11 +1,10 @@
 from collections.abc import Sequence
-from typing import Any, Literal
+from typing import Literal
 
 import numpy as np
 import pandas as pd
 from scipy import integrate
-
-from cellpack_analysis.lib.default_values import PIXEL_SIZE_IN_UM
+from scipy.stats import false_discovery_control
 
 
 def cohens_d(x: np.ndarray, y: np.ndarray) -> float:
@@ -28,60 +27,6 @@ def cohens_d(x: np.ndarray, y: np.ndarray) -> float:
     dof = nx + ny - 2
     pooled_std = np.sqrt(((nx - 1) * np.var(x, ddof=1) + (ny - 1) * np.var(y, ddof=1)) / dof)
     return np.abs(np.mean(x) - np.mean(y)) / pooled_std
-
-
-def normalize_distances(
-    all_distance_dict: dict[str, Any],
-    mesh_information_dict: dict[str, Any],
-    channel_map: dict[str, str],
-    normalization: str | None = None,
-    pixel_size_in_um: float = PIXEL_SIZE_IN_UM,
-) -> dict[str, Any]:
-    """
-    Normalize distances using specified normalization method.
-
-    Parameters
-    ----------
-    all_distance_dict
-        Dictionary containing distance measurements by measure and mode
-    mesh_information_dict
-        Dictionary containing mesh information for normalization
-    normalization
-        Normalization method: 'intracellular_radius', 'cell_diameter', 'max_distance',
-        or None for pixel size
-    channel_map
-        Mapping between modes and mesh information keys
-    pixel_size_in_um
-        Pixel size for default normalization
-
-    Returns
-    -------
-    :
-        Dictionary with normalized distances
-    """
-    for measure, mode_distance_dict in all_distance_dict.items():
-        if "scaled" in measure:
-            continue
-        for mode, distance_dict in mode_distance_dict.items():
-            mode_mesh_dict = mesh_information_dict.get(channel_map.get(mode, ""), {})
-            for cell_id, distance in distance_dict.items():
-                mesh_info = mode_mesh_dict.get(
-                    cell_id,
-                    mode_mesh_dict.get("mean", {"intracellular_radius": 1}),
-                )
-
-                if normalization == "intracellular_radius":
-                    normalization_factor = mesh_info["intracellular_radius"]
-                elif normalization == "cell_diameter":
-                    normalization_factor = mesh_info["cell_diameter"]
-                elif normalization == "max_distance":
-                    normalization_factor = distance.max()
-                else:
-                    normalization_factor = 1 / pixel_size_in_um
-
-                distance_dict[cell_id] = distance / normalization_factor
-
-    return all_distance_dict
 
 
 def ripley_k(
@@ -317,6 +262,7 @@ def make_r_grid_from_pooled(
     n: int = 100,
     extend: float = 1.05,
     qmax: float = 99.5,
+    bin_width: float | None = None,
 ) -> np.ndarray:
     """
     Build r-grid from pooled values over observed and simulation data.
@@ -326,16 +272,20 @@ def make_r_grid_from_pooled(
     list_of_arrays
         List of arrays containing distance values to pool
     n
-        Number of grid points to generate
+        Number of grid points to generate (used if bin_width is None)
     extend
         Extension factor beyond maximum value
     qmax
         Percentile to use as maximum value before extension
+    bin_width
+        If provided, determines number of bins based on data range / bin_width.
+        Takes precedence over n parameter.
 
     Returns
     -------
     :
-        Linearly spaced grid from 0 to extended maximum
+        Linearly spaced grid of r values covering the range of the pooled data with
+        specified extension
     """
     vals = np.concatenate(
         [np.asarray(a)[np.isfinite(a)] for a in list_of_arrays if a is not None and len(a) > 0],
@@ -345,11 +295,20 @@ def make_r_grid_from_pooled(
         return np.linspace(0.0, 1.0, n)
     vmax = np.percentile(vals, qmax)
     vmax = max(vmax, np.finfo(float).eps)
-    return np.linspace(0.0, vmax * extend, n)
+
+    # Use bin_width to calculate number of bins if provided
+    if bin_width is not None:
+        # Extend grid by half bin_width on either side to ensure 0 and vmax lie within bins
+        n = int((vmax * extend) / bin_width) + 2
+        r_grid = np.linspace(-bin_width / 2, vmax * extend + bin_width / 2, n)
+    else:
+        r_grid = np.linspace(0.0, vmax * extend, n)
+
+    return r_grid
 
 
 def pointwise_envelope(
-    sim_curves: np.ndarray, alpha: float = 0.05
+    sim_curves: np.ndarray, alpha: float = 0.1
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Compute pointwise Monte Carlo envelope from simulation curves.
@@ -374,14 +333,18 @@ def pointwise_envelope(
     return lo, hi, mu, sd
 
 
-def global_sup_deviation_pvalue(
-    obs_curve: np.ndarray, sim_curves: np.ndarray
+def get_test_statistic_and_pvalue(
+    obs_curve: np.ndarray,
+    sim_curves: np.ndarray,
+    statistic: Literal["supremum", "intdev"] = "supremum",
 ) -> tuple[float, float, np.ndarray]:
     """
     Calculate global test statistic and p-value using supremum deviation.
 
-    Computes test statistic T = max_j |(obs - mu_j)/sd_j| and Monte Carlo
-    p-value as (1 + #{T_sim >= T_obs}) / (M + 1).
+    Computes test statistic
+        T = max_j |(obs - mu_j)/sd_j| for "supremum" or
+        T = integrate |(obs - mu)/sd| for "intdev"
+    Monte Carlo p-value is (1 + #{T_sim >= T_obs}) / (M + 1).
 
     Parameters
     ----------
@@ -389,6 +352,8 @@ def global_sup_deviation_pvalue(
         Observed ECDF curve
     sim_curves
         Array of shape (M, L) containing M simulation ECDF curves
+    statistic
+        Test statistic to compute: "supremum" or "intdev"
 
     Returns
     -------
@@ -398,77 +363,100 @@ def global_sup_deviation_pvalue(
     mu = sim_curves.mean(axis=0)
     sd = sim_curves.std(axis=0, ddof=1)
     sd[sd == 0] = 1e-9
-    T_obs = np.max(np.abs((obs_curve - mu) / sd))
-    T_sim = np.max(np.abs((sim_curves - mu) / sd), axis=1)
+    if statistic == "supremum":
+        T_obs = np.max(np.abs((obs_curve - mu) / sd))
+        T_sim = np.max(np.abs((sim_curves - mu) / sd), axis=1)
+    elif statistic == "intdev":
+        T_obs = integrate.trapezoid(np.abs((obs_curve - mu) / sd))
+        T_sim = np.array(
+            [
+                integrate.trapezoid(np.abs((sim_curves[i] - mu) / sd))
+                for i in range(sim_curves.shape[0])
+            ]
+        )
+    else:
+        raise ValueError(f"Invalid statistic: {statistic}")
     p = (np.sum(T_sim >= T_obs) + 1) / (T_sim.size + 1)
     return float(p), float(T_obs), T_sim
 
 
-def analyze_cell_from_metrics(
-    obs_metrics: dict[str, np.ndarray],
-    sims_metrics_per_model: dict[str, list[dict[str, np.ndarray]]],
+def monte_carlo_per_cell(
+    observed_distances: dict[str, np.ndarray],
+    simulated_distances_by_mode: dict[str, list[dict[str, np.ndarray]]],
     alpha: float = 0.05,
-    metrics_order: list[str] | None = None,
+    distance_measures: list[str] | None = None,
     r_grid_size: int = 150,
+    statistic: Literal["supremum", "intdev"] = "supremum",
 ) -> dict[str, dict]:
     """
-    Analyze single cell by comparing observed metrics against simulated null models.
+    Analyze single cell by comparing observed distances against simulated null models.
 
-    Performs per-metric envelope tests and joint test across all metrics
+    Performs per-distance measure envelope tests and joint test across all distance measures
     for each null model using ECDF-based Monte Carlo testing.
 
     Parameters
     ----------
-    obs_metrics
+    observed_distances
         Dictionary mapping metric names to observed distance arrays
-    sims_metrics_per_model
-        Dictionary mapping model names to lists of R replicate metric dictionaries
+        {distance_measure: num_cellxnum_points np.ndarray of distances}
+    simulated_distances_by_mode
+        Dictionary mapping packing mode names to lists of simulated distance dictionaries
+        {packing_mode:[{distance_measure: num_cellxnum_points np.ndarray of distances}xreplicates]}
     alpha
         Significance level for envelope construction
-    metrics_order
-        Ordered list of metric names to analyze. If None, uses obs_metrics keys
+    distance_measures
+        List of distance measures to analyze; if None, use all from observed_distances
     r_grid_size
         Number of points in r-grid for ECDF evaluation
+    statistic
+        Test statistic to use for joint test.
+        "supremum": use maximum standardized deviation across r-grid points
+        "intdev": use integrated standardized deviation across r-grid points
 
     Returns
     -------
     :
-        Nested dictionary with structure: model -> {
-            'per_metric': {metric -> {'r', 'obs_curve', 'lo', 'hi', 'mu', 'sd', 'pval', 'T_obs'}},
-            'joint': {'pval', 'T_obs', 'metric_order'}
+        Nested dictionary with structure: packing_mode -> {
+            'per_distance_measure': {distance_measure ->
+                {'r', 'obs_curve', 'lo', 'hi', 'mu', 'sd', 'pval', 'T_obs'}},
+            'joint': {'pval', 'T_obs', 'distance_measures'}
         }
     """
-    models = list(sims_metrics_per_model.keys())
-    R = len(next(iter(sims_metrics_per_model.values())))  # number of replicates per model
-    if metrics_order is None:
-        metrics_order = list(obs_metrics.keys())
+    packing_modes = list(simulated_distances_by_mode.keys())
+    num_replicates = len(
+        next(iter(simulated_distances_by_mode.values()))
+    )  # number of replicates per model
+    if distance_measures is None:
+        distance_measures = list(observed_distances.keys())
 
     results = {}
-    for m in models:
-        reps = sims_metrics_per_model[m]  # list of dicts
-        per_metric = {}
+    for packing_mode in packing_modes:
+        reps = simulated_distances_by_mode[packing_mode]  # list of dicts
+        per_distance_measure = {}
 
-        # First pass: build r-grids per metric based on pooled obs + sims
+        # First pass: build r-grids per distance measure based on pooled obs + sims
         r_grids = {}
-        for metric in metrics_order:
-            pooled = [obs_metrics.get(metric, np.array([]))] + [
-                rep.get(metric, np.array([])) for rep in reps
+        for distance_measure in distance_measures:
+            pooled = [observed_distances.get(distance_measure, np.array([]))] + [
+                rep.get(distance_measure, np.array([])) for rep in reps
             ]
-            r_grids[metric] = make_r_grid_from_pooled(pooled, n=r_grid_size)
+            r_grids[distance_measure] = make_r_grid_from_pooled(pooled, n=r_grid_size)
 
         # Second pass: compute curves, envelopes, p-values
-        sim_curves_by_metric = {}
-        obs_curves_by_metric = {}
-        for metric in metrics_order:
-            r = r_grids[metric]
+        sim_curves_by_distance_measure = {}
+        obs_curves_by_distance_measure = {}
+        for distance_measure in distance_measures:
+            r = r_grids[distance_measure]
             # observed curve
-            obs_curve = ecdf(obs_metrics.get(metric, np.array([])), r)
+            obs_curve = ecdf(observed_distances.get(distance_measure, np.array([])), r)
             # simulation curves
-            sim_mat = np.vstack([ecdf(rep.get(metric, np.array([])), r) for rep in reps])  # (R, L)
+            sim_mat = np.vstack(
+                [ecdf(rep.get(distance_measure, np.array([])), r) for rep in reps]
+            )  # (R, L)
             lo, hi, mu, sd = pointwise_envelope(sim_mat, alpha=alpha)
-            pval, Tobs, _ = global_sup_deviation_pvalue(obs_curve, sim_mat)
+            pval, Tobs, _ = get_test_statistic_and_pvalue(obs_curve, sim_mat, statistic=statistic)
 
-            per_metric[metric] = {
+            per_distance_measure[distance_measure] = {
                 "r": r,
                 "obs_curve": obs_curve,
                 "lo": lo,
@@ -478,58 +466,39 @@ def analyze_cell_from_metrics(
                 "pval": pval,
                 "T_obs": Tobs,
             }
-            sim_curves_by_metric[metric] = sim_mat
-            obs_curves_by_metric[metric] = obs_curve
+            sim_curves_by_distance_measure[distance_measure] = sim_mat
+            obs_curves_by_distance_measure[distance_measure] = obs_curve
 
         # Joint test: concatenate curves
         sim_concat = np.vstack(
             [
                 np.concatenate(
-                    [sim_curves_by_metric[metric][i] for metric in metrics_order], axis=0
+                    [
+                        sim_curves_by_distance_measure[distance_measure][i]
+                        for distance_measure in distance_measures
+                    ],
+                    axis=0,
                 )
-                for i in range(R)
+                for i in range(num_replicates)
             ]
         )  # (R, sum L_m)
         obs_concat = np.concatenate(
-            [obs_curves_by_metric[metric] for metric in metrics_order], axis=0
+            [
+                obs_curves_by_distance_measure[distance_measure]
+                for distance_measure in distance_measures
+            ],
+            axis=0,
         )
 
         # Now compute joint p-value in standardized sup-deviation sense
-        p_joint, Tobs_joint, _ = global_sup_deviation_pvalue(obs_concat, sim_concat)
+        p_joint, Tobs_joint, _ = get_test_statistic_and_pvalue(obs_concat, sim_concat)
 
-        results[m] = {
-            "per_metric": per_metric,
-            "joint": {"pval": p_joint, "T_obs": Tobs_joint, "metric_order": metrics_order},
+        results[packing_mode] = {
+            "per_distance_measure": per_distance_measure,
+            "joint": {"pval": p_joint, "T_obs": Tobs_joint, "distance_measures": distance_measures},
         }
 
     return results
-
-
-def benjamini_hochberg(pvals: np.ndarray | list) -> np.ndarray:
-    """
-    Apply Benjamini-Hochberg procedure for multiple testing correction.
-
-    Parameters
-    ----------
-    pvals
-        Array of p-values to adjust
-
-    Returns
-    -------
-    :
-        Array of adjusted q-values in same order as input, clipped to [0, 1]
-    """
-    p = np.asarray(pvals, dtype=float)
-    n = p.size
-    order = np.argsort(p)
-    ranks = np.empty_like(order)
-    ranks[order] = np.arange(1, n + 1)
-    q = p * n / ranks
-    # ensure monotonicity
-    q_sorted = np.minimum.accumulate(q[order][::-1])[::-1]
-    q_vals = np.empty_like(q_sorted)
-    q_vals[order] = q_sorted
-    return np.clip(q_vals, 0, 1)
 
 
 def summarize_across_cells(
@@ -552,55 +521,69 @@ def summarize_across_cells(
     -------
     :
         Dictionary containing:
-        - 'per_metric_pvals': DataFrame with rows=cells, columns=(model, metric)
-        - 'per_metric_qvals': BH-adjusted q-values
-        - 'joint_pvals': DataFrame with rows=cells, columns=models
+        - 'per_distance_measure_pvals': DataFrame with rows=cells,
+            columns=(packing_mode, distance_measure)
+        - 'per_distance_measure_qvals': BH-adjusted q-values
+        - 'joint_pvals': DataFrame with rows=cells, columns=packing_mode
         - 'joint_qvals': BH-adjusted joint test q-values
-        - 'rejection_rates': {'per_metric': pd.Series, 'joint': pd.Series} with
-          fraction of cells rejected per model/metric
+        - 'rejection_per_distance_measure': {'per_distance_measure': pd.Series, 'joint': pd.Series}
+            with fraction of cells rejected per packing_mode/distance_measure
     """
     # Discover models and metrics from first cell
     first_cell = all_results[0]
-    models = list(first_cell.keys())
-    metrics = list(first_cell[models[0]]["per_metric"].keys())
+    packing_modes = list(first_cell.keys())
+    distance_measures = list(first_cell[packing_modes[0]]["per_distance_measure"].keys())
 
-    C = len(all_results)
+    num_cells = len(all_results)
     # Collect p-values
-    per_metric_p = pd.DataFrame(
-        index=np.arange(C),
-        columns=pd.MultiIndex.from_product([models, metrics], names=["model", "metric"]),
+    per_distance_measure_p = pd.DataFrame(
+        index=np.arange(num_cells),
+        columns=pd.MultiIndex.from_product(
+            [packing_modes, distance_measures], names=["packing_mode", "distance_measure"]
+        ),
         dtype=float,
     )
-    joint_p = pd.DataFrame(index=np.arange(C), columns=models, dtype=float)
+    joint_p = pd.DataFrame(index=np.arange(num_cells), columns=packing_modes, dtype=float)
 
-    for c in range(C):
-        for m in models:
-            for metric in metrics:
-                per_metric_p.loc[c, (m, metric)] = all_results[c][m]["per_metric"][metric]["pval"]
-            joint_p.loc[c, m] = all_results[c][m]["joint"]["pval"]
+    for cell_idx in range(num_cells):
+        for packing_mode in packing_modes:
+            for distance_measure in distance_measures:
+                per_distance_measure_p.loc[cell_idx, (packing_mode, distance_measure)] = (
+                    all_results[cell_idx][packing_mode]["per_distance_measure"][distance_measure][
+                        "pval"
+                    ]
+                )
+            joint_p.loc[cell_idx, packing_mode] = all_results[cell_idx][packing_mode]["joint"][
+                "pval"
+            ]
 
-    # BH across cells per (model, metric)
-    per_metric_q = per_metric_p.copy()
-    for m in models:
-        for metric in metrics:
-            per_metric_q[(m, metric)] = benjamini_hochberg(
-                np.asarray(per_metric_p[(m, metric)].values)
+    # BH across cells per (model, distance_measure)
+    per_distance_measure_q = per_distance_measure_p.copy()
+    for packing_mode in packing_modes:
+        for distance_measure in distance_measures:
+            per_distance_measure_q[(packing_mode, distance_measure)] = false_discovery_control(
+                np.asarray(per_distance_measure_p[(packing_mode, distance_measure)].values),
+                method="bh",
             )
 
     # BH across cells for joint p-values per model
     joint_q = joint_p.copy()
-    for m in models:
-        joint_q[m] = benjamini_hochberg(np.asarray(joint_p[m].values))
+    for packing_mode in packing_modes:
+        joint_q[packing_mode] = false_discovery_control(
+            np.asarray(joint_p[packing_mode].values), method="bh"
+        )
 
     # Rejection rates (q < alpha)
-    rej_metric = (per_metric_q < alpha).mean(axis=0)  # fraction of cells rejected
+    rej_distance_measure = (per_distance_measure_q < alpha).mean(
+        axis=0
+    )  # fraction of cells rejected
     rej_joint = (joint_q < alpha).mean(axis=0)
 
     return {
-        "per_metric_pvals": per_metric_p,
-        "per_metric_qvals": per_metric_q,
+        "per_distance_measure_pvals": per_distance_measure_p,
+        "per_distance_measure_qvals": per_distance_measure_q,
         "joint_pvals": joint_p,
         "joint_qvals": joint_q,
-        "rejection_per_metric": rej_metric,
+        "rejection_per_distance_measure": rej_distance_measure,
         "rejection_joint": rej_joint,
     }

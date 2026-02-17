@@ -20,6 +20,8 @@ from cellpack_analysis.lib.label_tables import (
     DISTANCE_LIMITS,
     DISTANCE_MEASURE_LABELS,
     GRID_DISTANCE_LABELS,
+    MODE_LABELS,
+    STATS_LABELS,
 )
 from cellpack_analysis.lib.mesh_tools import get_mesh_information_dict_for_structure
 
@@ -60,49 +62,64 @@ for structure_id in all_structures:
 log_file_path = base_results_dir / "cell_metrics/punctate_cell_metrics.log"
 log_file_path.parent.mkdir(parents=True, exist_ok=True)
 logger = add_file_handler_to_logger(logger, log_file_path)
+cell_stats = {
+    structure_id: {
+        "cell_volumes": [],
+        "nuc_volumes": [],
+        "cell_heights": [],
+        "nuc_heights": [],
+        "cell_diameters": [],
+        "nuc_diameters": [],
+        "intracellular_radii": [],
+    }
+    for structure_id in all_structures
+}
 for structure_id, mesh_information_dict in combined_mesh_information_dict.items():
     logger.info(f"{structure_id} cell metrics:")
     logger.info("===================================")
-    cell_volumes = []
-    nuc_volumes = []
-    cell_heights = []
-    nuc_heights = []
-    cell_diameters = []
-    nuc_diameters = []
-    intracellular_radii = []
-    for seed_dict in mesh_information_dict.values():
-        cell_volumes.append(seed_dict["cell_volume"] * (PIXEL_SIZE_IN_UM**3))
-        nuc_volumes.append(seed_dict["nuc_volume"] * (PIXEL_SIZE_IN_UM**3))
+    for cellid_dict in mesh_information_dict.values():
+        cell_stats[structure_id]["cell_volumes"].append(
+            cellid_dict["cell_volume"] * (PIXEL_SIZE_IN_UM**3)
+        )
+        cell_stats[structure_id]["nuc_volumes"].append(
+            cellid_dict["nuc_volume"] * (PIXEL_SIZE_IN_UM**3)
+        )
 
-        cell_bounds = seed_dict["cell_bounds"]
-        nuc_bounds = seed_dict["nuc_bounds"]
+        cell_bounds = cellid_dict["cell_bounds"]
+        nuc_bounds = cellid_dict["nuc_bounds"]
         cell_bottom = cell_bounds[:, 2].min() * PIXEL_SIZE_IN_UM
         cell_top = cell_bounds[:, 2].max() * PIXEL_SIZE_IN_UM
         nuc_top = nuc_bounds[:, 2].max() * PIXEL_SIZE_IN_UM
-        cell_heights.append(cell_top - cell_bottom)
-        nuc_heights.append(nuc_top - cell_bottom)
+        cell_stats[structure_id]["cell_heights"].append(cell_top - cell_bottom)
+        cell_stats[structure_id]["nuc_heights"].append(nuc_top - cell_bottom)
 
-        cell_diameters.append(seed_dict["cell_diameter"] * PIXEL_SIZE_IN_UM)
-        nuc_diameters.append(seed_dict["nuc_diameter"] * PIXEL_SIZE_IN_UM)
-        intracellular_radii.append(seed_dict["intracellular_radius"] * PIXEL_SIZE_IN_UM)
+        cell_stats[structure_id]["cell_diameters"].append(
+            cellid_dict["cell_diameter"] * PIXEL_SIZE_IN_UM
+        )
+        cell_stats[structure_id]["nuc_diameters"].append(
+            cellid_dict["nuc_diameter"] * PIXEL_SIZE_IN_UM
+        )
+        cell_stats[structure_id]["intracellular_radii"].append(
+            cellid_dict["intracellular_radius"] * PIXEL_SIZE_IN_UM
+        )
 
-    mean_nuc_volume = np.mean(nuc_volumes).item()
-    std_nuc_volume = np.std(nuc_volumes).item()
-    mean_cell_volume = np.mean(cell_volumes).item()
-    std_cell_volume = np.std(cell_volumes).item()
+    mean_nuc_volume = np.mean(cell_stats[structure_id]["nuc_volumes"]).item()
+    std_nuc_volume = np.std(cell_stats[structure_id]["nuc_volumes"]).item()
+    mean_cell_volume = np.mean(cell_stats[structure_id]["cell_volumes"]).item()
+    std_cell_volume = np.std(cell_stats[structure_id]["cell_volumes"]).item()
 
-    mean_cell_height = np.mean(cell_heights).item()
-    std_cell_height = np.std(cell_heights).item()
-    mean_nuc_height = np.mean(nuc_heights).item()
-    std_nuc_height = np.std(nuc_heights).item()
+    mean_cell_height = np.mean(cell_stats[structure_id]["cell_heights"]).item()
+    std_cell_height = np.std(cell_stats[structure_id]["cell_heights"]).item()
+    mean_nuc_height = np.mean(cell_stats[structure_id]["nuc_heights"]).item()
+    std_nuc_height = np.std(cell_stats[structure_id]["nuc_heights"]).item()
 
-    mean_cell_diameter = np.mean(cell_diameters).item()
-    std_cell_diameter = np.std(cell_diameters).item()
-    mean_nuc_diameter = np.mean(nuc_diameters).item()
-    std_nuc_diameter = np.std(nuc_diameters).item()
+    mean_cell_diameter = np.mean(cell_stats[structure_id]["cell_diameters"]).item()
+    std_cell_diameter = np.std(cell_stats[structure_id]["cell_diameters"]).item()
+    mean_nuc_diameter = np.mean(cell_stats[structure_id]["nuc_diameters"]).item()
+    std_nuc_diameter = np.std(cell_stats[structure_id]["nuc_diameters"]).item()
 
-    mean_intracellular_radius = np.mean(intracellular_radii).item()
-    std_intracellular_radius = np.std(intracellular_radii).item()
+    mean_intracellular_radius = np.mean(cell_stats[structure_id]["intracellular_radii"]).item()
+    std_intracellular_radius = np.std(cell_stats[structure_id]["intracellular_radii"]).item()
 
     logger.info(
         f"{structure_id} cell volume: {mean_cell_volume:.2f} +/- {std_cell_volume:.2f} \u03bcm^3"
@@ -133,52 +150,32 @@ for structure_id, mesh_information_dict in combined_mesh_information_dict.items(
 logger = remove_file_handler_from_logger(logger, log_file_path)
 
 # %% [markdown]
-# ## Plot cell diameter distributions
-for structure_id in all_structures:
+# ## Plot distributions of cell stats
+for structure_id, structure_stats in cell_stats.items():
+    structure_label = MODE_LABELS.get(structure_id, structure_id)
     mesh_information_dict = combined_mesh_information_dict[structure_id]
-    intracellular_radii = [
-        seed_dict["intracellular_radius"] * PIXEL_SIZE_IN_UM
-        for seed_dict in mesh_information_dict.values()
-    ]
-    fig, ax = plt.subplots(figsize=(2.5, 2.5), dpi=300)
-    sns.kdeplot(
-        intracellular_radii,
-        ax=ax,
-        color=COLOR_PALETTE[structure_id],
-        linewidth=1.5,
-        cut=0,
-        label=structure_id,
-    )
-    mean_intracellular_radius = np.mean(intracellular_radii).item()
-    std_intracellular_radius = np.std(intracellular_radii).item()
-    ax.axvspan(
-        mean_intracellular_radius - std_intracellular_radius,
-        mean_intracellular_radius + std_intracellular_radius,
-        facecolor="gray",
-        alpha=0.5,
-        edgecolor="none",
-    )
-    ax.axvline(mean_intracellular_radius, color="gray", linestyle="--")
-    ax.set_xlabel("Intracellular radius (\u03bcm)")
-    ax.set_ylabel("Probability density")
-    ax.xaxis.set_major_locator(MaxNLocator(5, integer=True))
-    ax.yaxis.set_major_locator(MaxNLocator(3, integer=True))
-    sns.despine(ax=ax)
-    ax.text(
-        0.95,
-        0.95,
-        f"{structure_id}\n{mean_intracellular_radius:.2f} +/- "
-        f"{std_intracellular_radius:.2f}\u03bcm",
-        ha="right",
-        va="top",
-        transform=ax.transAxes,
-        fontsize=fontsize,
-    )
-    fig.tight_layout()
-    fig.savefig(
-        figures_dir / f"intracellular_radius_distribution_{structure_id}.pdf", bbox_inches="tight"
-    )
-    plt.show()
+    for measurement_name, measurement_values in structure_stats.items():
+        measurement_label = STATS_LABELS.get(measurement_name, measurement_name)
+        fig, ax = plt.subplots(figsize=(2.5, 2.5), dpi=300)
+        sns.histplot(
+            measurement_values,
+            ax=ax,
+            color=COLOR_PALETTE[structure_id],
+            # linewidth=0,
+            bins=12,
+            # alpha=0.7,
+        )
+        ax.set_xlabel(measurement_label)
+        ax.set_ylabel("Count")
+        ax.xaxis.set_major_locator(MaxNLocator(5, integer=True))
+        ax.yaxis.set_major_locator(MaxNLocator(3, integer=True))
+        sns.despine(ax=ax)
+        fig.tight_layout()
+        fig.savefig(
+            figures_dir / f"{measurement_name}_distribution_{structure_id}.pdf",
+            bbox_inches="tight",
+        )
+        plt.show()
 
 
 # %% [markdown]
@@ -211,7 +208,7 @@ for row, distance_measure in enumerate(distance_measures):
                 distances * PIXEL_SIZE_IN_UM, minimum_distance=minimum_distance
             )
 
-            sns.kdeplot(
+            sns.histplot(
                 distances_to_plot,
                 ax=ax,
                 color="gray",

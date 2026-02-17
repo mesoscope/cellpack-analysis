@@ -452,12 +452,12 @@ class AnalysisRunner:
         # Plot illustration for occupancy distribution
         _ = visualization.plot_occupancy_illustration(
             kde_dict=distance_kde_dict,
-            baseline_mode="random",
+            packing_mode="random",
             suffix=config.suffix,
             distance_measure=occupancy_distance_measure,
             normalization=config.normalization,
             method="pdf",
-            seed_index=743916,
+            cellid_index=743916,
             figures_dir=occupancy_figures_dir,
             save_format=config.save_format,
             xlim=config.occupancy_params[occupancy_distance_measure]["xlim"],

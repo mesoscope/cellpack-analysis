@@ -11,17 +11,17 @@ logger = logging.getLogger(__name__)
 class WorkflowConfig:
     """Class to hold the configuration of the packing workflow."""
 
-    def __init__(self, config_file_path: Path | None = None):
+    def __init__(self, workflow_config_path: Path | None = None):
 
-        if config_file_path is None:
-            config_file_path = Path(__file__).parent / "configs/peroxisome.json"
+        if workflow_config_path is None:
+            workflow_config_path = Path(__file__).parent / "configs/peroxisome.json"
 
-        self.config_file_path = config_file_path
+        self.workflow_config_path = workflow_config_path
         self.data = self._read_config_file()
         self._setup()
 
     def _read_config_file(self):
-        with open(self.config_file_path) as f:
+        with open(self.workflow_config_path) as f:
             config = json.load(f)
         return config
 
@@ -46,8 +46,8 @@ class WorkflowConfig:
         self.get_bounding_box_from_mesh = self.data.get(
             "get_bounding_box_from_mesh", default_values.GET_BOUNDING_BOX_FROM_MESH
         )
-        self.multiple_replicates = self.data.get(
-            "multiple_replicates", default_values.MULTIPLE_REPLICATES
+        self.number_of_replicates = self.data.get(
+            "number_of_replicates", default_values.NUM_REPLICATES
         )
         self.result_type = self.data.get("result_type", default_values.RESULT_TYPE)
         self.skip_completed = self.data.get("skip_completed", default_values.SKIP_COMPLETED)
@@ -98,9 +98,9 @@ class WorkflowConfig:
         self.generated_config_path.mkdir(parents=True, exist_ok=True)
 
         self.grid_path = self.data.get(
-                "grid_path",
-                self.datadir / f"structure_data/{self.structure_id}/grids",
-            )
+            "grid_path",
+            self.datadir / f"structure_data/{self.structure_id}/grids",
+        )
         if not is_url(self.grid_path):
             self.grid_path = Path(self.grid_path)
             self.grid_path.mkdir(parents=True, exist_ok=True)
@@ -121,4 +121,3 @@ class WorkflowConfig:
             )
         )
         self.output_path.mkdir(parents=True, exist_ok=True)
-

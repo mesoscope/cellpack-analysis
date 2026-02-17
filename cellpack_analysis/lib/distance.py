@@ -18,7 +18,7 @@ from cellpack_analysis.lib.file_io import (
     remove_file_handler_from_logger,
 )
 from cellpack_analysis.lib.get_structure_stats_dataframe import get_structure_stats_dataframe
-from cellpack_analysis.lib.label_tables import GRID_DISTANCE_LABELS, MODE_LABELS, STATIC_SHAPE_MODES
+from cellpack_analysis.lib.label_tables import GRID_DISTANCE_LABELS, MODE_LABELS
 from cellpack_analysis.lib.mesh_tools import calc_scaled_distance_to_nucleus_surface
 from cellpack_analysis.lib.stats import ripley_k
 
@@ -27,10 +27,168 @@ logger = logging.getLogger(__name__)
 PROJECT_ROOT = get_project_root()
 
 
+def _load_pickle_with_validation(
+    file_path: Path,
+    validator: Any = None,
+    context: str = "",
+) -> Any | None:
+    """
+    Load pickled data with optional validation.
+
+    Parameters
+    ----------
+    file_path
+        Path to the pickle file
+    validator
+        Optional callable that takes loaded data and returns (is_valid, message)
+    context
+        Description of what's being loaded for logging
+
+    Returns
+    -------
+    :
+        Loaded data if successful and valid, None otherwise
+    """
+    try:
+        with open(file_path, "rb") as f:
+            data = pickle.load(f)
+
+        if validator is not None:
+            is_valid, message = validator(data)
+            if not is_valid:
+                logger.warning(
+                    f"Validation failed for {file_path.relative_to(PROJECT_ROOT)}: {message}"
+                )
+                return None
+
+        logger.info(
+            f"Successfully loaded cached {context} from {file_path.relative_to(PROJECT_ROOT)}"
+        )
+        return data
+    except Exception as e:
+        logger.warning(
+            f"Error loading cached {context} from {file_path.relative_to(PROJECT_ROOT)}: {e}"
+        )
+        return None
+
+
+def _load_parquet_if_exists(
+    file_path: Path,
+    recalculate: bool = False,
+    context: str = "",
+) -> pd.DataFrame | None:
+    """
+    Load parquet file if it exists and recalculate is False.
+
+    Parameters
+    ----------
+    file_path
+        Path to the parquet file
+    recalculate
+        Whether to skip loading and force recalculation
+    context
+        Description of what's being loaded for logging
+
+    Returns
+    -------
+    :
+        DataFrame if successfully loaded, None otherwise
+    """
+    if not recalculate and file_path.exists():
+        logger.info(f"Loading {context} from {file_path.relative_to(PROJECT_ROOT)}")
+        return pd.read_parquet(file_path)
+    return None
+
+
+def _validate_modes_match(
+    cached_modes: set[str],
+    requested_modes: set[str],
+) -> tuple[bool, str]:
+    """
+    Validate that cached modes match requested modes.
+
+    Parameters
+    ----------
+    cached_modes
+        Set of modes found in cached data
+    requested_modes
+        Set of modes that were requested
+
+    Returns
+    -------
+    :
+        Tuple of (is_valid, error_message)
+    """
+    if cached_modes != requested_modes:
+        return False, f"modes mismatch: cached {cached_modes} != requested {requested_modes}"
+    return True, ""
+
+
+def _validate_distance_dict(
+    data: dict[str, Any],
+    requested_modes: set[str],
+) -> tuple[bool, str]:
+    """
+    Validate cached distance dictionary.
+
+    Checks that modes match and data is not empty.
+
+    Parameters
+    ----------
+    data
+        Distance dictionary to validate
+    requested_modes
+        Set of modes that were requested
+
+    Returns
+    -------
+    :
+        Tuple of (is_valid, error_message)
+    """
+    cached_modes = set(data.keys())
+    is_valid, message = _validate_modes_match(cached_modes, requested_modes)
+    if not is_valid:
+        return False, message
+
+    if not all([len(v) > 0 for v in data.values()]):
+        return False, "empty distance data"
+
+    return True, ""
+
+
+def _validate_kde_dict(
+    data: dict[str, Any],
+    requested_modes: set[str],
+) -> tuple[bool, str]:
+    """
+    Validate cached KDE dictionary.
+
+    Extracts modes from nested structure and checks they match requested modes.
+
+    Parameters
+    ----------
+    data
+        KDE dictionary to validate. Has structure:
+        {cell_id:{mode:gaussian_kde, "available":gaussian_kde}}
+    requested_modes
+        Set of modes that were requested
+
+    Returns
+    -------
+    :
+        Tuple of (is_valid, error_message)
+    """
+    cached_modes = set()
+    for _, cell_dict in data.items():
+        cached_modes.update(set(cell_dict.keys()) - {"available"})
+
+    return _validate_modes_match(cached_modes, requested_modes)
+
+
 def filter_invalids_from_distance_distribution_dict(
-    distance_distribution_dict: dict[str, dict[str, dict[str, np.ndarray]]],
+    distance_distribution_dict: dict[str, dict[str, dict[str, dict[str, np.ndarray]]]],
     minimum_distance: float | None = None,
-) -> dict[str, dict[str, dict[str, np.ndarray]]]:
+) -> dict[str, dict[str, dict[str, dict[str, np.ndarray]]]]:
     """
     Filter out invalid values from distance distribution dictionary.
 
@@ -41,7 +199,7 @@ def filter_invalids_from_distance_distribution_dict(
     ----------
     distance_distribution_dict
         Distance distributions with structure
-        {distance_measure: {packing_mode: {cell_id: distances}}}
+        {distance_measure: {packing_mode: {cell_id:{seed: distances}}}}
     minimum_distance
         Minimum distance to consider for filtering invalid distances
 
@@ -49,25 +207,34 @@ def filter_invalids_from_distance_distribution_dict(
     -------
     :
         Cleaned distance distribution dictionary with same structure as input
+        {distance_measure: {packing_mode: {cell_id:{seed: valid_distances}}}}
     """
     for distance_measure, distance_measure_dict in distance_distribution_dict.items():
         for mode, mode_dict in distance_measure_dict.items():
-            for cell_id, distances in mode_dict.items():
-                # filter out NaN and inf values
-                mode_dict[cell_id] = filter_invalid_distances(
-                    distances, minimum_distance=minimum_distance
-                )
-                num_valid = len(mode_dict[cell_id])
-                if num_valid == 0:
-                    logger.warning(
-                        f"All distances are invalid for {distance_measure}, {mode}, {cell_id}"
+            for cell_id, seed_dict in mode_dict.items():
+                for seed, distances in seed_dict.items():
+                    # filter out NaN and inf values
+                    seed_dict[seed] = filter_invalid_distances(
+                        distances, minimum_distance=minimum_distance
                     )
-                    del mode_dict[cell_id]
-                else:
-                    logger.debug(
-                        f"Filtered {len(distances) - num_valid} values from "
-                        f"{distance_measure}, {mode}, {cell_id}"
-                    )
+                    num_valid = len(seed_dict[seed])
+                    if num_valid == 0:
+                        logger.warning(
+                            "All distances are invalid for %s, %s, %s, %s",
+                            distance_measure,
+                            mode,
+                            cell_id,
+                            seed,
+                        )
+                    else:
+                        logger.debug(
+                            "Filtered distances for %s, %s, %s, %s: %d valid distances",
+                            distance_measure,
+                            mode,
+                            cell_id,
+                            seed,
+                            num_valid,
+                        )
     return distance_distribution_dict
 
 
@@ -93,6 +260,57 @@ def filter_invalid_distances(
     if minimum_distance is not None:
         condition &= distances >= minimum_distance
     return distances[condition]
+
+
+def _normalize_and_filter_distances(
+    distances: np.ndarray,
+    normalization: str | None,
+    mesh_information_dict: dict[str, dict[str, Any]],
+    cell_id: str,
+    distance_measure: str,
+    minimum_distance: float | None = None,
+) -> np.ndarray:
+    """
+    Normalize and filter distances for KDE calculation.
+
+    Parameters
+    ----------
+    distances
+        Array of distance values to normalize and filter
+    normalization
+        Normalization method to use
+    mesh_information_dict
+        Dictionary containing mesh information for each cell_id
+    cell_id
+        Cell identifier
+    distance_measure
+        Distance measure being processed
+    minimum_distance
+        Minimum distance to consider for filtering
+
+    Returns
+    -------
+    :
+        Normalized and filtered distance array as float32
+    """
+    normalization_factor = get_normalization_factor(
+        normalization=normalization,
+        mesh_information_dict=mesh_information_dict,
+        cell_id=cell_id,
+        distance_measure=distance_measure,
+        distances=distances,
+    )
+    normalized_distances = distances / normalization_factor
+    filtered_distances = filter_invalid_distances(
+        normalized_distances, minimum_distance=minimum_distance
+    )
+
+    if len(filtered_distances) == 0:
+        raise ValueError(
+            f"All distances are invalid after normalization for cell_id {cell_id}, "
+            f"distance_measure {distance_measure}."
+        )
+    return filtered_distances.astype(np.float32)
 
 
 def _calculate_distances_for_cell_id(
@@ -190,20 +408,87 @@ def _calculate_distances_for_cell_id(
         "membrane": membrane_distances,
         "z": z_distances,
     }
+    logger.debug(
+        "Calculated distances for cell %s: %d pairwise, %d nearest, %d nucleus,"
+        " %d scaled_nucleus, %d membrane, %d z",
+        cell_id,
+        len(pairwise_distances),
+        len(nearest_distances),
+        len(nuc_distances),
+        len(scaled_nuc_distances),
+        len(membrane_distances),
+        len(z_distances),
+    )
 
     return cell_id, distance_dict
 
 
+def process_cell(
+    cell_id: str,
+    seed_positions_dict: dict[str, np.ndarray],
+    mode: str,
+    distance_measures: list[str],
+    mode_mesh_dict: dict[str, Any],
+):
+    """
+    Process a single cell ID with all its seeds.
+
+    Parameters
+    ----------
+    cell_id
+        Identifier for the cell
+    seed_positions_dict
+        Dictionary of seed to positions for the cell
+        {seed: positions}
+    mode
+        Packing mode name
+    distance_measures
+        List of distance measures to calculate
+    mode_mesh_dict
+        Mesh information dictionary for the current mode
+
+    Returns
+    -------
+    :
+        Tuple of (cell_id, cell_results) where cell_results is
+        {distance_measure: {seed: distances}}
+    """
+    cell_results = {dm: {} for dm in distance_measures}
+
+    for seed, seed_positions in seed_positions_dict.items():
+        try:
+            _, distances_dict = _calculate_distances_for_cell_id(
+                cell_id=cell_id,
+                positions=seed_positions,
+                mesh_dict=mode_mesh_dict,
+            )
+        except Exception as e:
+            logger.error(
+                "Error calculating distances for cell %s, mode %s, seed %s: %s",
+                cell_id,
+                mode,
+                seed,
+                e,
+            )
+            continue
+
+        for distance_measure in distance_measures:
+            if distance_measure not in distances_dict:
+                raise ValueError(f"Distance measure {distance_measure} not found")
+            cell_results[distance_measure][seed] = distances_dict[distance_measure]
+
+    return cell_id, cell_results
+
+
 def get_distance_dictionary(
-    all_positions: dict[str, dict[str, np.ndarray]],
+    all_positions: dict[str, dict[str, dict[str, np.ndarray]]],
     distance_measures: list[str],
     mesh_information_dict: dict[str, dict[str, Any]],
     channel_map: dict[str, str] | None = None,
     results_dir: Path | None = None,
     recalculate: bool = False,
-    num_workers: int | None = None,
-    drop_random_seed: bool | None = None,
-) -> dict[str, dict[str, dict[str, np.ndarray]]]:
+    num_workers: int = 1,
+) -> dict[str, dict[str, dict[str, dict[str, np.ndarray]]]]:
     """
     Calculate or load distance measures between particles in different modes.
 
@@ -211,6 +496,7 @@ def get_distance_dictionary(
     ----------
     all_positions
         A dictionary containing positions of particles in different packing modes
+        {mode: {cell_id: {seed: positions}}}
     distance_measures
         List of distance measures to calculate
     mesh_information_dict
@@ -222,15 +508,13 @@ def get_distance_dictionary(
     recalculate
         If True, recalculate the distance measures
     num_workers
-        Number of parallel workers to use for distance calculations. If None or 1,
-        uses serial processing
-    drop_random_seed
-        Whether to drop random seed from cell IDs
+        Number of parallel workers for distance calculations
 
     Returns
     -------
     :
         A dictionary containing distance measures between particles in different modes
+        {distance_measure: {mode: {cell_id: {seed:distances}}}
     """
     if channel_map is None:
         channel_map = {}
@@ -251,36 +535,18 @@ def get_distance_dictionary(
                 cache_valid = False
                 break
 
-            try:
-                with open(file_path, "rb") as f:
-                    distance_dict = pickle.load(f)
+            requested_modes = set(all_positions.keys())
+            distance_dict = _load_pickle_with_validation(
+                file_path,
+                validator=lambda data: _validate_distance_dict(data, requested_modes),
+                context=f"{distance_measure} distances",
+            )
 
-                # Validate that cached data matches requested packing modes
-                cached_modes = set(distance_dict.keys())
-                requested_modes = set(all_positions.keys())
-                if cached_modes != requested_modes:
-                    logger.warning(
-                        f"Cached data in {file_path.relative_to(PROJECT_ROOT)} contains modes "
-                        f"{cached_modes} but requested modes are {requested_modes}. "
-                        f"Recalculating distances."
-                    )
-                    cache_valid = False
-                    break
-
-                all_distance_dict[distance_measure] = distance_dict
-                if not all([len(v) > 0 for v in distance_dict.values()]):
-                    logger.warning(
-                        f"Cached data in {file_path.relative_to(PROJECT_ROOT)} is empty. "
-                        f"Recalculating distances."
-                    )
-                    cache_valid = False
-                    break
-            except Exception as e:
-                logger.warning(
-                    f"Error loading cached data from {file_path.relative_to(PROJECT_ROOT)}: {e}"
-                )
+            if distance_dict is None:
                 cache_valid = False
                 break
+
+            all_distance_dict[distance_measure] = distance_dict
 
         # Return cached data if all checks passed
         if cache_valid:
@@ -290,76 +556,64 @@ def get_distance_dictionary(
             logger.info("Cache validation failed, recalculating distances")
 
     logger.info("Calculating distance dictionaries")
-
     all_distance_dict = {
-        distance_measure: {mode: {} for mode in all_positions.keys()}
+        distance_measure: {
+            mode: {cell_id: {} for cell_id in all_positions[mode].keys()}
+            for mode in all_positions.keys()
+        }
         for distance_measure in distance_measures
     }
 
-    # Determine if we should use parallel processing
-    use_parallel = num_workers is not None and num_workers > 1
-
     for mode, position_dict in all_positions.items():
         mode_mesh_dict = mesh_information_dict.get(channel_map.get(mode, mode), {})
-        split_cellid_for_mode = (
-            drop_random_seed if drop_random_seed is not None else (mode not in STATIC_SHAPE_MODES)
-        )
 
-        if use_parallel:
-            # Parallel execution
+        if num_workers > 1:
             with ThreadPoolExecutor(max_workers=num_workers) as executor:
                 futures = {
                     executor.submit(
-                        _calculate_distances_for_cell_id,
-                        str(cell_id).split("_")[0],
-                        positions,
+                        process_cell,
+                        cell_id,
+                        seed_positions_dict,
+                        mode,
+                        distance_measures,
                         mode_mesh_dict,
-                    ): (
-                        str(cell_id).split("_")[0] if split_cellid_for_mode else str(cell_id)
-                    )
-                    for cell_id, positions in position_dict.items()
+                    ): cell_id
+                    for cell_id, seed_positions_dict in position_dict.items()
                 }
-                for future in tqdm(
-                    as_completed(futures),
-                    desc=f"Calculating distances for {MODE_LABELS.get(mode, mode)}",
-                    total=len(futures),
-                ):
-                    cell_id = futures[future]
-                    try:
-                        _, distances_dict = future.result()
-                    except Exception as e:
-                        logger.error(f"Error calculating distances for cell {cell_id}: {e}")
-                        continue
 
-                    for distance_measure in distance_measures:
-                        if distance_measure not in distances_dict:
-                            raise ValueError(f"Distance measure {distance_measure} not found")
-                        all_distance_dict[distance_measure][mode][cell_id] = distances_dict[
-                            distance_measure
-                        ]
+                with tqdm(
+                    total=len(futures),
+                    desc=f"Calculating distances for {MODE_LABELS.get(mode, mode)}",
+                    unit="cell IDs",
+                ) as pbar:
+                    for future in as_completed(futures):
+                        cell_id = futures[future]
+                        try:
+                            cell_id_result, cell_results = future.result()
+                            for distance_measure in distance_measures:
+                                all_distance_dict[distance_measure][mode][cell_id_result] = (
+                                    cell_results[distance_measure]
+                                )
+                        except Exception as e:
+                            logger.error(
+                                "Error processing cell %s for mode %s: %s",
+                                cell_id,
+                                mode,
+                                e,
+                            )
+                        pbar.update(1)
         else:
-            # Serial execution
-            for cell_id, positions in tqdm(
+            for cell_id, seed_positions_dict in tqdm(
                 position_dict.items(),
                 desc=f"Calculating distances for {MODE_LABELS.get(mode, mode)}",
                 total=len(position_dict),
+                unit="cell IDs",
             ):
-                split_cell_id = str(cell_id).split("_")[0] if split_cellid_for_mode else cell_id
-                try:
-                    _, distances_dict = _calculate_distances_for_cell_id(
-                        cell_id=split_cell_id,
-                        positions=positions,
-                        mesh_dict=mode_mesh_dict,
-                    )
-                except Exception as e:
-                    logger.error(f"Error calculating distances for cell {cell_id}: {e}")
-                    continue
-
+                cell_id_result, cell_results = process_cell(
+                    cell_id, seed_positions_dict, mode, distance_measures, mode_mesh_dict
+                )
                 for distance_measure in distance_measures:
-                    if distance_measure not in distances_dict:
-                        raise ValueError(f"Distance measure {distance_measure} not found")
-                    # Want to keep the original cell id with seed if not dropped
-                    all_distance_dict[distance_measure][mode][cell_id] = distances_dict[
+                    all_distance_dict[distance_measure][mode][cell_id_result] = cell_results[
                         distance_measure
                     ]
 
@@ -409,11 +663,13 @@ def get_ks_test_df(
         packing_mode, and ks_observed
     """
     file_name = "ks_observed_combined_df.parquet"
-    if not recalculate and save_dir is not None:
+    if save_dir is not None:
         file_path = save_dir / file_name
-        if file_path.exists():
-            logger.info(f"Loading saved KS DataFrame from {file_path.relative_to(PROJECT_ROOT)}")
-            return pd.read_parquet(file_path)
+        cached_df = _load_parquet_if_exists(
+            file_path, recalculate=recalculate, context="KS observed DataFrame"
+        )
+        if cached_df is not None:
+            return cached_df
     record_list = []
     for distance_measure in distance_measures:
         logger.info(f"Calculating KS observed for distance measure: {distance_measure}")
@@ -505,7 +761,7 @@ def bootstrap_ks_tests(
 
 
 def get_distance_distribution_emd_df(
-    all_distance_dict: dict[str, dict[str, dict[str, np.ndarray]]],
+    all_distance_dict: dict[str, dict[str, dict[str, dict[str, np.ndarray]]]],
     packing_modes: list[str],
     distance_measures: list[str],
     results_dir: Path | None = None,
@@ -519,6 +775,7 @@ def get_distance_distribution_emd_df(
     ----------
     all_distance_dict
         Dictionary containing distance measures for each packing mode
+        {distance_measure: {mode: {cell_id: {seed: distances}}}}
     packing_modes
         List of packing modes to calculate pairwise EMD for
     distance_measures
@@ -536,28 +793,31 @@ def get_distance_distribution_emd_df(
         DataFrame containing pairwise EMD for each distance measure
     """
     file_name = f"pairwise_emd{suffix}.parquet"
-    if not recalculate and results_dir is not None:
+    if results_dir is not None:
         file_path = results_dir / file_name
-        if file_path.exists():
-            logger.info(f"Loading pairwise EMD from {file_path.relative_to(PROJECT_ROOT)}")
-            return pd.read_parquet(file_path)
+        cached_df = _load_parquet_if_exists(
+            file_path, recalculate=recalculate, context="pairwise EMD"
+        )
+        if cached_df is not None:
+            return cached_df
 
     record_list = []
     for distance_measure in distance_measures:
         logger.info("Calculating EMD for %s", distance_measure)
 
-        # Collect all (mode, cell_id) combinations
+        # Collect all (mode, cell_id, seed) combinations
         all_pairs = []
         for mode in packing_modes:
             for cell_id in all_distance_dict[distance_measure][mode].keys():
-                all_pairs.append((mode, cell_id))
+                for seed in all_distance_dict[distance_measure][mode][cell_id].keys():
+                    all_pairs.append((mode, cell_id, seed))
 
         for i in tqdm(range(len(all_pairs)), desc=f"EMD calculations for {distance_measure}"):
-            mode_1, cell_id_1 = all_pairs[i]
-            distances_1 = all_distance_dict[distance_measure][mode_1][cell_id_1]
+            mode_1, cell_id_1, seed_1 = all_pairs[i]
+            distances_1 = all_distance_dict[distance_measure][mode_1][cell_id_1][seed_1]
             for j in range(i + 1, len(all_pairs)):
-                mode_2, cell_id_2 = all_pairs[j]
-                distances_2 = all_distance_dict[distance_measure][mode_2][cell_id_2]
+                mode_2, cell_id_2, seed_2 = all_pairs[j]
+                distances_2 = all_distance_dict[distance_measure][mode_2][cell_id_2][seed_2]
                 emd = wasserstein_distance(distances_1, distances_2)
                 record_list.append(
                     {
@@ -566,6 +826,8 @@ def get_distance_distribution_emd_df(
                         "packing_mode_2": mode_2,
                         "cell_id_1": cell_id_1,
                         "cell_id_2": cell_id_2,
+                        "seed_1": seed_1,
+                        "seed_2": seed_2,
                         "emd": emd,
                     }
                 )
@@ -684,8 +946,63 @@ def get_normalization_factor(
     return normalization_factor
 
 
+def normalize_distance_dictionary(
+    all_distance_dict: dict[str, dict[str, dict[str, dict[str, np.ndarray]]]],
+    mesh_information_dict: dict[str, Any],
+    channel_map: dict[str, str],
+    normalization: str | None = None,
+    pixel_size_in_um: float = PIXEL_SIZE_IN_UM,
+) -> dict[str, dict[str, dict[str, dict[str, np.ndarray]]]]:
+    """
+    Normalize distances using specified normalization method.
+
+    Parameters
+    ----------
+    all_distance_dict
+        Dictionary containing distance measurements by measure and mode
+        {distance_measure: {mode: {cell_id: {seed:distances}}}}
+    mesh_information_dict
+        Dictionary containing mesh information for normalization
+    normalization
+        Normalization method: 'intracellular_radius', 'cell_diameter', 'max_distance',
+        or None for pixel size
+    channel_map
+        Mapping between modes and mesh information keys
+    pixel_size_in_um
+        Pixel size for default normalization
+
+    Returns
+    -------
+    :
+        Dictionary with normalized distances
+        {distance_measure: {mode: {cell_id: {seed:normalized_distances}}}}
+    """
+    for measure, mode_distance_dict in all_distance_dict.items():
+        if "scaled" in measure:
+            continue
+        for mode, distance_dict in mode_distance_dict.items():
+            mode_mesh_dict = mesh_information_dict.get(channel_map.get(mode, ""), {})
+            for cell_id, seed_distance_dict in distance_dict.items():
+                mesh_info = mode_mesh_dict.get(
+                    cell_id,
+                    mode_mesh_dict.get("mean", {"intracellular_radius": 1}),
+                )
+                for seed, distance in seed_distance_dict.items():
+                    if normalization == "intracellular_radius":
+                        normalization_factor = mesh_info["intracellular_radius"]
+                    elif normalization == "cell_diameter":
+                        normalization_factor = mesh_info["cell_diameter"]
+                    elif normalization == "max_distance":
+                        normalization_factor = distance.max()
+                    else:
+                        normalization_factor = 1 / pixel_size_in_um
+                    seed_distance_dict[seed] = distance / normalization_factor
+
+    return all_distance_dict
+
+
 def get_distance_distribution_kde(
-    all_distance_dict: dict[str, dict[str, dict[str, np.ndarray]]],
+    all_distance_dict: dict[str, dict[str, dict[str, dict[str, np.ndarray]]]],
     mesh_information_dict: dict[str, dict[str, Any]],
     channel_map: dict[str, str],
     save_dir: Path | None = None,
@@ -708,6 +1025,7 @@ def get_distance_distribution_kde(
     ----------
     all_distance_dict
         Dictionary containing distance measures for each packing mode
+        {distance_measure: {mode: {cell_id: {seed: distances}}}}
     mesh_information_dict
         Dictionary containing mesh information for each cell_id
     channel_map
@@ -735,13 +1053,7 @@ def get_distance_distribution_kde(
     -------
     :
         Dictionary containing the KDE for each packing mode and cell_id with structure:
-        {
-            cell_id:
-                {
-                    mode: gaussian_kde_object,
-                    "available_distance": gaussian_kde_object,
-                }
-        }
+        {cell_id:{mode:gaussian_kde, "available":gaussian_kde}}
     """
     # Set file path for saving/loading KDE results
     save_file_path = None
@@ -751,34 +1063,14 @@ def get_distance_distribution_kde(
 
     # Try to load cached KDE data if not recalculating
     if not recalculate and save_file_path is not None and save_file_path.exists():
-        try:
-            with open(save_file_path, "rb") as f:
-                kde_dict = pickle.load(f)
-
-            # Validate that cached data matches requested modes
-            cached_modes = set()
-            for cell_data in kde_dict.values():
-                cached_modes.update(
-                    mode for mode in cell_data.keys() if mode != "available_distance"
-                )
-
-            requested_modes = set(channel_map.keys())
-            if cached_modes != requested_modes:
-                logger.warning(
-                    f"Cached KDE data contains modes {cached_modes} but requested modes are "
-                    f"{requested_modes}. Recalculating KDE."
-                )
-            else:
-                logger.info(
-                    f"Successfully loaded cached KDE data from "
-                    f"{save_file_path.relative_to(PROJECT_ROOT)}"
-                )
-                return kde_dict
-        except Exception as e:
-            logger.warning(
-                f"Error loading cached KDE data from "
-                f"{save_file_path.relative_to(PROJECT_ROOT)}: {e}. Recalculating KDE."
-            )
+        requested_modes = set(channel_map.keys())
+        kde_dict = _load_pickle_with_validation(
+            save_file_path,
+            validator=lambda data: _validate_kde_dict(data, requested_modes),
+            context="KDE data",
+        )
+        if kde_dict is not None:
+            return kde_dict
 
     # Initialize the KDE dictionary
     distance_dict = all_distance_dict[distance_measure]
@@ -786,43 +1078,43 @@ def get_distance_distribution_kde(
     for mode, structure_id in channel_map.items():
         mode_mesh_dict = mesh_information_dict.get(structure_id, {})
         mode_distances_dict = distance_dict[mode]
-
-        for cell_id, distances in tqdm(
+        for cell_id, seed_dict in tqdm(
             mode_distances_dict.items(), total=len(mode_distances_dict), desc=f"KDE for {mode}"
         ):
             # Get the distances for a cell
             # These are already normalized
             if cell_id not in kde_dict:
                 kde_dict[cell_id] = {}
-            distances = filter_invalid_distances(
-                distances, minimum_distance=minimum_distance
-            ).astype(np.float32)
-            if len(distances) == 0:
-                logger.warning(f"No valid distances found for cell id {cell_id} and mode {mode}")
-                continue
-
+            all_cell_id_distances = []
+            for _, distances in seed_dict.items():
+                distances = filter_invalid_distances(
+                    distances, minimum_distance=minimum_distance
+                ).astype(np.float32)
+                if len(distances) == 0:
+                    logger.warning(
+                        f"No valid distances found for cell id {cell_id} and mode {mode}"
+                    )
+                    continue
+                all_cell_id_distances.extend(distances)
             # Calculate the KDE for the distances
-            kde_dict[cell_id][mode] = gaussian_kde(distances)
+            kde_dict[cell_id][mode] = gaussian_kde(all_cell_id_distances)
 
             # Update available distances from mesh information if needed
-            if "available_distance" not in kde_dict[cell_id]:
+            if "available" not in kde_dict[cell_id]:
                 available_distances = mode_mesh_dict[cell_id][
                     GRID_DISTANCE_LABELS[distance_measure]
                 ].flatten()
 
-                normalization_factor = get_normalization_factor(
+                available_distances = _normalize_and_filter_distances(
+                    available_distances,
                     normalization=normalization,
                     mesh_information_dict=mode_mesh_dict,
                     cell_id=cell_id,
                     distance_measure=distance_measure,
-                    distances=available_distances,
+                    minimum_distance=minimum_distance,
                 )
-                available_distances /= normalization_factor
-                available_distances = filter_invalid_distances(
-                    available_distances, minimum_distance=minimum_distance
-                ).astype(np.float32)
 
-                kde_dict[cell_id]["available_distance"] = gaussian_kde(available_distances)
+                kde_dict[cell_id]["available"] = gaussian_kde(available_distances)
 
     # save kde dictionary
     if save_file_path is not None:
@@ -995,7 +1287,7 @@ def log_central_tendencies_for_ks(
 
 
 def log_central_tendencies_for_distance_distributions(
-    all_distance_dict: dict[str, dict[str, dict[str, np.ndarray]]],
+    all_distance_dict: dict[str, dict[str, dict[str, dict[str, np.ndarray]]]],
     distance_measures: list[str],
     packing_modes: list[str],
     file_path: Path | None = None,
@@ -1008,6 +1300,7 @@ def log_central_tendencies_for_distance_distributions(
     ----------
     all_distance_dict
         Dictionary containing distance measures for each packing mode
+        {distance_measure: {mode: {cell_id: {seed:distances}}}}
     distance_measures
         List of distance measures to analyze
     packing_modes
@@ -1027,7 +1320,13 @@ def log_central_tendencies_for_distance_distributions(
         distance_dict = all_distance_dict[distance_measure]
         for packing_mode in packing_modes:
             mode_dict = distance_dict[packing_mode]
-            all_distances = np.concatenate(list(mode_dict.values()))
+            all_distances = np.concatenate(
+                [
+                    distances
+                    for cell_id in mode_dict.keys()
+                    for distances in mode_dict[cell_id].values()
+                ]
+            )
             all_distances = filter_invalid_distances(
                 all_distances, minimum_distance=minimum_distance
             )

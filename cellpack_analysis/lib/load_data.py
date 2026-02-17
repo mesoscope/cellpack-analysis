@@ -20,26 +20,29 @@ def combine_multiple_seeds_to_dictionary(
     save_name: str = "positions_peroxisome_analyze_random_mean.json",
 ) -> dict[str, dict[str, list[list[float]]]]:
     """
-    Combine data from multiple seeds into a dictionary.
+    Combine position data from multiple seed files into a single dictionary.
+
+    Searches for JSON files matching the prefix and rule name, extracts positions
+    for the specified ingredient, and writes the combined results to a new file.
 
     Parameters
     ----------
     data_folder
-        Path to the folder containing the data files
+        Directory containing the position data files
     ingredient_key
-        Key of the ingredient to extract from the data
+        Name of the ingredient to extract from each file
     search_prefix
-        Prefix to search for in the data file names
+        Filename prefix to filter files
     rule_name
-        Name of the rule to filter the data files
+        Packing rule name to filter files (e.g., "random", "invert")
     save_name
-        Name of the output file
+        Output filename for the combined dictionary
 
     Returns
     -------
     :
-        Dictionary containing the combined data from multiple seeds with structure
-        {seed_key: {ingredient_key: positions}}
+        Combined data with structure {seed_key: {ingredient_key: positions}} where
+        positions is a list of [x, y, z] coordinates
     """
 
     data_folder = Path(data_folder)
@@ -69,31 +72,49 @@ def combine_multiple_seeds_to_dictionary(
 def get_positions_dictionary_from_file(
     filename: str | Path,
     ingredient_key: str = "membrane_interior_peroxisome",
-    drop_random_seed: bool = False,
-) -> dict[str, np.ndarray]:
+) -> dict[str, dict[str, np.ndarray]]:
     """
-    Retrieve positions dictionary from a file.
+    Load positions dictionary from a JSON file and convert to NumPy arrays.
 
     Parameters
     ----------
     filename
-        Path to the file containing the positions data
+        Path to JSON file containing position data
     ingredient_key
         Key for the ingredient in the raw data
-    drop_random_seed
-        Whether to remove random seed suffix from keys
 
     Returns
     -------
     :
-        Dictionary containing positions data where keys are cell IDs and values are NumPy arrays
+        Nested dictionary with structure {cell_id: {seed: positions_array}} where
+        positions_array is a NumPy array of shape (n_points, 3)
+
+    Raises
+    ------
+    KeyError
+        If ingredient_key is not found in the data for any cell ID
     """
     with open(filename) as j:
         raw_data = json.load(j)
-    if drop_random_seed:
-        positions = {k.split("_")[0]: np.array(v[ingredient_key]) for k, v in raw_data.items()}
-    else:
-        positions = {k: np.array(v[ingredient_key]) for k, v in raw_data.items()}
+    positions = {}
+    for cellid_seed, seed_positions in raw_data.items():
+        split_cellid = cellid_seed.split("_")
+        if len(split_cellid) <= 0 or len(split_cellid) > 2:
+            raise ValueError(f"Invalid cell ID format: '{cellid_seed}'")
+        elif len(split_cellid) == 1:
+            cellid = cellid_seed
+            seed = "0"
+        else:
+            cellid = split_cellid[0]
+            seed = split_cellid[1]
+
+        if ingredient_key not in seed_positions:
+            raise KeyError(
+                f"Ingredient key '{ingredient_key}' not found in data for cell ID '{cellid}'."
+            )
+        if cellid not in positions:
+            positions[cellid] = {}
+        positions[cellid][seed] = np.array(seed_positions[ingredient_key])
 
     return positions
 
@@ -103,9 +124,32 @@ def _get_mode_file_path(
     structure_id: str,
     packing_id: str,
     base_datadir: Path,
-    packing_output_folder: str,
+    packing_output_folder: Path | str,
 ) -> Path:
-    """Get the file path for a specific packing mode."""
+    """
+    Determine the file path for position data based on packing mode.
+
+    Handles both experimental microscopy data (stored in structure_data/) and
+    cellPACK simulation outputs (stored in packing_output_folder/).
+
+    Parameters
+    ----------
+    mode
+        Packing mode or structure name from STRUCTURE_NAME_DICT
+    structure_id
+        Structure identifier for microscopy data
+    packing_id
+        Packing run identifier for simulation outputs
+    base_datadir
+        Base data directory path
+    packing_output_folder
+        Subdirectory name for packing outputs
+
+    Returns
+    -------
+    :
+        Full path to the positions JSON file
+    """
     if mode in STRUCTURE_NAME_DICT:  # observed microscopy data
         return (
             base_datadir / f"structure_data/{structure_id}/sample_8d/positions_{structure_id}.json"
@@ -120,7 +164,24 @@ def _get_mode_file_path(
 def _ensure_positions_file_exists(
     mode_file_path: Path, mode: str, ingredient_key: str, recalculate: bool
 ) -> None:
-    """Ensure the positions file exists, creating it if necessary."""
+    """
+    Verify positions file exists or create it by combining seed files.
+
+    For experimental data, assumes the file already exists. For cellPACK outputs,
+    combines multiple seed files if the target file is missing or recalculation
+    is requested.
+
+    Parameters
+    ----------
+    mode_file_path
+        Path where the positions file should exist
+    mode
+        Packing mode name
+    ingredient_key
+        Ingredient name to extract from raw data
+    recalculate
+        If True, recreate the file even if it exists
+    """
     if mode_file_path.exists() and not recalculate:
         return
 
@@ -144,12 +205,38 @@ def _load_positions_for_mode(
     structure_id: str,
     packing_id: str,
     base_datadir: Path,
-    packing_output_folder: str,
+    packing_output_folder: Path | str,
     ingredient_key: str,
     recalculate: bool,
-    drop_random_seed: bool | None = None,
-) -> dict[str, np.ndarray]:
-    """Load positions for a single packing mode."""
+) -> dict[str, dict[str, np.ndarray]]:
+    """
+    Load position data for a single packing mode.
+
+    Ensures the positions file exists, then reads and returns the position data
+    for all cells in that mode.
+
+    Parameters
+    ----------
+    mode
+        Packing mode or structure name
+    structure_id
+        Structure identifier for microscopy data
+    packing_id
+        Packing run identifier
+    base_datadir
+        Base data directory path
+    packing_output_folder
+        Subdirectory name for packing outputs
+    ingredient_key
+        Ingredient name to extract
+    recalculate
+        If True, regenerate combined position files
+
+    Returns
+    -------
+    :
+        Dictionary with structure {cell_id: {seed: positions_array}}
+    """
     mode_file_path = _get_mode_file_path(
         mode, structure_id, packing_id, base_datadir, packing_output_folder
     )
@@ -160,12 +247,12 @@ def _load_positions_for_mode(
     positions = get_positions_dictionary_from_file(
         mode_file_path,
         ingredient_key=ingredient_key,
-        drop_random_seed=(
-            drop_random_seed if drop_random_seed is not None else mode not in STATIC_SHAPE_MODES
-        ),
     )
+    num_seeds = 0
+    for cellid in positions:
+        num_seeds += len(positions[cellid])
 
-    logger.info(f"Read {len(positions)} cell_ids for {mode}")
+    logger.info(f"Read {num_seeds} seeds from {len(positions)} cell_ids for {mode}")
     return positions
 
 
@@ -175,40 +262,41 @@ def get_position_data_from_outputs(
     packing_modes: list[str],
     base_datadir: Path,
     results_dir: Path,
-    packing_output_folder: str,
+    packing_output_folder: Path | str,
     recalculate: bool = False,
     ingredient_key: str | None = None,
-    drop_random_seed: bool | None = None,
-) -> dict[str, dict[str, np.ndarray]]:
+) -> dict[str, dict[str, dict[str, np.ndarray]]]:
     """
-    Retrieve position data from packing outputs.
+    Retrieve and cache position data for multiple packing modes.
+
+    Loads position data from packing outputs or cached pickle files. Caches results
+    to a .dat file for faster subsequent access. Automatically combines multiple seed
+    files if needed.
 
     Parameters
     ----------
     structure_id
-        ID of the structure
+        Structure identifier for microscopy data
     packing_id
-        ID of the packing
+        Packing run identifier, also used to construct default ingredient_key
     packing_modes
-        List of packing modes to retrieve data for
+        List of mode names to load (e.g., ["random", "gradient", "observed"])
     base_datadir
-        Base directory for data
+        Base directory containing data and structure_data folders
     results_dir
-        Directory to save results
+        Directory for saving cached position data
     packing_output_folder
-        Folder containing packing outputs
+        Name of subdirectory containing packing outputs
     recalculate
-        Whether to recalculate the position data
+        If True, ignore cached data and reload from source files. Default is False
     ingredient_key
-        Key for the ingredient in the raw data, defaults to membrane_interior_{packing_id}
-    drop_random_seed
-        Whether to remove random seed suffix from keys
+        Ingredient name to extract. If None, defaults to "membrane_interior_{packing_id}"
 
     Returns
     -------
     :
-        Dictionary containing position data for each packing mode with structure
-        {mode: {cell_id: positions_array}}
+        Nested dictionary with structure {mode: {cell_id: {seed: positions_array}}}
+        where positions_array has shape (n_points, 3)
     """
     save_file_path = results_dir / f"{packing_id}_positions.dat"
 
@@ -238,7 +326,6 @@ def get_position_data_from_outputs(
             packing_output_folder=packing_output_folder,
             ingredient_key=ingredient_key,
             recalculate=recalculate,
-            drop_random_seed=drop_random_seed,
         )
 
     # Cache results
