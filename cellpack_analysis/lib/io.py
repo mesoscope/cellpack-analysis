@@ -39,6 +39,8 @@ def load_dataframe(load_local: bool = True, prefix: str = "all_cell_ids") -> pd.
     ----------
     load_local
         If True, attempt to load from local file first. If False, load from S3.
+    prefix
+        Prefix for the parquet file name.
 
     Returns
     -------

@@ -75,7 +75,7 @@ distance_dict = {
     },
 }
 all_structures = list(
-    set([v["channel_map"][k] for v in distance_dict.values() for k in v["channel_map"]])
+    {v["channel_map"][k] for v in distance_dict.values() for k in v["channel_map"]}
 )
 
 # %% [markdown]

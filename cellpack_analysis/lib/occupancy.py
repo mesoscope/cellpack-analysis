@@ -88,6 +88,10 @@ def get_kde_occupancy_dict(
         Maximum number of cells to sample per structure, by default None
     num_points
         Number of points for KDE evaluation, by default 100
+    x_min
+        Minimum x value for occupancy evaluation. Default is 0
+    x_max
+        Maximum x value for occupancy evaluation. Default is None
 
     Returns
     -------
@@ -336,7 +340,7 @@ def get_occupancy_emd_df(
 
     Parameters
     ----------
-    occupancy_dict
+    combined_occupancy_dict
         Dictionary containing occupancy measures for each packing mode
     packing_modes
         List of packing modes to calculate pairwise EMD for
@@ -541,6 +545,8 @@ def interpolate_occupancy_dict(
         Dictionary containing occupancy data for each packing mode
         Has the structure:
         {distance_measure:{mode:{"individual":{ ... },"combined": { ... }}}}
+    channel_map
+        Mapping from packing modes to structure IDs
     baseline_mode
         The baseline packing mode used for interpolation
     results_dir
@@ -672,10 +678,8 @@ def interpolate_occupancy_dict(
             "modes": {
                 mode: distance_data[mode]["combined"]["occupancy"] for mode in distance_data.keys()
             },
-            "coeffs_individual": {
-                mode: coeff for mode, coeff in zip(packing_modes, coeffs_individual)
-            },
-            "coeffs_joint": {mode: coeff for mode, coeff in zip(packing_modes, coeffs_joint)},
+            "coeffs_individual": dict(zip(packing_modes, coeffs_individual, strict=False)),
+            "coeffs_joint": dict(zip(packing_modes, coeffs_joint, strict=False)),
             "relative_contribution_individual": {
                 mode: params["relative_contribution"]
                 for mode, params in interp_dict["interpolation"]["individual"][distance_measure][

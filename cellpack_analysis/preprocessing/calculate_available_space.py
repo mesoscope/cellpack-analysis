@@ -74,7 +74,7 @@ def parse_arguments():
 
 
 def main():
-    """Main function to run the available space calculation."""
+    """Run the available space calculation."""
     # Parse command line arguments
     args = parse_arguments()
 

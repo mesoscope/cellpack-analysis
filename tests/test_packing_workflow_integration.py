@@ -4,9 +4,8 @@ These tests verify end-to-end functionality with real file I/O and dependencies.
 """
 
 import json
-import shutil
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -146,7 +145,7 @@ class TestPackingWorkflowIntegration:
         assert len(recipe_files) > 0
 
         # Read and verify recipe content
-        with open(recipe_files[0], "r") as f:
+        with open(recipe_files[0]) as f:
             recipe = json.load(f)
 
         # Verify key fields were updated
@@ -171,7 +170,7 @@ class TestPackingWorkflowIntegration:
         assert len(config_files) > 0
 
         # Read and verify config content
-        with open(config_files[0], "r") as f:
+        with open(config_files[0]) as f:
             config = json.load(f)
 
         # Verify key fields
@@ -185,7 +184,7 @@ class TestPackingWorkflowIntegration:
     ):
         """Test workflow with recipe generation disabled."""
         # Modify config to skip recipe generation
-        with open(integration_config, "r") as f:
+        with open(integration_config) as f:
             config_data = json.load(f)
         config_data["generate_recipes"] = False
         with open(integration_config, "w") as f:
@@ -211,7 +210,7 @@ class TestPackingWorkflowIntegration:
     ):
         """Test workflow with config generation disabled."""
         # Modify config to skip config generation
-        with open(integration_config, "r") as f:
+        with open(integration_config) as f:
             config_data = json.load(f)
         config_data["generate_configs"] = False
         with open(integration_config, "w") as f:
@@ -237,7 +236,7 @@ class TestPackingWorkflowIntegration:
     ):
         """Test workflow with multiple packing rules."""
         # Modify config to include multiple rules
-        with open(integration_config, "r") as f:
+        with open(integration_config) as f:
             config_data = json.load(f)
         config_data["recipe_data"] = {"random": {}, "test_rule": {"gradients": ["test_gradient"]}}
         config_data["packings_to_run"]["rules"] = ["random", "test_rule"]

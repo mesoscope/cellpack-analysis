@@ -1,8 +1,7 @@
 """Unit tests for run_packing_workflow module."""
 
-import logging
 from pathlib import Path
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -339,7 +338,6 @@ class TestWorkflowConfig:
     def test_config_with_custom_paths(self, tmp_path):
         """Test workflow configuration with custom template paths."""
         import json
-        from pathlib import Path
 
         custom_config_data = {
             "structure_name": "peroxisome",

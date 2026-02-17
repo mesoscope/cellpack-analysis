@@ -266,7 +266,7 @@ def get_distance_dictionary(
                     break
 
                 all_distance_dict[distance_measure] = distance_dict
-                if not all([len(v) > 0 for v in distance_dict.values()]):
+                if not all(len(v) > 0 for v in distance_dict.values()):
                     logger.warning(
                         f"Cached data in {file_path.relative_to(PROJECT_ROOT)} is empty. "
                         f"Recalculating distances."
@@ -303,9 +303,7 @@ def get_distance_dictionary(
                     str(cell_id).split("_")[0],
                     positions,
                     mode_mesh_dict,
-                ): (
-                    str(cell_id).split("_")[0]
-                )
+                ): (str(cell_id).split("_")[0])
                 for cell_id, positions in position_dict.items()
             }
             for future in tqdm(
