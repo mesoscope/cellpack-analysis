@@ -3,21 +3,21 @@
 <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
     <title>Coverage for cellpack_analysis/lib/distance.py: 0%</title>
-    <link rel="icon" sizes="32x32" href="favicon_32_cb_58284776.png">
-    <link rel="stylesheet" href="style_cb_6b508a39.css" type="text/css">
-    <script src="coverage_html_cb_6fb7b396.js" defer></script>
+    <link rel="icon" sizes="32x32" href="favicon_32_cb_c827f16f.png">
+    <link rel="stylesheet" href="style_cb_9ff733b0.css" type="text/css">
+    <script src="coverage_html_cb_dd2e7eb5.js" defer></script>
 </head>
 <body class="pyfile">
 <header>
     <div class="content">
         <h1>
-            <span class="text">Coverage for </span><b>cellpack_analysis/lib/distance.py</b>:
+            <span class="text">Coverage for </span><b>cellpack_analysis&#8201;/&#8201;lib&#8201;/&#8201;distance.py</b>:
             <span class="pc_cov">0%</span>
         </h1>
         <aside id="help_panel_wrapper">
             <input id="help_panel_state" type="checkbox">
             <label for="help_panel_state">
-                <img id="keyboard_icon" src="keybd_closed_cb_ce680311.png" alt="Show/hide keyboard shortcuts">
+                <img id="keyboard_icon" src="keybd_closed_cb_900cfef5.png" alt="Show/hide keyboard shortcuts">
             </label>
             <div id="help_panel">
                 <p class="legend">Shortcuts on this page</p>
@@ -64,8 +64,8 @@
             <a id="indexLink" class="nav" href="index.html">&Hat; index</a> &nbsp; &nbsp;
             <a id="nextFileLink" class="nav" href="z_a8372da4d4eea147_file_io_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
-            <a class="nav" href="https://coverage.readthedocs.io/en/7.10.7">coverage.py v7.10.7</a>,
-            created at 2026-02-17 21:26 +0000
+            <a class="nav" href="https://coverage.readthedocs.io/en/7.13.4">coverage.py v7.13.4</a>,
+            created at 2026-02-17 23:38 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -594,7 +594,7 @@
     <p class="mis show_mis"><span class="n"><a id="t512" href="#t512">512</a></span><span class="t">                <span class="nam">logger</span><span class="op">.</span><span class="nam">warning</span><span class="op">(</span><span class="str">f"Missing distances for {mode}, {cell_id}, skipping KS test"</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis show_mis"><span class="n"><a id="t513" href="#t513">513</a></span><span class="t">                <span class="key">continue</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis show_mis"><span class="n"><a id="t514" href="#t514">514</a></span><span class="t">            <span class="nam">ks_result</span> <span class="op">=</span> <span class="nam">ks_2samp</span><span class="op">(</span><span class="nam">distances_1</span><span class="op">,</span> <span class="nam">distances_2</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t515" href="#t515">515</a></span><span class="t">            <span class="nam">ks_stat</span><span class="op">,</span> <span class="nam">p_value</span> <span class="op">=</span> <span class="nam">ks_result</span><span class="op">.</span><span class="nam">statistic</span><span class="op">,</span> <span class="nam">ks_result</span><span class="op">.</span><span class="nam">pvalue</span>  <span class="com"># type:ignore</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t515" href="#t515">515</a></span><span class="t">            <span class="nam">ks_stat</span><span class="op">,</span> <span class="nam">p_value</span> <span class="op">=</span> <span class="nam">ks_result</span><span class="op">.</span><span class="nam">statistic</span><span class="op">,</span> <span class="nam">ks_result</span><span class="op">.</span><span class="nam">pvalue</span>  <span class="com"># type: ignore</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis show_mis"><span class="n"><a id="t516" href="#t516">516</a></span><span class="t">            <span class="nam">record_list</span><span class="op">.</span><span class="nam">append</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis mis2 show_mis"><span class="n"><a id="t517" href="#t517">517</a></span><span class="t">                <span class="op">{</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis mis2 show_mis"><span class="n"><a id="t518" href="#t518">518</a></span><span class="t">                    <span class="str">"distance_measure"</span><span class="op">:</span> <span class="nam">distance_measure</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
@@ -1028,7 +1028,7 @@
     <p class="mis mis2 show_mis"><span class="n"><a id="t946" href="#t946">946</a></span><span class="t">            <span class="key">else</span> <span class="num">1</span> <span class="op">/</span> <span class="nam">PIXEL_SIZE_IN_UM</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis mis2 show_mis"><span class="n"><a id="t947" href="#t947">947</a></span><span class="t">        <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis show_mis"><span class="n"><a id="t948" href="#t948">948</a></span><span class="t">        <span class="nam">scaled_radius_list</span><span class="op">.</span><span class="nam">append</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis mis2 show_mis"><span class="n"><a id="t949" href="#t949">949</a></span><span class="t">            <span class="nam">df_struct_stats</span><span class="op">.</span><span class="nam">loc</span><span class="op">[</span><span class="nam">cell_id</span><span class="op">,</span> <span class="str">"radius"</span><span class="op">]</span> <span class="op">/</span> <span class="nam">normalization_factor</span>  <span class="com"># type:ignore</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis mis2 show_mis"><span class="n"><a id="t949" href="#t949">949</a></span><span class="t">            <span class="nam">df_struct_stats</span><span class="op">.</span><span class="nam">loc</span><span class="op">[</span><span class="nam">cell_id</span><span class="op">,</span> <span class="str">"radius"</span><span class="op">]</span> <span class="op">/</span> <span class="nam">normalization_factor</span>  <span class="com"># type: ignore</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis mis2 show_mis"><span class="n"><a id="t950" href="#t950">950</a></span><span class="t">        <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t951" href="#t951">951</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="mis show_mis"><span class="n"><a id="t952" href="#t952">952</a></span><span class="t">    <span class="nam">avg_radius</span> <span class="op">=</span> <span class="nam">np</span><span class="op">.</span><span class="nam">mean</span><span class="op">(</span><span class="nam">scaled_radius_list</span><span class="op">)</span><span class="op">.</span><span class="nam">item</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
@@ -1215,8 +1215,8 @@
             <a class="nav" href="index.html">&Hat; index</a> &nbsp; &nbsp;
             <a class="nav" href="z_a8372da4d4eea147_file_io_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
-            <a class="nav" href="https://coverage.readthedocs.io/en/7.10.7">coverage.py v7.10.7</a>,
-            created at 2026-02-17 21:26 +0000
+            <a class="nav" href="https://coverage.readthedocs.io/en/7.13.4">coverage.py v7.13.4</a>,
+            created at 2026-02-17 23:38 +0000
         </p>
     </div>
 </footer>
