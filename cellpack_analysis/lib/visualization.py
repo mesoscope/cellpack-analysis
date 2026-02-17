@@ -711,7 +711,7 @@ def plot_occupancy_ratio(
     channel_map
         Dictionary mapping packing modes to channels
     baseline_mode
-        The baseline packing mode for normalization
+        The baseline packing mode for normalization. Default is None
     figures_dir
         Directory to save the figures
     suffix
@@ -738,6 +738,12 @@ def plot_occupancy_ratio(
         Y-axis limit for plots
     save_format
         Format to save the figures in
+    fig_params
+        Dictionary of figure parameters (dpi, figsize). Default is None
+    plot_individual
+        Whether to plot individual cell data. Default is True
+    show_legend
+        Whether to show the legend. Default is False
 
     Returns
     -------
@@ -875,6 +881,8 @@ def plot_occupancy_ratio_interpolation(
         Format to save the figures in
     plot_type
         Type of plot to generate: "individual" or "joint"
+    fig_params
+        Dictionary of figure parameters (dpi, figsize). Default is None
 
     Returns
     -------
@@ -1564,8 +1572,12 @@ def plot_grid_points_slice(
         Size of scatter plot points (default: 2)
     projection_axis
         Axis of projection ('x', 'y', or 'z')
+    cmap
+        Colormap to use for coloring. Default is None
     reverse_cmap
         Whether to reverse the colormap
+    clim
+        Color limits as (min, max) tuple. Default is None
 
     Returns
     -------
@@ -1575,8 +1587,11 @@ def plot_grid_points_slice(
     grid_points_um = grid_points_slice * PIXEL_SIZE_IN_UM
     centroid = np.mean(grid_points_um, axis=0)
     # custom_cmap = LinearSegmentedColormap.from_list("cyan_to_magenta", ["cyan", "magenta"])
+    # custom_cmap = LinearSegmentedColormap.from_list(
+    #     "gray_cutoff", plt.cm.get_cmap("gray")(np.linspace(0, 0.9, 256))
+    # )
     custom_cmap = LinearSegmentedColormap.from_list(
-        "gray_cutoff", plt.cm.get_cmap("gray")(np.linspace(0, 0.9, 256))
+        "reds_cutoff", plt.cm.get_cmap("Reds")(np.linspace(0.3, 1, 256))
     )
     if cmap is not None:
         if isinstance(cmap, Colormap):

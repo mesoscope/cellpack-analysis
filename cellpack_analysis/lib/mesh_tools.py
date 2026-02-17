@@ -986,7 +986,7 @@ def get_distances_from_mesh(
     mesh
         Mesh to calculate distances to
     invert
-        If True, invert the sign of distances
+        If True, invert the sign of the distances.
 
     Returns
     -------

@@ -31,7 +31,7 @@ class WorkflowConfig:
         self.condition = self.data.get("condition", default_values.CONDITION)
 
         # Base level data directory
-        self.datadir = self.data.get("datadir", default_values.DATADIR)
+        self.datadir = Path(self.data.get("datadir", default_values.DATADIR))
 
         # simulation settings
         self.dry_run = self.data.get("dry_run", default_values.DRY_RUN)

@@ -89,9 +89,9 @@ def get_kde_occupancy_dict(
     num_points
         Number of points for KDE evaluation, by default 100
     x_min
-        Minimum x value for KDE evaluation
+        Minimum x value for occupancy evaluation. Default is 0
     x_max
-        Maximum x value for KDE evaluation
+        Maximum x value for occupancy evaluation. Default is None
 
     Returns
     -------
@@ -628,7 +628,9 @@ def interpolate_occupancy_dict(
     stacked_simulated_occupancy_matrix_array = np.vstack(stacked_simulated_occupancy_matrix)
 
     # Perform joint non-negative least squares fitting
-    coeffs_joint, _ = nnls(stacked_simulated_occupancy_matrix_array, stacked_baseline_occupancy_array)
+    coeffs_joint, _ = nnls(
+        stacked_simulated_occupancy_matrix_array, stacked_baseline_occupancy_array
+    )
     relative_contribution_joint = coeffs_joint / np.sum(coeffs_joint)
 
     # Store global fit parameters

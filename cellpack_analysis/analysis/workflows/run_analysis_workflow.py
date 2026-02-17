@@ -18,6 +18,8 @@ Available analysis steps:
 - run_emd_analysis: Run Earth Mover's Distance analysis
 - run_ks_analysis: Run Kolmogorov-Smirnov test analysis
 - run_occupancy_analysis: Run occupancy analysis with spatial statistics
+- run_occupancy_emd_analysis: Run EMD analysis on occupancy data
+- run_occupancy_interpolation_analysis: Run interpolation analysis for occupancy data
 
 Example workflows:
 - Biological variation: ["load_common_data", "calculate_distances",
@@ -563,30 +565,31 @@ class AnalysisRunner:
         )
 
         for occupancy_distance_measure in config.occupancy_distance_measures:
-            for plot_type in ["individual", "joint"]:
-                _, ax = visualization.plot_occupancy_ratio(
-                    occupancy_dict=self.shared_data["occupancy_dict"][occupancy_distance_measure],
-                    channel_map=config.channel_map,
-                    baseline_mode=config.baseline_mode,
-                    suffix=config.suffix,
-                    normalization=config.normalization,
-                    distance_measure=occupancy_distance_measure,
-                    xlim=config.occupancy_params[occupancy_distance_measure]["xlim"],
-                    ylim=config.occupancy_params[occupancy_distance_measure]["ylim"],
-                    fig_params={"dpi": 300, "figsize": (3.5, 2.5)},
-                    plot_individual=False,
-                    show_legend=config.occupancy_params.get("show_legend", True),
-                )
-                _ = visualization.add_baseline_occupancy_interpolation_to_plot(
-                    ax=ax,
-                    interpolated_occupancy_dict=self.shared_data["interp_occupancy_dict"],
-                    baseline_mode=config.baseline_mode,
-                    distance_measure=occupancy_distance_measure,
-                    figures_dir=interpolation_figures_dir,
-                    suffix=config.suffix,
-                    save_format=config.save_format,
-                    plot_type=plot_type,
-                )
+            # for plot_type in ["individual", "joint"]:
+            plot_type = "joint"
+            _, ax = visualization.plot_occupancy_ratio(
+                occupancy_dict=self.shared_data["occupancy_dict"][occupancy_distance_measure],
+                channel_map=config.channel_map,
+                baseline_mode=config.baseline_mode,
+                suffix=config.suffix,
+                normalization=config.normalization,
+                distance_measure=occupancy_distance_measure,
+                xlim=config.occupancy_params[occupancy_distance_measure]["xlim"],
+                ylim=config.occupancy_params[occupancy_distance_measure]["ylim"],
+                fig_params={"dpi": 300, "figsize": (3.5, 2.5)},
+                plot_individual=True,
+                show_legend=config.occupancy_params.get("show_legend", True),
+            )
+            _ = visualization.add_baseline_occupancy_interpolation_to_plot(
+                ax=ax,
+                interpolated_occupancy_dict=self.shared_data["interp_occupancy_dict"],
+                baseline_mode=config.baseline_mode,
+                distance_measure=occupancy_distance_measure,
+                figures_dir=interpolation_figures_dir,
+                suffix=config.suffix,
+                save_format=config.save_format,
+                plot_type=plot_type,
+            )
 
 
 def main():

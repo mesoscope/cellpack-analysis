@@ -11,8 +11,8 @@ Usage:
     python get_structure_images.py --structure-id SLC25A17 --download-raw
 
 Example:
-    python get_structure_images.py --structure-id RAB5A --sample-dir sample_8d
-    --max-cells 5 --redownload
+    python get_structure_images.py --structure-id RAB5A --sample-dir sample_8d \
+        --max-cells 5 --redownload
 
 Available structures:
     - SLC25A17 (peroxisomes)
@@ -159,7 +159,7 @@ def download_structure_images(
     return 0
 
 
-def main() -> None:
+def main() -> int:
     """Parse arguments and download images."""
     parser = argparse.ArgumentParser(
         description="Download raw or segmented images for cellular structures",
@@ -180,8 +180,8 @@ def main() -> None:
         default="sample_8d",
         choices=["sample_8d", "full"],
         help=(
-            "Sample directory: 'sample_8d' for dsphere samples or 'full' for complete dataset "
-            "(default: sample_8d)"
+            "Sample directory: 'sample_8d' for dsphere samples or 'full' for "
+            "complete dataset (default: sample_8d)"
         ),
     )
 
