@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_a8372da4d4eea147_occupancy_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.10.7">coverage.py v7.10.7</a>,
-            created at 2025-11-15 08:55 +0000
+            created at 2026-02-17 21:26 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -995,8 +995,8 @@
     <p class="pln"><span class="n"><a id="t913" href="#t913">913</a></span><span class="t">    <span class="str">"""</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t914" href="#t914">914</a></span><span class="t"><span class="str">    Select a slice of grid points at the median coordinate along the projection axis.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t915" href="#t915">915</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t916" href="#t916">916</a></span><span class="t"><span class="str">    Parameters:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t917" href="#t917">917</a></span><span class="t"><span class="str">    -----------</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t916" href="#t916">916</a></span><span class="t"><span class="str">    Parameters</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t917" href="#t917">917</a></span><span class="t"><span class="str">    ----------</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t918" href="#t918">918</a></span><span class="t"><span class="str">    all_grid_points : np.ndarray</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t919" href="#t919">919</a></span><span class="t"><span class="str">        All grid points in pixels</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t920" href="#t920">920</a></span><span class="t"><span class="str">    projection_axis : str</span>&nbsp;</span><span class="r"></span></p>
@@ -1004,8 +1004,8 @@
     <p class="pln"><span class="n"><a id="t922" href="#t922">922</a></span><span class="t"><span class="str">    spacing : float</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t923" href="#t923">923</a></span><span class="t"><span class="str">        Spacing between grid points in pixels</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t924" href="#t924">924</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t925" href="#t925">925</a></span><span class="t"><span class="str">    Returns:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t926" href="#t926">926</a></span><span class="t"><span class="str">    --------</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t925" href="#t925">925</a></span><span class="t"><span class="str">    Returns</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t926" href="#t926">926</a></span><span class="t"><span class="str">    -------</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t927" href="#t927">927</a></span><span class="t"><span class="str">    grid_points_slice : np.ndarray</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t928" href="#t928">928</a></span><span class="t"><span class="str">        Grid points for the selected slice in pixels</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t929" href="#t929">929</a></span><span class="t"><span class="str">    """</span>&nbsp;</span><span class="r"></span></p>
@@ -1067,45 +1067,47 @@
     <p class="pln"><span class="n"><a id="t985" href="#t985">985</a></span><span class="t"><span class="str">        Points to calculate distances for</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t986" href="#t986">986</a></span><span class="t"><span class="str">    mesh</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t987" href="#t987">987</a></span><span class="t"><span class="str">        Mesh to calculate distances to</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t988" href="#t988">988</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t989" href="#t989">989</a></span><span class="t"><span class="str">    Returns</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t990" href="#t990">990</a></span><span class="t"><span class="str">    -------</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t991" href="#t991">991</a></span><span class="t"><span class="str">    :</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t992" href="#t992">992</a></span><span class="t"><span class="str">        Distances in micrometers</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t993" href="#t993">993</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t994" href="#t994">994</a></span><span class="t"><span class="str">    """</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t995" href="#t995">995</a></span><span class="t">    <span class="nam">distances</span> <span class="op">=</span> <span class="nam">mesh</span><span class="op">.</span><span class="nam">nearest</span><span class="op">.</span><span class="nam">signed_distance</span><span class="op">(</span><span class="nam">points</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t996" href="#t996">996</a></span><span class="t">    <span class="key">if</span> <span class="nam">invert</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t997" href="#t997">997</a></span><span class="t">        <span class="nam">distances</span> <span class="op">=</span> <span class="op">-</span><span class="nam">distances</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t998" href="#t998">998</a></span><span class="t">    <span class="nam">distances_um</span> <span class="op">=</span> <span class="nam">distances</span> <span class="op">*</span> <span class="nam">PIXEL_SIZE_IN_UM</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t999" href="#t999">999</a></span><span class="t">    <span class="key">return</span> <span class="nam">distances_um</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t1000" href="#t1000">1000</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t1001" href="#t1001">1001</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t1002" href="#t1002">1002</a></span><span class="t"><span class="key">def</span> <span class="nam">get_weights_from_distances</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t1003" href="#t1003">1003</a></span><span class="t">    <span class="nam">distances_um</span><span class="op">:</span> <span class="nam">np</span><span class="op">.</span><span class="nam">ndarray</span><span class="op">,</span> <span class="nam">decay_length</span><span class="op">:</span> <span class="nam">float</span> <span class="op">|</span> <span class="key">None</span> <span class="op">=</span> <span class="key">None</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t1004" href="#t1004">1004</a></span><span class="t"><span class="op">)</span> <span class="op">-></span> <span class="nam">np</span><span class="op">.</span><span class="nam">ndarray</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t1005" href="#t1005">1005</a></span><span class="t">    <span class="str">"""</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t1006" href="#t1006">1006</a></span><span class="t"><span class="str">    Calculate weights based on distances using an exponential decay.</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t1007" href="#t1007">1007</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t1008" href="#t1008">1008</a></span><span class="t"><span class="str">    Parameters</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t1009" href="#t1009">1009</a></span><span class="t"><span class="str">    ----------</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t1010" href="#t1010">1010</a></span><span class="t"><span class="str">    distances_um</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t1011" href="#t1011">1011</a></span><span class="t"><span class="str">        Distances in micrometers</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t1012" href="#t1012">1012</a></span><span class="t"><span class="str">    decay_length</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t1013" href="#t1013">1013</a></span><span class="t"><span class="str">        Decay length for the exponential weight calculation</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t1014" href="#t1014">1014</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t1015" href="#t1015">1015</a></span><span class="t"><span class="str">    Returns</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t1016" href="#t1016">1016</a></span><span class="t"><span class="str">    -------</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t1017" href="#t1017">1017</a></span><span class="t"><span class="str">    :</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t1018" href="#t1018">1018</a></span><span class="t"><span class="str">        Weights based on exponential decay</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t1019" href="#t1019">1019</a></span><span class="t"><span class="str">    """</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t1020" href="#t1020">1020</a></span><span class="t">    <span class="nam">scaled_distances</span> <span class="op">=</span> <span class="nam">distances_um</span> <span class="op">/</span> <span class="nam">np</span><span class="op">.</span><span class="nam">max</span><span class="op">(</span><span class="nam">distances_um</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t1021" href="#t1021">1021</a></span><span class="t">    <span class="key">if</span> <span class="nam">decay_length</span> <span class="key">is</span> <span class="key">not</span> <span class="key">None</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t1022" href="#t1022">1022</a></span><span class="t">        <span class="nam">weights</span> <span class="op">=</span> <span class="nam">np</span><span class="op">.</span><span class="nam">exp</span><span class="op">(</span><span class="op">-</span><span class="nam">scaled_distances</span> <span class="op">/</span> <span class="nam">decay_length</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t1023" href="#t1023">1023</a></span><span class="t">        <span class="nam">weights</span> <span class="op">/=</span> <span class="nam">np</span><span class="op">.</span><span class="nam">max</span><span class="op">(</span><span class="nam">weights</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t1024" href="#t1024">1024</a></span><span class="t">    <span class="key">else</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t1025" href="#t1025">1025</a></span><span class="t">        <span class="nam">weights</span> <span class="op">=</span> <span class="num">1</span> <span class="op">-</span> <span class="nam">scaled_distances</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t1026" href="#t1026">1026</a></span><span class="t">    <span class="key">return</span> <span class="nam">weights</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t988" href="#t988">988</a></span><span class="t"><span class="str">    invert</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t989" href="#t989">989</a></span><span class="t"><span class="str">        If True, invert the sign of the distances.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t990" href="#t990">990</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t991" href="#t991">991</a></span><span class="t"><span class="str">    Returns</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t992" href="#t992">992</a></span><span class="t"><span class="str">    -------</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t993" href="#t993">993</a></span><span class="t"><span class="str">    :</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t994" href="#t994">994</a></span><span class="t"><span class="str">        Distances in micrometers</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t995" href="#t995">995</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t996" href="#t996">996</a></span><span class="t"><span class="str">    """</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t997" href="#t997">997</a></span><span class="t">    <span class="nam">distances</span> <span class="op">=</span> <span class="nam">mesh</span><span class="op">.</span><span class="nam">nearest</span><span class="op">.</span><span class="nam">signed_distance</span><span class="op">(</span><span class="nam">points</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t998" href="#t998">998</a></span><span class="t">    <span class="key">if</span> <span class="nam">invert</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t999" href="#t999">999</a></span><span class="t">        <span class="nam">distances</span> <span class="op">=</span> <span class="op">-</span><span class="nam">distances</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t1000" href="#t1000">1000</a></span><span class="t">    <span class="nam">distances_um</span> <span class="op">=</span> <span class="nam">distances</span> <span class="op">*</span> <span class="nam">PIXEL_SIZE_IN_UM</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t1001" href="#t1001">1001</a></span><span class="t">    <span class="key">return</span> <span class="nam">distances_um</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t1002" href="#t1002">1002</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t1003" href="#t1003">1003</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t1004" href="#t1004">1004</a></span><span class="t"><span class="key">def</span> <span class="nam">get_weights_from_distances</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t1005" href="#t1005">1005</a></span><span class="t">    <span class="nam">distances_um</span><span class="op">:</span> <span class="nam">np</span><span class="op">.</span><span class="nam">ndarray</span><span class="op">,</span> <span class="nam">decay_length</span><span class="op">:</span> <span class="nam">float</span> <span class="op">|</span> <span class="key">None</span> <span class="op">=</span> <span class="key">None</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t1006" href="#t1006">1006</a></span><span class="t"><span class="op">)</span> <span class="op">-></span> <span class="nam">np</span><span class="op">.</span><span class="nam">ndarray</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t1007" href="#t1007">1007</a></span><span class="t">    <span class="str">"""</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t1008" href="#t1008">1008</a></span><span class="t"><span class="str">    Calculate weights based on distances using an exponential decay.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t1009" href="#t1009">1009</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t1010" href="#t1010">1010</a></span><span class="t"><span class="str">    Parameters</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t1011" href="#t1011">1011</a></span><span class="t"><span class="str">    ----------</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t1012" href="#t1012">1012</a></span><span class="t"><span class="str">    distances_um</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t1013" href="#t1013">1013</a></span><span class="t"><span class="str">        Distances in micrometers</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t1014" href="#t1014">1014</a></span><span class="t"><span class="str">    decay_length</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t1015" href="#t1015">1015</a></span><span class="t"><span class="str">        Decay length for the exponential weight calculation</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t1016" href="#t1016">1016</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t1017" href="#t1017">1017</a></span><span class="t"><span class="str">    Returns</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t1018" href="#t1018">1018</a></span><span class="t"><span class="str">    -------</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t1019" href="#t1019">1019</a></span><span class="t"><span class="str">    :</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t1020" href="#t1020">1020</a></span><span class="t"><span class="str">        Weights based on exponential decay</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t1021" href="#t1021">1021</a></span><span class="t"><span class="str">    """</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t1022" href="#t1022">1022</a></span><span class="t">    <span class="nam">scaled_distances</span> <span class="op">=</span> <span class="nam">distances_um</span> <span class="op">/</span> <span class="nam">np</span><span class="op">.</span><span class="nam">max</span><span class="op">(</span><span class="nam">distances_um</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t1023" href="#t1023">1023</a></span><span class="t">    <span class="key">if</span> <span class="nam">decay_length</span> <span class="key">is</span> <span class="key">not</span> <span class="key">None</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t1024" href="#t1024">1024</a></span><span class="t">        <span class="nam">weights</span> <span class="op">=</span> <span class="nam">np</span><span class="op">.</span><span class="nam">exp</span><span class="op">(</span><span class="op">-</span><span class="nam">scaled_distances</span> <span class="op">/</span> <span class="nam">decay_length</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t1025" href="#t1025">1025</a></span><span class="t">        <span class="nam">weights</span> <span class="op">/=</span> <span class="nam">np</span><span class="op">.</span><span class="nam">max</span><span class="op">(</span><span class="nam">weights</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t1026" href="#t1026">1026</a></span><span class="t">    <span class="key">else</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t1027" href="#t1027">1027</a></span><span class="t">        <span class="nam">weights</span> <span class="op">=</span> <span class="num">1</span> <span class="op">-</span> <span class="nam">scaled_distances</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t1028" href="#t1028">1028</a></span><span class="t">    <span class="key">return</span> <span class="nam">weights</span>&nbsp;</span><span class="r"></span></p>
 </main>
 <footer>
     <div class="content">
@@ -1115,7 +1117,7 @@
             <a class="nav" href="z_a8372da4d4eea147_occupancy_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.10.7">coverage.py v7.10.7</a>,
-            created at 2025-11-15 08:55 +0000
+            created at 2026-02-17 21:26 +0000
         </p>
     </div>
 </footer>
