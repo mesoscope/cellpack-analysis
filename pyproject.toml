@@ -16,10 +16,10 @@ dependencies = [
     "ipykernel",
     "ipywidgets",
     "matplotlib",
-    "numpy<2",
+    "numpy<3",
     "pandas",
     "pathlib",
-    "pyarrow==19.0",
+    "pyarrow==23.0.1",
     "python-dotenv",
     "quilt3",
     "rtree",
@@ -60,7 +60,7 @@ docs = [
 ]
 
 [build-system]
-requires = ["uv_build>=0.8.14,<0.9.0"]
+requires = ["uv_build>=0.8.14,<0.11.0"]
 build-backend = "uv_build"
 
 [tool.uv]
