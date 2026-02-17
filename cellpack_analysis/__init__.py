@@ -16,12 +16,12 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-def get_module_version():
+def get_module_version() -> str:
     """Get the current module version."""
     return __version__
 
 
-def setup_logging(level=logging.INFO):
+def setup_logging(level: int = logging.INFO) -> None:
     """Set up logging configuration for the entire package."""
     config_path = Path(__file__).parents[1] / "logging.conf"
     if config_path.exists():

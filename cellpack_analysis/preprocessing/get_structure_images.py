@@ -159,7 +159,7 @@ def download_structure_images(
     return 0
 
 
-def main():
+def main() -> None:
     """Parse arguments and download images."""
     parser = argparse.ArgumentParser(
         description="Download raw or segmented images for cellular structures",

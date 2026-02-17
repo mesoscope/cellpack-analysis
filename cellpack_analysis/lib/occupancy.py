@@ -38,7 +38,7 @@ def get_cell_id_map_from_distance_kde_dict(
     :
         Dictionary mapping structure IDs to lists of cell IDs
     """
-    cell_id_map = {}
+    cell_id_map: dict[str, list[str]] = {}
     for mode, structure_id in channel_map.items():
         if structure_id not in cell_id_map:
             cell_id_map[structure_id] = []
@@ -573,7 +573,7 @@ def interpolate_occupancy_dict(
     ]
 
     # Initialize result dictionary
-    interp_dict = {
+    interp_dict: dict[str, Any] = {
         "occupancy": {},
         "interpolation": {
             "individual": {},
@@ -582,8 +582,8 @@ def interpolate_occupancy_dict(
     }
 
     # Stack data across all distance measures for joint optimization
-    stacked_baseline_occupancy = []
-    stacked_simulated_occupancy_matrix = []
+    stacked_baseline_occupancy: list[np.ndarray] = []
+    stacked_simulated_occupancy_matrix: list[np.ndarray] = []
     stacked_xvals = []
     distance_measures = []
 
@@ -624,11 +624,11 @@ def interpolate_occupancy_dict(
         }
 
     # Concatenate all data for joint optimization
-    stacked_baseline_occupancy = np.concatenate(stacked_baseline_occupancy)
-    stacked_simulated_occupancy_matrix = np.vstack(stacked_simulated_occupancy_matrix)
+    stacked_baseline_occupancy_array = np.concatenate(stacked_baseline_occupancy)
+    stacked_simulated_occupancy_matrix_array = np.vstack(stacked_simulated_occupancy_matrix)
 
     # Perform joint non-negative least squares fitting
-    coeffs_joint, _ = nnls(stacked_simulated_occupancy_matrix, stacked_baseline_occupancy)
+    coeffs_joint, _ = nnls(stacked_simulated_occupancy_matrix_array, stacked_baseline_occupancy_array)
     relative_contribution_joint = coeffs_joint / np.sum(coeffs_joint)
 
     # Store global fit parameters
@@ -898,17 +898,17 @@ def get_binned_occupancy_dict(
                 "pdf_available": available_space_counts[cell_id],
             }
 
-        occupied_space_counts = np.vstack(list(occupied_space_counts.values()))
-        available_space_counts = np.vstack(list(available_space_counts.values()))
-        occupancy_ratio = occupied_space_counts / available_space_counts
+        occupied_space_counts_array = np.vstack(list(occupied_space_counts.values()))
+        available_space_counts_array = np.vstack(list(available_space_counts.values()))
+        occupancy_ratio = occupied_space_counts_array / available_space_counts_array
         mean_occupancy_ratio = np.nanmean(occupancy_ratio, axis=0)
         std_occupancy_ratio = np.nanstd(occupancy_ratio, axis=0)
         binned_occupancy_dict[mode]["combined"] = {
             "xvals": bin_centers,
             "occupancy": mean_occupancy_ratio,
             "std_occupancy": std_occupancy_ratio,
-            "pdf_occupied": np.nanmean(occupied_space_counts, axis=0),
-            "pdf_available": np.nanmean(available_space_counts, axis=0),
+            "pdf_occupied": np.nanmean(occupied_space_counts_array, axis=0),
+            "pdf_available": np.nanmean(available_space_counts_array, axis=0),
         }
 
     # save occupancy dictionary

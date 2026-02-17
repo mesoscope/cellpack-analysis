@@ -30,7 +30,7 @@ def count_all_keys(d: dict) -> int:
     return count
 
 
-def format_time(seconds):
+def format_time(seconds: float) -> str:
     """Format time in seconds to a human readable format."""
     if seconds == np.inf:
         return "∞"
@@ -84,7 +84,7 @@ def load_dataframe(load_local: bool = True, prefix: str = "all_cell_ids") -> pd.
     loaded_from_s3 = False
 
     if load_local and local_path.exists():
-        df_path = local_path
+        df_path: Path | str = local_path
         logger.debug(f"Loading from local file: {df_path}")
     else:
         if load_local and not local_path.exists():

@@ -22,7 +22,7 @@ from cellpack_analysis.lib.mesh_tools import calculate_grid_distances
 logger = logging.getLogger(__name__)
 
 
-def parse_arguments():
+def parse_arguments() -> argparse.Namespace:
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description="Calculate available intracellular space.")
 
@@ -73,7 +73,7 @@ def parse_arguments():
     return parser.parse_args()
 
 
-def main():
+def main() -> None:
     """Run the available space calculation."""
     # Parse command line arguments
     args = parse_arguments()

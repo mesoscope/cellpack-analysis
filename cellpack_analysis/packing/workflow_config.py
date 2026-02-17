@@ -20,12 +20,12 @@ class WorkflowConfig:
         self.data = self._read_config_file()
         self._setup()
 
-    def _read_config_file(self):
+    def _read_config_file(self) -> dict:
         with open(self.workflow_config_path) as f:
             config = json.load(f)
         return config
 
-    def _setup(self):
+    def _setup(self) -> None:
         self.structure_name = self.data.get("structure_name", default_values.STRUCTURE_NAME)
         self.structure_id = self.data.get("structure_id", default_values.STRUCTURE_ID)
         self.condition = self.data.get("condition", default_values.CONDITION)

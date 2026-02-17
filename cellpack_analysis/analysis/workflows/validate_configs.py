@@ -11,7 +11,7 @@ setup_logging()
 logger = logging.getLogger(__name__)
 
 
-def validate_config_file(config_path: Path):
+def validate_config_file(config_path: Path) -> bool:
     """Validate a single configuration file."""
     logger.info(f"Validating {config_path.name}...")
 
@@ -52,7 +52,7 @@ def validate_config_file(config_path: Path):
         return False
 
 
-def main():
+def main() -> None:
     """Validate all configuration files."""
     configs_dir = Path("cellpack_analysis/workflows/configs")
 

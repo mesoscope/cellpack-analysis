@@ -204,7 +204,7 @@ def get_input_file_dictionary(workflow_config: Any) -> dict[str, dict[str, Any]]
 
     cell_ids_to_pack = get_cell_ids_to_pack(workflow_config)
 
-    input_file_dict = {}
+    input_file_dict: dict[str, dict[str, str | list[str]]] = {}
     for rule in rule_list:
         input_file_dict[rule] = {}
         rule_config_path = (

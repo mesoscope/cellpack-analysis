@@ -46,7 +46,7 @@ def combine_multiple_seeds_to_dictionary(
     """
 
     data_folder = Path(data_folder)
-    output_dict = {}
+    output_dict: dict[str, dict[str, list]] = {}
     for file in data_folder.glob(f"{search_prefix}*.json"):
         if rule_name not in file.name:
             continue
@@ -96,7 +96,7 @@ def get_positions_dictionary_from_file(
     """
     with open(filename) as j:
         raw_data = json.load(j)
-    positions = {}
+    positions: dict[str, dict[str, np.ndarray]] = {}
     for cellid_seed, seed_positions in raw_data.items():
         split_cellid = cellid_seed.split("_")
         if len(split_cellid) <= 0 or len(split_cellid) > 2:

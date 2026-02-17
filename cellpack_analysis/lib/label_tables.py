@@ -3,7 +3,7 @@ import colorsys
 import seaborn as sns
 
 
-def adjust_color_saturation(hex_color, saturation):
+def adjust_color_saturation(hex_color: str, saturation: float) -> str:
     """
     Adjust the saturation of a hex color.
 
