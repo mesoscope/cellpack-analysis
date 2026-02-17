@@ -710,6 +710,8 @@ def plot_occupancy_ratio(
         Dictionary containing occupancy information
     channel_map
         Dictionary mapping packing modes to channels
+    baseline_mode
+        The baseline packing mode for normalization
     figures_dir
         Directory to save the figures
     suffix
@@ -718,6 +720,18 @@ def plot_occupancy_ratio(
         Normalization method applied
     distance_measure
         The distance measure to plot
+    xlim
+        X-axis limits
+    ylim
+        Y-axis limits
+    save_format
+        Format for saving the figure
+    fig_params
+        Additional figure parameters
+    plot_individual
+        Whether to plot individual cell data
+    show_legend
+        Whether to show the legend
     xlim
         X-axis limit for plots
     ylim
@@ -828,6 +842,24 @@ def plot_occupancy_ratio_interpolation(
     interpolated_occupancy_dict
         Dictionary containing interpolated occupancy information
     baseline_mode
+        The baseline packing mode
+    distance_measure
+        The distance measure to plot
+    figures_dir
+        Directory to save the figures
+    suffix
+        Suffix to add to the figure filename
+    xlim
+        X-axis limits
+    ylim
+        Y-axis limits
+    save_format
+        Format for saving the figure
+    plot_type
+        Type of plot ("individual" or "joint")
+    fig_params
+        Additional figure parameters
+        Additional figure parameters
         Baseline packing mode for interpolation
     distance_measure
         The distance measure to plot
@@ -1508,6 +1540,19 @@ def plot_grid_points_slice(
     inside_nuc
         Boolean mask for points inside nucleus
     color_var
+        Variable to use for coloring the points
+    cbar_label
+        Label for the colorbar
+    dot_size
+        Size of the dots in the scatter plot
+    projection_axis
+        Axis along which to project ("x", "y", or "z")
+    cmap
+        Colormap to use for the plot
+    reverse_cmap
+        Whether to reverse the colormap
+    clim
+        Color limits for the plot
         Values to use for coloring the cytoplasm points
     cbar_label
         Label for the colorbar

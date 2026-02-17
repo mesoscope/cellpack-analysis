@@ -66,7 +66,7 @@ distance_dict = {
         "distances": {dm: {} for dm in distance_measures},
     },
 }
-all_structures = list(set([v["structure_id"] for v in distance_dict.values()]))
+all_structures = list({v["structure_id"] for v in distance_dict.values()})
 row_modes = ["peroxisome", "endosome"]
 col_modes = ["ER", "golgi"]
 

@@ -364,11 +364,11 @@ def get_test_statistic_and_pvalue(
     sd = sim_curves.std(axis=0, ddof=1)
     sd[sd == 0] = 1e-9
     if statistic == "supremum":
-        T_obs = np.max(np.abs((obs_curve - mu) / sd))
-        T_sim = np.max(np.abs((sim_curves - mu) / sd), axis=1)
+        t_obs = np.max(np.abs((obs_curve - mu) / sd))
+        t_sim = np.max(np.abs((sim_curves - mu) / sd), axis=1)
     elif statistic == "intdev":
-        T_obs = integrate.trapezoid(np.abs((obs_curve - mu) / sd))
-        T_sim = np.array(
+        t_obs = integrate.trapezoid(np.abs((obs_curve - mu) / sd))
+        t_sim = np.array(
             [
                 integrate.trapezoid(np.abs((sim_curves[i] - mu) / sd))
                 for i in range(sim_curves.shape[0])
@@ -376,8 +376,8 @@ def get_test_statistic_and_pvalue(
         )
     else:
         raise ValueError(f"Invalid statistic: {statistic}")
-    p = (np.sum(T_sim >= T_obs) + 1) / (T_sim.size + 1)
-    return float(p), float(T_obs), T_sim
+    p = (np.sum(t_sim >= t_obs) + 1) / (t_sim.size + 1)
+    return float(p), float(t_obs), t_sim
 
 
 def monte_carlo_per_cell(
@@ -454,7 +454,7 @@ def monte_carlo_per_cell(
                 [ecdf(rep.get(distance_measure, np.array([])), r) for rep in reps]
             )  # (R, L)
             lo, hi, mu, sd = pointwise_envelope(sim_mat, alpha=alpha)
-            pval, Tobs, _ = get_test_statistic_and_pvalue(obs_curve, sim_mat, statistic=statistic)
+            pval, tobs, _ = get_test_statistic_and_pvalue(obs_curve, sim_mat, statistic=statistic)
 
             per_distance_measure[distance_measure] = {
                 "r": r,
@@ -464,7 +464,7 @@ def monte_carlo_per_cell(
                 "mu": mu,
                 "sd": sd,
                 "pval": pval,
-                "T_obs": Tobs,
+                "T_obs": tobs,
             }
             sim_curves_by_distance_measure[distance_measure] = sim_mat
             obs_curves_by_distance_measure[distance_measure] = obs_curve
@@ -491,11 +491,11 @@ def monte_carlo_per_cell(
         )
 
         # Now compute joint p-value in standardized sup-deviation sense
-        p_joint, Tobs_joint, _ = get_test_statistic_and_pvalue(obs_concat, sim_concat)
+        p_joint, tobs_joint, _ = get_test_statistic_and_pvalue(obs_concat, sim_concat)
 
         results[packing_mode] = {
             "per_distance_measure": per_distance_measure,
-            "joint": {"pval": p_joint, "T_obs": Tobs_joint, "distance_measures": distance_measures},
+            "joint": {"pval": p_joint, "T_obs": tobs_joint, "distance_measures": distance_measures},
         }
 
     return results

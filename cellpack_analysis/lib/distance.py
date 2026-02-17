@@ -150,7 +150,7 @@ def _validate_distance_dict(
     if not is_valid:
         return False, message
 
-    if not all([len(v) > 0 for v in data.values()]):
+    if not all(len(v) > 0 for v in data.values()):
         return False, "empty distance data"
 
     return True, ""
@@ -535,10 +535,12 @@ def get_distance_dictionary(
                 cache_valid = False
                 break
 
-            requested_modes = set(all_positions.keys())
+            modes_for_validation = set(all_positions.keys())
             distance_dict = _load_pickle_with_validation(
                 file_path,
-                validator=lambda data: _validate_distance_dict(data, requested_modes),
+                validator=lambda data, modes=modes_for_validation: _validate_distance_dict(
+                    data, modes
+                ),
                 context=f"{distance_measure} distances",
             )
 

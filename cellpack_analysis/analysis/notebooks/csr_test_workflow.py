@@ -1,6 +1,6 @@
 # %% [markdown]
 """
-# Complete Spatial Randomness (CSR) Test Workflow
+Complete Spatial Randomness (CSR) Test Workflow.
 
 Compares observed cellular structure positions against simulation-based null models
 using ECDF-based envelope tests with Monte Carlo p-values and Benjamini-Hochberg
@@ -11,7 +11,7 @@ Key steps:
 2. Build pointwise MC envelopes from simulation replicates
 3. Global test via supremum of standardized deviations
 4. Joint test across metrics via concatenated standardized curves
-5. Aggregate results across cells with BH correction
+5. Aggregate results across cells with BH correction.
 """
 
 import logging
@@ -161,9 +161,9 @@ sims_metrics_all = [
 # %%
 for measure, measure_dict in all_distance_dict.items():
     for mode, mode_dict in measure_dict.items():
-        for cell_idx, (cell_id, seed_dict) in enumerate(mode_dict.items()):
+        for cell_idx, (_cell_id, seed_dict) in enumerate(mode_dict.items()):
             # Observed data
-            for seed_idx, (seed, distances) in enumerate(seed_dict.items()):
+            for seed_idx, (_seed, distances) in enumerate(seed_dict.items()):
                 if mode == baseline_mode:
                     obs_metrics_all[cell_idx][measure] = distances
                 else:

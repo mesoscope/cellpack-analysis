@@ -110,7 +110,7 @@ def get_meshes_for_file(
 
 
 def main():
-    """Main function to parse arguments and process files."""
+    """Parse arguments and process files."""
     parser = argparse.ArgumentParser(
         description="Extract meshes from multichannel image files",
         formatter_class=argparse.RawDescriptionHelpFormatter,

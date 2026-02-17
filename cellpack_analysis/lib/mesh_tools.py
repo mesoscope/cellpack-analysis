@@ -913,8 +913,8 @@ def get_grid_points_slice(
     """
     Select a slice of grid points at the median coordinate along the projection axis.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     all_grid_points : np.ndarray
         All grid points in pixels
     projection_axis : str
@@ -922,8 +922,8 @@ def get_grid_points_slice(
     spacing : float
         Spacing between grid points in pixels
 
-    Returns:
-    --------
+    Returns
+    -------
     grid_points_slice : np.ndarray
         Grid points for the selected slice in pixels
     """
@@ -985,6 +985,8 @@ def get_distances_from_mesh(
         Points to calculate distances for
     mesh
         Mesh to calculate distances to
+    invert
+        If True, invert the sign of distances
 
     Returns
     -------
