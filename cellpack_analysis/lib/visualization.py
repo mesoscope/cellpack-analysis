@@ -1525,8 +1525,11 @@ def plot_grid_points_slice(
     grid_points_um = grid_points_slice * PIXEL_SIZE_IN_UM
     centroid = np.mean(grid_points_um, axis=0)
     # custom_cmap = LinearSegmentedColormap.from_list("cyan_to_magenta", ["cyan", "magenta"])
+    # custom_cmap = LinearSegmentedColormap.from_list(
+    #     "gray_cutoff", plt.cm.get_cmap("gray")(np.linspace(0, 0.9, 256))
+    # )
     custom_cmap = LinearSegmentedColormap.from_list(
-        "gray_cutoff", plt.cm.get_cmap("gray")(np.linspace(0, 0.9, 256))
+        "reds_cutoff", plt.cm.get_cmap("Reds")(np.linspace(0.3, 1, 256))
     )
     if cmap is not None:
         if isinstance(cmap, Colormap):

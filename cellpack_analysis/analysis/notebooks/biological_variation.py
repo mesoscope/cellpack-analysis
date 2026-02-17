@@ -29,7 +29,7 @@ PACKING_ID = "peroxisome"
 STRUCTURE_NAME = "peroxisome"
 # %% [markdown]
 # ### Set packing modes to analyze
-save_format = "svg"
+save_format = "pdf"
 packing_modes = [
     "mean_count_and_size",
     "variable_count",
@@ -54,7 +54,7 @@ project_root = get_project_root()
 base_datadir = project_root / "data"
 base_results_dir = project_root / "results"
 
-results_dir = base_results_dir / f"biological_variation/{STRUCTURE_NAME}"
+results_dir = base_results_dir / f"biological_variation/{STRUCTURE_NAME}/update_emd/"
 results_dir.mkdir(exist_ok=True, parents=True)
 
 figures_dir = results_dir / "figures"
@@ -100,7 +100,7 @@ for structure_id in all_structures:
     combined_mesh_information_dict[structure_id] = mesh_information_dict
 # %% [markdown]
 # ### Calculate distance measures and normalize
-all_distance_dict = distance.get_distance_dictionary(
+all_distance_dict = distance.get_distance_dictionary_serial(
     all_positions=all_positions,
     distance_measures=distance_measures,
     mesh_information_dict=combined_mesh_information_dict,
@@ -133,9 +133,8 @@ fig, axs = visualization.plot_distance_distributions_kde(
     figures_dir=distance_figures_dir,
     suffix=suffix,
     normalization=normalization,
-    overlay=True,
     distance_limits=DISTANCE_LIMITS,
-    bandwidth=0.4,
+    bandwidth=0.2,
     save_format=save_format,
 )
 # %% [markdown]
@@ -176,12 +175,14 @@ for comparison_type in ["intra_mode", "baseline"]:
         figures_dir=emd_figures_dir,
         suffix=suffix,
         save_format=save_format,
-        annotate_significance=True,
+        annotate_significance=False,
     )
 # %% [markdown]
 # ### Log statistics for EMD comparisons
-emd_log_file_path = results_dir / f"{STRUCTURE_NAME}_emd_central_tendencies{suffix}.log"
 for comparison_type in ["intra_mode", "baseline"]:
+    emd_log_file_path = (
+        results_dir / f"{STRUCTURE_NAME}_emd_central_tendencies_{comparison_type}{suffix}.log"
+    )
     distance.log_central_tendencies_for_emd(
         df_emd=df_emd,
         distance_measures=distance_measures,
@@ -190,3 +191,5 @@ for comparison_type in ["intra_mode", "baseline"]:
         log_file_path=emd_log_file_path,
         comparison_type=comparison_type,
     )
+
+# %%
