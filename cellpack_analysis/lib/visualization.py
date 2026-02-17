@@ -705,6 +705,8 @@ def plot_occupancy_ratio(
         Dictionary containing occupancy information
     channel_map
         Dictionary mapping packing modes to channels
+    baseline_mode
+        The baseline packing mode for normalization. Default is None
     figures_dir
         Directory to save the figures
     suffix
@@ -719,6 +721,12 @@ def plot_occupancy_ratio(
         Y-axis limit for plots
     save_format
         Format to save the figures in
+    fig_params
+        Dictionary of figure parameters (dpi, figsize). Default is None
+    plot_individual
+        Whether to plot individual cell data. Default is True
+    show_legend
+        Whether to show the legend. Default is False
 
     Returns
     -------
@@ -838,6 +846,8 @@ def plot_occupancy_ratio_interpolation(
         Format to save the figures in
     plot_type
         Type of plot to generate: "individual" or "joint"
+    fig_params
+        Dictionary of figure parameters (dpi, figsize). Default is None
 
     Returns
     -------
@@ -1514,8 +1524,12 @@ def plot_grid_points_slice(
         Size of scatter plot points (default: 2)
     projection_axis
         Axis of projection ('x', 'y', or 'z')
+    cmap
+        Colormap to use for coloring. Default is None
     reverse_cmap
         Whether to reverse the colormap
+    clim
+        Color limits as (min, max) tuple. Default is None
 
     Returns
     -------

@@ -52,7 +52,7 @@ figures_dir.mkdir(exist_ok=True, parents=True)
 # %% [markdown]
 # ### Load occupancy EMD data
 df_list = []
-for packing_id, comparison_mode in packing_id_info.items():
+for packing_id, _comparison_mode in packing_id_info.items():
     logger.info(f"Loading data for packing id: {packing_id}")
 
     occupancy_emd_df_path = occupancy_emd_folder / packing_id / "occupancy_emd.parquet"
@@ -122,14 +122,15 @@ for pairs in pairs_list:
 def calculate_aic(emd_values, n_params):
     """
     Calculate AIC for EMD values.
-    AIC = 2k - 2ln(L)
-    where k is number of parameters and L is likelihood
 
-    For EMD, we treat it as residuals and assume normal distribution
+    AIC = 2k - 2ln(L)
+    where k is number of parameters and L is likelihood.
+
+    For EMD, we treat it as residuals and assume normal distribution.
     """
     n = len(emd_values)
     # Calculate log-likelihood assuming normal distribution
-    # L = -n/2 * ln(2π) - n/2 * ln(σ²) - 1/(2σ²) * Σ(residuals²)
+    # L = -n/2 * ln(2π) - n/2 * ln(sigma²) - 1/(2sigma²) * Σ(residuals²)
     # For simplicity, we use mean squared error as proxy for -2ln(L)
     mse = np.mean(emd_values**2)
     # sigma2 = np.var(emd_values, ddof=1)
@@ -273,7 +274,7 @@ ax1.text(
     "Blue: 5-param preferred\nRed: 4-param preferred",
     transform=ax1.transAxes,
     verticalalignment="top",
-    bbox=dict(boxstyle="round", facecolor="white", alpha=0.8),
+    bbox={"boxstyle": "round", "facecolor": "white", "alpha": 0.8},
 )
 
 # Add strength indicators

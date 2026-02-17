@@ -219,7 +219,7 @@ for measure in ["weights", "distances"]:
         if measure == "distances":
             available_types = distance_configs.keys()
         else:  # weights
-            available_types = list(distance_configs.keys()) + ["mixed"]
+            available_types = [*list(distance_configs.keys()), "mixed"]
 
         for distance_type in available_types:
             # Skip mixed for distances since it doesn't exist

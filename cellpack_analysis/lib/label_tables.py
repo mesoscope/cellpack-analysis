@@ -7,15 +7,15 @@ def adjust_color_saturation(hex_color, saturation):
     """
     Adjust the saturation of a hex color.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     hex_color : str
         Hex color code (e.g., '#ff0000' or 'ff0000')
     saturation : float
         Saturation value between 0 and 1
 
-    Returns:
-    --------
+    Returns
+    -------
     str
         Hex color code with adjusted saturation
     """

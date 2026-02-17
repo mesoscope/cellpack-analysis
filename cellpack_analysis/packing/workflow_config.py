@@ -31,7 +31,7 @@ class WorkflowConfig:
         self.condition = self.data.get("condition", default_values.CONDITION)
 
         # Base level data directory
-        self.datadir = self.data.get("datadir", default_values.DATADIR)
+        self.datadir = Path(self.data.get("datadir", default_values.DATADIR))
 
         # simulation settings
         self.dry_run = self.data.get("dry_run", default_values.DRY_RUN)
@@ -98,9 +98,9 @@ class WorkflowConfig:
         self.generated_config_path.mkdir(parents=True, exist_ok=True)
 
         self.grid_path = self.data.get(
-                "grid_path",
-                self.datadir / f"structure_data/{self.structure_id}/grids",
-            )
+            "grid_path",
+            self.datadir / f"structure_data/{self.structure_id}/grids",
+        )
         if not is_url(self.grid_path):
             self.grid_path = Path(self.grid_path)
             self.grid_path.mkdir(parents=True, exist_ok=True)
@@ -121,4 +121,3 @@ class WorkflowConfig:
             )
         )
         self.output_path.mkdir(parents=True, exist_ok=True)
-
