@@ -306,7 +306,7 @@ def get_occupancy_ks_test_df(
             occupancy_1 = occupancy_dict[baseline_mode]["individual"][cell_id]["occupancy"]
             occupancy_2 = occupancy_dict[mode]["individual"][cell_id]["occupancy"]
             ks_result = ks_2samp(occupancy_1, occupancy_2)
-            ks_stat, p_value = ks_result.statistic, ks_result.pvalue  # type:ignore
+            ks_stat, p_value = ks_result.statistic, ks_result.pvalue  # type: ignore
             record_list.append(
                 {
                     "distance_measure": distance_measure,

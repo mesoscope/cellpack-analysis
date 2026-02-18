@@ -690,7 +690,7 @@ def get_ks_test_df(
                 logger.warning(f"Missing distances for {mode}, {cell_id}, skipping KS test")
                 continue
             ks_result = ks_2samp(distances_1, distances_2)
-            ks_stat, p_value = ks_result.statistic, ks_result.pvalue  # type:ignore
+            ks_stat, p_value = ks_result.statistic, ks_result.pvalue  # type: ignore
             record_list.append(
                 {
                     "distance_measure": distance_measure,
@@ -1160,7 +1160,7 @@ def get_scaled_structure_radius(
             else 1 / PIXEL_SIZE_IN_UM
         )
         scaled_radius_list.append(
-            df_struct_stats.loc[cell_id, "radius"] / normalization_factor  # type:ignore
+            df_struct_stats.loc[cell_id, "radius"] / normalization_factor  # type: ignore
         )
 
     avg_radius = np.mean(scaled_radius_list).item()
