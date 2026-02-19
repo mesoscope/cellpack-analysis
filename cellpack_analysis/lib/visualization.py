@@ -1773,3 +1773,218 @@ def plot_rejection_bars(
     sns.despine(fig=fig)
     plt.tight_layout()
     return fig, ax
+
+
+def plot_rejection_bars_by_sign(
+    rej_positive: pd.Series,
+    rej_negative: pd.Series,
+    title: str | None = None,
+    test_statistic: Literal["intdev", "supremum"] = "intdev",
+    ax: Axes | None = None,
+) -> tuple[Figure, Axes]:
+    """
+    Plot two-sided bar chart of rejection rates by test statistic deviation direction.
+
+    Positive deviations extend up (observed > simulated mean),
+    negative deviations extend down (observed < simulated mean).
+
+    Parameters
+    ----------
+    rej_positive
+        Fraction of cells rejected with positive deviations, indexed by packing_mode
+    rej_negative
+        Fraction of cells rejected with negative deviations, indexed by packing_mode
+    title
+        Plot title
+    ax
+        Optional Matplotlib Axes to plot on. If None, creates a new figure.
+
+    Returns
+    -------
+    :
+        Tuple containing figure and axis objects
+    """
+    if ax is None:
+        fig, ax = plt.subplots(dpi=300, figsize=(6, 4))
+    else:
+        fig = ax.get_figure(root=True)
+        if fig is None:
+            raise ValueError("The provided Axes object does not have an associated Figure")
+    if title is None:
+        title = f"Rejection rates by deviation direction ({test_statistic})"
+    packing_modes = rej_positive.index.tolist()
+    x_pos = np.arange(len(packing_modes))
+
+    # Convert to numpy arrays for plotting
+    pos_values = np.asarray(rej_positive.values, dtype=float)
+    neg_values = np.asarray(rej_negative.values, dtype=float)
+
+    # Get colors for each packing mode from COLOR_PALETTE
+    # For positive deviations: use saturated colors
+    # For negative deviations: use desaturated colors (50% saturation)
+    pos_colors = [
+        label_tables.COLOR_PALETTE.get(mode, label_tables.COLOR_PALETTE.get("random", "gray"))
+        for mode in packing_modes
+    ]
+    neg_colors = [
+        label_tables.adjust_color_saturation(
+            label_tables.COLOR_PALETTE.get(mode, label_tables.COLOR_PALETTE.get("random", "gray")),
+            saturation=0.3,
+        )
+        for mode in packing_modes
+    ]
+
+    # Positive bars (upward) - use ax.bar for per-mode colors
+    ax.bar(
+        x_pos,
+        pos_values,
+        color=pos_colors,
+        alpha=0.9,
+        label="(obs > sim mean)",
+    )
+
+    # Negative bars (downward) - use desaturated colors
+    ax.bar(
+        x_pos,
+        -neg_values,
+        color=neg_colors,
+        alpha=0.9,
+        label="(obs < sim mean)",
+    )
+
+    ax.axhline(y=0, color="black", linewidth=0.8)
+    ax.set_ylim(-1, 1)
+    ax.yaxis.set_major_locator(MaxNLocator(5, integer=True))
+    ax.set_ylabel("Fraction of cells rejected")
+    ax.set_xlabel("Packing mode")
+    ax.set_title(title)
+    ax.set_xticks(x_pos)
+    mode_labels = [label_tables.MODE_LABELS.get(mode, mode) or mode for mode in packing_modes]
+    ax.set_xticklabels(mode_labels)
+
+    # Set y-axis limits symmetrically
+    y_max = max(pos_values.max(), neg_values.max()) * 1.1
+    if y_max > 0:
+        ax.set_ylim(-y_max, y_max)
+
+    ax.legend(frameon=False, loc="upper left", bbox_to_anchor=(1, 0.9))
+    sns.despine(fig=fig, left=False)
+    plt.tight_layout()
+    return fig, ax
+
+
+def plot_grouped_rejection_bars_by_sign(
+    rej_positive: pd.Series,
+    rej_negative: pd.Series,
+    title: str | None = None,
+    test_statistic: Literal["intdev", "supremum"] = "intdev",
+    ax: Axes | None = None,
+) -> tuple[Figure, Axes]:
+    """
+    Plot grouped bar chart of rejection rates by distance measure and test statistic deviation direction.
+
+    Creates a grouped barplot where each packing mode has grouped bars for each distance
+    measure, with positive deviations extending upward and negative deviations downward.
+
+    Parameters
+    ----------
+    rej_positive
+        Fraction of cells rejected with positive deviations,
+        MultiIndex with (packing_mode, distance_measure)
+    rej_negative
+        Fraction of cells rejected with negative deviations,
+        MultiIndex with (packing_mode, distance_measure)
+    title
+        Plot title
+    ax
+        Optional Matplotlib Axes to plot on. If None, creates a new figure.
+
+    Returns
+    -------
+    :
+        Tuple containing figure and axis objects
+    """
+    if ax is None:
+        fig, ax = plt.subplots(dpi=300, figsize=(8, 5))
+    else:
+        fig = ax.get_figure(root=True)
+        if fig is None:
+            raise ValueError("The provided Axes object does not have an associated Figure")
+
+    if title is None:
+        title = f"Rejection rates by deviation direction and distance measure ({test_statistic})"
+
+    # Get packing modes and distance measures from MultiIndex
+    packing_modes = rej_positive.index.get_level_values("packing_mode").unique().tolist()
+    distance_measures = rej_positive.index.get_level_values("distance_measure").unique().tolist()
+
+    # Number of groups and bars per group
+    n_modes = len(packing_modes)
+    n_measures = len(distance_measures)
+    bar_width = 0.8 / n_measures
+    x_pos = np.arange(n_modes)
+
+    # Plot grouped bars for each distance measure
+    for idx, measure in enumerate(distance_measures):
+        # Get color for this distance measure
+        color = label_tables.COLOR_PALETTE.get(measure, "#808080")
+        color_neg = label_tables.adjust_color_saturation(color, saturation=0.3)
+
+        # Extract positive and negative values for this measure across all packing modes
+        pos_values = []
+        neg_values = []
+        for mode in packing_modes:
+            pos_val = rej_positive.loc[(mode, measure)]
+            neg_val = rej_negative.loc[(mode, measure)]
+            pos_values.append(pos_val)
+            neg_values.append(neg_val)
+
+        pos_values = np.array(pos_values)
+        neg_values = np.array(neg_values)
+
+        # Calculate x positions for this measure
+        x_offset = x_pos + (idx - n_measures / 2 + 0.5) * bar_width
+
+        # Plot positive bars (upward)
+        ax.bar(
+            x_offset,
+            pos_values,
+            width=bar_width,
+            color=color,
+            alpha=0.9,
+            label=label_tables.DISTANCE_MEASURE_LABELS.get(measure, measure),
+        )
+
+        # Plot negative bars (downward)
+        ax.bar(
+            x_offset,
+            -neg_values,
+            width=bar_width,
+            color=color_neg,
+            alpha=0.9,
+        )
+
+    ax.axhline(y=0, color="black", linewidth=0.8)
+    ax.set_ylabel("Fraction of cells rejected")
+    ax.set_xlabel("Packing mode")
+    ax.set_title(title)
+    ax.set_xticks(x_pos)
+    mode_labels = [label_tables.MODE_LABELS.get(mode, mode) or mode for mode in packing_modes]
+    ax.set_xticklabels(mode_labels)
+
+    # Set y-axis limits symmetrically
+    all_pos = np.asarray(rej_positive.values, dtype=float)
+    all_neg = np.asarray(rej_negative.values, dtype=float)
+    y_max = max(all_pos.max(), all_neg.max()) * 1.1
+    if y_max > 0:
+        ax.set_ylim(-y_max, y_max)
+
+    ax.legend(
+        frameon=False,
+        loc="upper left",
+        title="Distance measure",
+        bbox_to_anchor=(1, 0.9),
+    )
+    sns.despine(fig=fig, left=False)
+    plt.tight_layout()
+    return fig, ax

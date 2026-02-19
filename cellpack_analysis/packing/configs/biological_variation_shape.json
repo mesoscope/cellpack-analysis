@@ -1,0 +1,26 @@
+{
+    "structure_name": "peroxisome",
+    "structure_id": "SLC25A17",
+    "condition": "biological_variation",
+    "output_path": "data/packing_outputs/biological_variation/shape",
+    "recipe_template_path": "data/templates/recipes/biological_variation/variable_shape_recipe_template.json",
+    "config_template_path": "data/templates/configs/biological_variation/variable_shape_config_template.json",
+    "generate_recipes": true,
+    "generate_configs": true,
+    "use_mean_cell": false,
+    "use_cells_in_8d_sphere": true,
+    "get_counts_from_data": false,
+    "get_size_from_data": false,
+    "get_bounding_box_from_mesh": true,
+    "num_processes": 32,
+    "skip_completed": true,
+    "dry_run": false,
+    "recipe_data": {
+        "shape": {}
+    },
+    "packings_to_run": {
+        "rules": [
+            "shape"
+        ]
+    }
+}

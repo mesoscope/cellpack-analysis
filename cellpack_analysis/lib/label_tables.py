@@ -202,9 +202,9 @@ COLOR_PALETTE = {
     "golgi": colormap[7],
     "membrane": colormap[6],
     "nucleus": colormap[9],
-    "interpolated": "black",
-    "pairwise": "gray",
-    "nearest": "darkgray",
+    "interpolated": "#000000",
+    "pairwise": "#808080",
+    "nearest": "#A9A9A9",
     "z": colormap[10],
     "scaled_nucleus": adjust_color_saturation(colormap[10], 0.5),
     # parameter sweep plotting

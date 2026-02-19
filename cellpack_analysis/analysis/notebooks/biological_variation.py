@@ -29,17 +29,11 @@ STRUCTURE_NAME = "peroxisome"
 # %% [markdown]
 # ### Set packing modes to analyze
 save_format = "pdf"
-packing_modes = [
-    "mean_count_and_size",
-    "variable_count",
-    "variable_size",
-    "shape",
-]
 
 channel_map = {
     "mean_count_and_size": "mean",
-    # "variable_count": "mean",
-    # "variable_size": "mean",
+    "variable_count": "mean",
+    "variable_size": "mean",
     "shape": "SLC25A17",
 }
 
@@ -100,7 +94,7 @@ for structure_id in all_structures:
     combined_mesh_information_dict[structure_id] = mesh_information_dict
 # %% [markdown]
 # ### Calculate distance measures and normalize
-all_distance_dict = distance.get_distance_dictionary_serial(
+all_distance_dict = distance.get_distance_dictionary(
     all_positions=all_positions,
     distance_measures=distance_measures,
     mesh_information_dict=combined_mesh_information_dict,

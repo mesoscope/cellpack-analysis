@@ -3,6 +3,7 @@ import logging
 from pathlib import Path
 
 from cellpack_analysis.lib import default_values
+from cellpack_analysis.lib.file_io import get_project_root
 from cellpack_analysis.lib.io import is_url
 
 logger = logging.getLogger(__name__)
@@ -17,6 +18,7 @@ class WorkflowConfig:
             workflow_config_path = Path(__file__).parent / "configs/peroxisome.json"
 
         self.workflow_config_path = workflow_config_path
+        self.project_root = get_project_root()
         self.data = self._read_config_file()
         self._setup()
 
@@ -25,13 +27,41 @@ class WorkflowConfig:
             config = json.load(f)
         return config
 
+    def _resolve_path(self, path: str | Path) -> Path:
+        """
+        Resolve a path entry from the config file.
+
+        If the path is absolute, return it as-is.
+        If the path is relative, resolve it relative to the project root.
+
+        Parameters
+        ----------
+        path
+            The path to resolve, either as a string or a Path object.
+
+        Returns
+        -------
+        :
+            The resolved Path object.
+        """
+        path_obj = Path(path)
+        if path_obj.is_absolute():
+            return path_obj
+        else:
+            # Resolve relative to project root
+            return self.project_root / path_obj
+
     def _setup(self) -> None:
         self.structure_name = self.data.get("structure_name", default_values.STRUCTURE_NAME)
         self.structure_id = self.data.get("structure_id", default_values.STRUCTURE_ID)
         self.condition = self.data.get("condition", default_values.CONDITION)
 
         # Base level data directory
-        self.datadir = Path(self.data.get("datadir", default_values.DATADIR))
+        # Resolve datadir: if provided in config, resolve it; otherwise use default
+        if "datadir" in self.data:
+            self.datadir = self._resolve_path(self.data["datadir"])
+        else:
+            self.datadir = self._resolve_path(default_values.DATADIR)
 
         # simulation settings
         self.dry_run = self.data.get("dry_run", default_values.DRY_RUN)
@@ -67,57 +97,63 @@ class WorkflowConfig:
         self.num_processes = self.data.get("num_processes", default_values.NUM_PROCESSES)
 
         # resolve paths
-        self.recipe_template_path = Path(
-            self.data.get(
-                "recipe_template_path",
-                self.datadir / f"templates/recipes/{self.structure_name}_recipe_template.json",
+        if "recipe_template_path" in self.data:
+            self.recipe_template_path = self._resolve_path(self.data["recipe_template_path"])
+        else:
+            self.recipe_template_path = (
+                self.datadir / f"templates/recipes/{self.structure_name}_recipe_template.json"
             )
-        )
 
-        self.config_template_path = Path(
-            self.data.get(
-                "config_template_path",
-                self.datadir / f"templates/configs/{self.structure_name}_config_template.json",
+        if "config_template_path" in self.data:
+            self.config_template_path = self._resolve_path(self.data["config_template_path"])
+        else:
+            self.config_template_path = (
+                self.datadir / f"templates/configs/{self.structure_name}_config_template.json"
             )
-        )
 
-        self.generated_recipe_path = Path(
-            self.data.get(
-                "generated_recipe_path",
-                self.datadir / f"recipes/{self.structure_name}/{self.condition}",
+        if "generated_recipe_path" in self.data:
+            self.generated_recipe_path = self._resolve_path(self.data["generated_recipe_path"])
+        else:
+            self.generated_recipe_path = (
+                self.datadir / f"recipes/{self.structure_name}/{self.condition}"
             )
-        )
         self.generated_recipe_path.mkdir(parents=True, exist_ok=True)
 
-        self.generated_config_path = Path(
-            self.data.get(
-                "generated_config_path",
-                self.datadir / f"configs/{self.structure_name}/{self.condition}",
+        if "generated_config_path" in self.data:
+            self.generated_config_path = self._resolve_path(self.data["generated_config_path"])
+        else:
+            self.generated_config_path = (
+                self.datadir / f"configs/{self.structure_name}/{self.condition}"
             )
-        )
         self.generated_config_path.mkdir(parents=True, exist_ok=True)
 
-        self.grid_path = self.data.get(
-            "grid_path",
-            self.datadir / f"structure_data/{self.structure_id}/grids",
-        )
-        if not is_url(self.grid_path):
-            self.grid_path = Path(self.grid_path)
+        # Handle grid_path (may be a URL)
+        if "grid_path" in self.data:
+            grid_path_value = self.data["grid_path"]
+            if is_url(grid_path_value):
+                self.grid_path = grid_path_value
+            else:
+                self.grid_path = self._resolve_path(grid_path_value)
+                self.grid_path.mkdir(parents=True, exist_ok=True)
+        else:
+            self.grid_path = self.datadir / f"structure_data/{self.structure_id}/grids"
             self.grid_path.mkdir(parents=True, exist_ok=True)
 
-        self.mesh_path = self.data.get(
-            "mesh_path",
-            self.datadir / f"structure_data/{self.structure_id}/meshes",
-        )
-        if not is_url(self.mesh_path):
-            self.mesh_path = Path(self.mesh_path)
+        # Handle mesh_path (may be a URL)
+        if "mesh_path" in self.data:
+            mesh_path_value = self.data["mesh_path"]
+            if is_url(mesh_path_value):
+                self.mesh_path = mesh_path_value
+            else:
+                self.mesh_path = self._resolve_path(mesh_path_value)
+                self.mesh_path.mkdir(parents=True, exist_ok=True)
+        else:
+            self.mesh_path = self.datadir / f"structure_data/{self.structure_id}/meshes"
             self.mesh_path.mkdir(parents=True, exist_ok=True)
 
         subfolder = "8d_sphere_data" if self.use_cells_in_8d_sphere else "full_variance_data"
-        self.output_path = Path(
-            self.data.get(
-                "output_path",
-                self.datadir / f"packing_outputs/{subfolder}/{self.condition}",
-            )
-        )
+        if "output_path" in self.data:
+            self.output_path = self._resolve_path(self.data["output_path"])
+        else:
+            self.output_path = self.datadir / f"packing_outputs/{subfolder}/{self.condition}"
         self.output_path.mkdir(parents=True, exist_ok=True)

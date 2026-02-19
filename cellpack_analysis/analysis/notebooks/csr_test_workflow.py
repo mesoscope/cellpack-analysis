@@ -17,6 +17,7 @@ Key steps:
 import logging
 import time
 
+import pandas as pd
 from matplotlib import pyplot as plt
 from tqdm import tqdm
 
@@ -26,7 +27,12 @@ from cellpack_analysis.lib.label_tables import DISTANCE_MEASURE_LABELS, MODE_LAB
 from cellpack_analysis.lib.load_data import get_position_data_from_outputs
 from cellpack_analysis.lib.mesh_tools import get_mesh_information_dict_for_structure
 from cellpack_analysis.lib.stats import monte_carlo_per_cell, summarize_across_cells
-from cellpack_analysis.lib.visualization import plot_envelope_for_cell, plot_rejection_bars
+from cellpack_analysis.lib.visualization import (
+    plot_envelope_for_cell,
+    plot_grouped_rejection_bars_by_sign,
+    plot_rejection_bars,
+    plot_rejection_bars_by_sign,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -39,9 +45,9 @@ start_time = time.time()
 # RAB5A: early endosomes
 # SEC61B: ER
 # ST6GAL1: Golgi
-STRUCTURE_ID = "RAB5A"
-PACKING_ID = "endosome"
-STRUCTURE_NAME = "endosome"
+STRUCTURE_ID = "SLC25A17"
+PACKING_ID = "peroxisome"
+STRUCTURE_NAME = "peroxisome"
 CONDITION = "replicate_99"
 # %% [markdown]
 # ### Set packing modes to analyze
@@ -98,7 +104,7 @@ all_positions = get_position_data_from_outputs(
     results_dir=results_dir,
     packing_output_folder=packing_output_folder,
     ingredient_key=f"membrane_interior_{STRUCTURE_NAME}",
-    recalculate=True,
+    recalculate=False,
 )
 # %% [markdown]
 # ### Get mesh information
@@ -107,7 +113,7 @@ for structure_id in all_structures:
     mesh_information_dict = get_mesh_information_dict_for_structure(
         structure_id=structure_id,
         base_datadir=base_datadir,
-        recalculate=True,
+        recalculate=False,
     )
     combined_mesh_information_dict[structure_id] = mesh_information_dict
 # %% [markdown]
@@ -118,7 +124,7 @@ all_distance_dict = distance.get_distance_dictionary(
     mesh_information_dict=combined_mesh_information_dict,
     channel_map=channel_map,
     results_dir=results_dir,
-    recalculate=True,
+    recalculate=False,
     num_workers=64,
 )
 
@@ -187,7 +193,7 @@ for cell_idx in tqdm(range(num_cells)):
         alpha=alpha,
         distance_measures=distance_measures,
         r_grid_size=150,
-        statistic="supremum",
+        statistic="intdev",  # options: "supremum", "intdev"
     )
     all_results.append(cell_result)
 # %%
@@ -211,7 +217,7 @@ fig, axs = plt.subplots(
 )
 axs = axs.flatten()
 cell_idx = 0
-packing_mode = "random"
+packing_mode = "nucleus_gradient"
 for ct, distance_measure in enumerate(distance_measures):
     ax = axs[ct]
     fig, ax = plot_envelope_for_cell(
@@ -230,6 +236,7 @@ fig.savefig(
 )
 # %%
 # Plot joint test rejections by packing mode (combined over all distance measures)
+assert isinstance(summary["rejection_joint"], pd.Series)
 fig, ax = plot_rejection_bars(
     summary["rejection_joint"], title=f"Joint rejections (q<{alpha}) by packing mode"
 )
@@ -240,6 +247,7 @@ fig.savefig(
 )
 # %%
 # Plot per distance measure rejections by packing mode
+assert isinstance(summary["rejection_per_distance_measure"], pd.Series)
 fig, ax = plot_rejection_bars(
     summary["rejection_per_distance_measure"], title=f"Per distance measure rejections (q<{alpha})"
 )
@@ -247,6 +255,40 @@ plt.show()
 fig.savefig(
     figures_dir / f"per_distance_measure_rejections_by_packing_mode{suffix}.{save_format}",
     format=save_format,
+)
+
+# %%
+# Plot two-sided rejection bars: positive deviations (up) vs negative deviations (down)
+# for joint test
+assert isinstance(summary["rejection_joint_positive"], pd.Series)
+assert isinstance(summary["rejection_joint_negative"], pd.Series)
+fig, ax = plot_rejection_bars_by_sign(
+    summary["rejection_joint_positive"],
+    summary["rejection_joint_negative"],
+    title=f"Joint rejections by deviation direction (q<{alpha})",
+)
+plt.show()
+fig.savefig(
+    figures_dir / f"joint_rejections_by_sign{suffix}.{save_format}",
+    format=save_format,
+)
+# %%
+# Plot two-sided grouped rejection bars for per distance measure
+# Similar to unsigned version but split by deviation direction
+assert isinstance(summary["rejection_per_distance_measure_positive"], pd.Series)
+assert isinstance(summary["rejection_per_distance_measure_negative"], pd.Series)
+
+fig, ax = plot_grouped_rejection_bars_by_sign(
+    summary["rejection_per_distance_measure_positive"],
+    summary["rejection_per_distance_measure_negative"],
+    title=f"Per distance measure rejections by deviation direction (q<{alpha})\n"
+    f"Test statistic: {summary['test_statistic']}",
+)
+plt.show()
+fig.savefig(
+    figures_dir / f"per_distance_measure_rejections_by_sign{suffix}.{save_format}",
+    format=save_format,
+    bbox_inches="tight",
 )
 
 # %%

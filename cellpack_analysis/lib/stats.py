@@ -337,7 +337,7 @@ def get_test_statistic_and_pvalue(
     obs_curve: np.ndarray,
     sim_curves: np.ndarray,
     statistic: Literal["supremum", "intdev"] = "supremum",
-) -> tuple[float, float, np.ndarray]:
+) -> tuple[float, float, np.ndarray, int]:
     """
     Calculate global test statistic and p-value using supremum deviation.
 
@@ -358,13 +358,20 @@ def get_test_statistic_and_pvalue(
     Returns
     -------
     :
-        Tuple containing (p_value, T_observed, T_simulated_array)
+        Tuple containing (p_value, T_observed, T_simulated_array, supremum_sign)
+        where supremum_sign is +1 for positive and -1 for negative supremum direction
     """
     mu = sim_curves.mean(axis=0)
     sd = sim_curves.std(axis=0, ddof=1)
     sd[sd == 0] = 1e-9
     if statistic == "supremum":
-        t_obs = np.max(np.abs((obs_curve - mu) / sd))
+        standardized_dev = (obs_curve - mu) / sd
+        t_obs = np.max(np.abs(standardized_dev))
+        # Determine the sign of the supremum deviation
+        supremum_idx = np.argmax(np.abs(standardized_dev))
+        supremum_sign = int(np.sign(standardized_dev[supremum_idx]))
+        if supremum_sign == 0:
+            supremum_sign = 1  # Default to positive if exactly zero
         t_sim = np.max(np.abs((sim_curves - mu) / sd), axis=1)
     elif statistic == "intdev":
         t_obs = integrate.trapezoid(np.abs((obs_curve - mu) / sd))
@@ -374,10 +381,15 @@ def get_test_statistic_and_pvalue(
                 for i in range(sim_curves.shape[0])
             ]
         )
+        # For intdev, compute sign based on the dominant direction
+        standardized_dev_integral = np.mean((obs_curve - mu) / sd)
+        supremum_sign = int(np.sign(standardized_dev_integral))
+        if supremum_sign == 0:
+            supremum_sign = 1  # Default to positive if exactly zero
     else:
         raise ValueError(f"Invalid statistic: {statistic}")
     p = (np.sum(t_sim >= t_obs) + 1) / (t_sim.size + 1)
-    return float(p), float(t_obs), t_sim
+    return float(p), float(t_obs), t_sim, supremum_sign
 
 
 def monte_carlo_per_cell(
@@ -454,7 +466,9 @@ def monte_carlo_per_cell(
                 [ecdf(rep.get(distance_measure, np.array([])), r) for rep in reps]
             )  # (R, L)
             lo, hi, mu, sd = pointwise_envelope(sim_mat, alpha=alpha)
-            pval, tobs, _ = get_test_statistic_and_pvalue(obs_curve, sim_mat, statistic=statistic)
+            pval, tobs, _, supremum_sign = get_test_statistic_and_pvalue(
+                obs_curve, sim_mat, statistic=statistic
+            )
 
             per_distance_measure[distance_measure] = {
                 "r": r,
@@ -465,6 +479,7 @@ def monte_carlo_per_cell(
                 "sd": sd,
                 "pval": pval,
                 "T_obs": tobs,
+                "supremum_sign": supremum_sign,
             }
             sim_curves_by_distance_measure[distance_measure] = sim_mat
             obs_curves_by_distance_measure[distance_measure] = obs_curve
@@ -491,11 +506,18 @@ def monte_carlo_per_cell(
         )
 
         # Now compute joint p-value in standardized sup-deviation sense
-        p_joint, tobs_joint, _ = get_test_statistic_and_pvalue(obs_concat, sim_concat)
+        p_joint, tobs_joint, _, supremum_sign_joint = get_test_statistic_and_pvalue(
+            obs_concat, sim_concat
+        )
 
         results[packing_mode] = {
             "per_distance_measure": per_distance_measure,
-            "joint": {"pval": p_joint, "T_obs": tobs_joint, "distance_measures": distance_measures},
+            "joint": {
+                "pval": p_joint,
+                "T_obs": tobs_joint,
+                "distance_measures": distance_measures,
+                "supremum_sign": supremum_sign_joint,
+            },
         }
 
     return results
@@ -535,7 +557,7 @@ def summarize_across_cells(
     distance_measures = list(first_cell[packing_modes[0]]["per_distance_measure"].keys())
 
     num_cells = len(all_results)
-    # Collect p-values
+    # Collect p-values and supremum signs
     per_distance_measure_p = pd.DataFrame(
         index=np.arange(num_cells),
         columns=pd.MultiIndex.from_product(
@@ -543,7 +565,15 @@ def summarize_across_cells(
         ),
         dtype=float,
     )
+    per_distance_measure_sign = pd.DataFrame(
+        index=np.arange(num_cells),
+        columns=pd.MultiIndex.from_product(
+            [packing_modes, distance_measures], names=["packing_mode", "distance_measure"]
+        ),
+        dtype=int,
+    )
     joint_p = pd.DataFrame(index=np.arange(num_cells), columns=packing_modes, dtype=float)
+    joint_sign = pd.DataFrame(index=np.arange(num_cells), columns=packing_modes, dtype=int)
 
     for cell_idx in range(num_cells):
         for packing_mode in packing_modes:
@@ -553,8 +583,16 @@ def summarize_across_cells(
                         "pval"
                     ]
                 )
+                per_distance_measure_sign.loc[cell_idx, (packing_mode, distance_measure)] = (
+                    all_results[cell_idx][packing_mode]["per_distance_measure"][distance_measure][
+                        "supremum_sign"
+                    ]
+                )
             joint_p.loc[cell_idx, packing_mode] = all_results[cell_idx][packing_mode]["joint"][
                 "pval"
+            ]
+            joint_sign.loc[cell_idx, packing_mode] = all_results[cell_idx][packing_mode]["joint"][
+                "supremum_sign"
             ]
 
     # BH across cells per (model, distance_measure)
@@ -573,17 +611,38 @@ def summarize_across_cells(
             np.asarray(joint_p[packing_mode].values), method="bh"
         )
 
-    # Rejection rates (q < alpha)
+    # Rejection rates (q < alpha) overall and by sign
     rej_distance_measure = (per_distance_measure_q < alpha).mean(
         axis=0
     )  # fraction of cells rejected
     rej_joint = (joint_q < alpha).mean(axis=0)
 
+    # Rejection rates by supremum sign
+    rejected_distance_measure = per_distance_measure_q < alpha
+    rej_distance_measure_positive = (
+        (rejected_distance_measure)
+        & (per_distance_measure_sign == 1)
+    ).mean(axis=0)
+    rej_distance_measure_negative = (
+        (rejected_distance_measure)
+        & (per_distance_measure_sign == -1)
+    ).mean(axis=0)
+
+    rejected_joint = joint_q < alpha
+    rej_joint_positive = (rejected_joint & (joint_sign == 1)).mean(axis=0)
+    rej_joint_negative = (rejected_joint & (joint_sign == -1)).mean(axis=0)
+
     return {
         "per_distance_measure_pvals": per_distance_measure_p,
         "per_distance_measure_qvals": per_distance_measure_q,
+        "per_distance_measure_signs": per_distance_measure_sign,
         "joint_pvals": joint_p,
         "joint_qvals": joint_q,
+        "joint_signs": joint_sign,
         "rejection_per_distance_measure": rej_distance_measure,
         "rejection_joint": rej_joint,
+        "rejection_per_distance_measure_positive": rej_distance_measure_positive,
+        "rejection_per_distance_measure_negative": rej_distance_measure_negative,
+        "rejection_joint_positive": rej_joint_positive,
+        "rejection_joint_negative": rej_joint_negative,
     }

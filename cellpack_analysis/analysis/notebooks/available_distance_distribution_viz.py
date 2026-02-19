@@ -151,12 +151,22 @@ logger = remove_file_handler_from_logger(logger, log_file_path)
 
 # %% [markdown]
 # ## Plot distributions of cell stats
-for structure_id, structure_stats in cell_stats.items():
-    structure_label = MODE_LABELS.get(structure_id, structure_id)
-    mesh_information_dict = combined_mesh_information_dict[structure_id]
-    for measurement_name, measurement_values in structure_stats.items():
+measurement_names = list(cell_stats[all_structures[0]].keys())
+fig, axs = plt.subplots(
+    figsize=(6.5, 5),
+    dpi=300,
+    nrows=len(measurement_names),
+    ncols=len(all_structures),
+    sharex="row",
+    sharey="row",
+    squeeze=False,
+)
+for ct, structure_id in enumerate(all_structures):
+    structure_stats = cell_stats[structure_id]
+    for rt, measurement_name in enumerate(measurement_names):
+        measurement_values = structure_stats[measurement_name]
         measurement_label = STATS_LABELS.get(measurement_name, measurement_name)
-        fig, ax = plt.subplots(figsize=(2.5, 2.5), dpi=300)
+        ax = axs[rt, ct]
         sns.histplot(
             measurement_values,
             ax=ax,
@@ -165,17 +175,20 @@ for structure_id, structure_stats in cell_stats.items():
             bins=12,
             # alpha=0.7,
         )
+        ax.yaxis.label.set_visible(True)
+        ax.tick_params(axis="y", labelleft=True)
         ax.set_xlabel(measurement_label)
-        ax.set_ylabel("Count")
+        ax.set_ylabel("Number of cells")
         ax.xaxis.set_major_locator(MaxNLocator(5, integer=True))
         ax.yaxis.set_major_locator(MaxNLocator(3, integer=True))
         sns.despine(ax=ax)
-        fig.tight_layout()
-        fig.savefig(
-            figures_dir / f"{measurement_name}_distribution_{structure_id}.pdf",
-            bbox_inches="tight",
-        )
-        plt.show()
+
+fig.tight_layout()
+fig.savefig(
+    figures_dir / "cell_measurements_distribution.pdf",
+    bbox_inches="tight",
+)
+plt.show()
 
 
 # %% [markdown]
