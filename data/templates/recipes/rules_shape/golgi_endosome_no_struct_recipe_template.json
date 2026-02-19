@@ -1,0 +1,88 @@
+{
+    "version": "golgi_gradient",
+    "format_version": "2.1",
+    "name": "golgi_endosome_no_struct",
+    "bounding_box": [
+        [
+            -190,
+            -224,
+            -66
+        ],
+        [
+            172,
+            216,
+            74
+        ]
+    ],
+    "objects": {
+        "membrane_mesh": {
+            "type": "mesh",
+            "color": [
+                0.75,
+                0.75,
+                0.75
+            ],
+            "representations": {
+                "mesh": {
+                    "path": "https://www.dl.dropboxusercontent.com/s/4d7rys8uwqz72xy/",
+                    "name": "mean-membrane.obj",
+                    "format": "obj"
+                }
+            }
+        },
+        "nucleus_mesh": {
+            "type": "mesh",
+            "color": [
+                0.25,
+                0.25,
+                0.25
+            ],
+            "representations": {
+                "mesh": {
+                    "path": "https://www.dl.dropboxusercontent.com/s/3194r3t40ewypxh/",
+                    "name": "mean-nuc.obj",
+                    "format": "obj"
+                }
+            }
+        },
+        "endosome": {
+            "jitter_attempts": 300,
+            "type": "single_sphere",
+            "color": [
+                1,
+                0.8,
+                0
+            ],
+            "radius": 2.60
+        }
+    },
+    "composition": {
+        "bounding_area": {
+            "regions": {
+                "interior": [
+                    "membrane"
+                ]
+            }
+        },
+        "membrane": {
+            "object": "membrane_mesh",
+            "count": 1,
+            "regions": {
+                "interior": [
+                    "nucleus",
+                    {
+                        "object": "endosome",
+                        "count": 86
+                    }
+                ]
+            }
+        },
+        "nucleus": {
+            "object": "nucleus_mesh",
+            "count": 1,
+            "regions": {
+                "interior": []
+            }
+        }
+    }
+}

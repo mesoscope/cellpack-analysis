@@ -80,7 +80,9 @@ def write_json(file_path: str | Path, data: dict[str, Any]) -> None:
     os.chmod(file_path, 0o644)
 
 
-def add_file_handler_to_logger(logger: logging.Logger, file_path: str | Path) -> logging.Logger:
+def add_file_handler_to_logger(
+    logger: logging.Logger, file_path: str | Path, level: int = logging.INFO
+) -> logging.Logger:
     """
     Add a file handler to a logger for writing logs to a file.
 
@@ -90,13 +92,23 @@ def add_file_handler_to_logger(logger: logging.Logger, file_path: str | Path) ->
         Logger instance to add the file handler to
     file_path
         Path where log messages will be written
+    level
+        Logging level for the file handler
     """
     file_handler = logging.FileHandler(file_path, mode="w")
-    file_handler.setLevel(logging.INFO)
-    formatter = logging.Formatter(
-        "%(asctime)s | %(levelname)s | %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
+    file_handler.setLevel(level)
+
+    # Try to use the formatter from an existing handler (e.g., from logging.conf)
+    formatter = None
+    for h in logging.getLogger().handlers:
+        if hasattr(h, "formatter") and h.formatter is not None:
+            formatter = h.formatter
+            break
+    if formatter is None:
+        formatter = logging.Formatter(
+            "%(asctime)s | %(levelname)s | %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)
 
@@ -126,3 +138,33 @@ def remove_file_handler_from_logger(
             break
 
     return logger
+
+
+def setup_workflow_logging(log_file_path: str | Path) -> Path:
+    """
+    Set up integrated debug logging for workflow scripts.
+
+    Adds a DEBUG-level file handler to the root logger to capture all debug messages
+    from all modules into a single log file.
+
+    Parameters
+    ----------
+    log_file_path
+        Path where the debug log file will be written
+
+    Returns
+    -------
+    :
+        Path object of the log file
+    """
+    log_path = Path(log_file_path)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+
+    root_logger = logging.getLogger()
+
+    # Ensure root logger is at DEBUG level to allow DEBUG messages through
+    root_logger.setLevel(logging.DEBUG)
+
+    add_file_handler_to_logger(root_logger, log_path, level=logging.DEBUG)
+
+    return log_path

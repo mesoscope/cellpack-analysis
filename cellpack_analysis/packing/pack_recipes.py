@@ -54,7 +54,15 @@ def check_recipe_completed(
     """
     recipe_data = read_json(recipe_path)
     number_of_packings = config_data.get("number_of_packings", 1)
-    seed_vals = recipe_data.get("randomness_seed", [0])
+
+    if config_data.get("randomness_seed") is not None:
+        seed_vals = config_data["randomness_seed"]
+    elif recipe_data.get("randomness_seed") is not None:
+        seed_vals = recipe_data["randomness_seed"]
+    elif number_of_packings > 1:
+        seed_vals = list(range(number_of_packings))
+    else:
+        seed_vals = [0]
     if isinstance(seed_vals, int):
         seed_vals = [seed_vals]
 
@@ -71,25 +79,22 @@ def check_recipe_completed(
     else:
         raise ValueError("check_type must be 'image' or 'simularium'")
 
-    if len(seed_vals) == number_of_packings:
-        # usually this means only packing one seed
-        # check whether all files exist explicitly
-        result_file_list = [
-            folder_to_check
-            / (
-                f"{prefix}_{recipe_data['name']}_{config_data['name']}_"
-                f"{recipe_data['version']}_seed_{seed_val}.{suffix}"
-            )
-            for seed_val in seed_vals
-        ]
-    else:
-        result_file_list = list(
-            folder_to_check.glob(
-                f"{prefix}_{recipe_data['name']}_{config_data['name']}_"
-                f"{recipe_data['version']}_seed_*.{suffix}"
-            )
+    result_file_list = [
+        folder_to_check
+        / (
+            f"{prefix}_{recipe_data['name']}_{config_data['name']}_"
+            f"{recipe_data['version']}_seed_{seed_val}.{suffix}"
         )
+        for seed_val in seed_vals
+    ]
+
     num_existing_files = sum([result_file.exists() for result_file in result_file_list])
+    logger.debug(
+        "Checking recipe %s: found %d existing result files out of %d expected",
+        recipe_path,
+        num_existing_files,
+        number_of_packings,
+    )
 
     return num_existing_files == number_of_packings
 
@@ -194,12 +199,14 @@ def get_input_file_dictionary(workflow_config: Any) -> dict[str, dict[str, Any]]
     :
         The dictionary containing the configuration path and recipe paths for each rule
     """
+    logger.debug("Building input file dictionary for packing workflow")
     packing_info = workflow_config.data.get("packings_to_run", {})
     rule_list = packing_info.get("rules", [])
+    logger.debug(f"Rules to process: {rule_list}")
 
     cell_ids_to_pack = get_cell_ids_to_pack(workflow_config)
 
-    input_file_dict = {}
+    input_file_dict: dict[str, dict[str, str | list[str]]] = {}
     for rule in rule_list:
         input_file_dict[rule] = {}
         rule_config_path = (
@@ -267,11 +274,10 @@ def pack_recipes(workflow_config: Any) -> int:
     workflow_config
         Workflow configuration object
     """
+    logger.debug("Starting pack_recipes workflow")
     input_file_dict = get_input_file_dictionary(workflow_config)
     start = time.time()
 
-    log_folder = workflow_config.output_path / "logs"
-    log_folder.mkdir(parents=True, exist_ok=True)
     total_count = total_failed_count = 0
     for rule, input_files in input_file_dict.items():
         rule_start = time.time()
@@ -296,6 +302,10 @@ def pack_recipes(workflow_config: Any) -> int:
                         f"Skipping packing for completed recipe {recipe_path}. "
                         f"{skipped_count} skipped"
                     )
+                    continue
+
+                if workflow_config.dry_run:
+                    logger.debug(f"Dry run: would have submitted packing for {recipe_path}")
                     continue
 
                 futures.append(
@@ -327,6 +337,7 @@ def pack_recipes(workflow_config: Any) -> int:
                 gc.collect()
         total_count += count
         total_failed_count += failed_count
+
     logger.info(f"Packing complete. Total time: {format_time(time.time() - start)}")
     logger.info(f"Total count: {total_count}, Total failed: {total_failed_count}")
 

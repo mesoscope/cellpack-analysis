@@ -9,7 +9,28 @@ from cellpack_analysis.lib.file_io import get_datadir_path
 logger = logging.getLogger(__name__)
 
 
-def format_time(seconds):
+def count_all_keys(d: dict) -> int:
+    """
+    Count all keys in a dictionary, including nested dictionaries.
+
+    Parameters
+    ----------
+    d
+        Dictionary to count keys from
+
+    Returns
+    -------
+    :
+        Total number of keys at all nesting levels
+    """
+    count = len(d)  # Count keys at current level
+    for value in d.values():
+        if isinstance(value, dict):
+            count += count_all_keys(value)  # Recursively count nested keys
+    return count
+
+
+def format_time(seconds: float) -> str:
     """Format time in seconds to a human readable format."""
     if seconds == np.inf:
         return "∞"
@@ -63,7 +84,7 @@ def load_dataframe(load_local: bool = True, prefix: str = "all_cell_ids") -> pd.
     loaded_from_s3 = False
 
     if load_local and local_path.exists():
-        df_path = local_path
+        df_path: Path | str = local_path
         logger.debug(f"Loading from local file: {df_path}")
     else:
         if load_local and not local_path.exists():

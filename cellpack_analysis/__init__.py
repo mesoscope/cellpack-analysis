@@ -16,16 +16,17 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-def get_module_version():
+def get_module_version() -> str:
     """Get the current module version."""
     return __version__
 
 
-def setup_logging(level=logging.INFO):
+def setup_logging(level: int = logging.INFO) -> None:
     """Set up logging configuration for the entire package."""
     config_path = Path(__file__).parents[1] / "logging.conf"
     if config_path.exists():
         logging.config.fileConfig(config_path, disable_existing_loggers=False)
+        # Don't override the root logger level from logging.conf
     else:
         logging.basicConfig(
             level=level,
@@ -33,7 +34,7 @@ def setup_logging(level=logging.INFO):
             datefmt="%Y-%m-%d %H:%M:%S",
             force=True,
         )
-    logging.getLogger().setLevel(level)
+        logging.getLogger().setLevel(level)
 
 
 # Initialize logging automatically when the package is imported

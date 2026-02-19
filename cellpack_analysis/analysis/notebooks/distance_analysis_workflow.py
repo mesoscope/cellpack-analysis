@@ -119,7 +119,7 @@ all_distance_dict = distance.get_distance_dictionary(
     mesh_information_dict=combined_mesh_information_dict,
     channel_map=channel_map,
     results_dir=results_dir,
-    recalculate=False,
+    recalculate=True,
     num_workers=16,
 )
 

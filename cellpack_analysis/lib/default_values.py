@@ -60,15 +60,11 @@ USE_ADDITIONAL_STRUCT = False
 GRADIENT_STRUCTURE_NAME = None
 """Name of the structure to apply gradient to."""
 
-MULTIPLE_REPLICATES = False
-"""
-Flag indicating whether a single recipe packs multiple replicates.
-If this flag is true, the random seed is not assigned based on cell_id and instead
-calculated from the cellPACK algorithm.
-"""
-
 NUM_PROCESSES = 1
 """Number of processes to use for parallel processing. 1 indicates serial processing."""
+
+NUM_REPLICATES = 1
+"""Number of replicates to pack."""
 
 # Default gradient settings
 SURFACE_GRADIENT = {

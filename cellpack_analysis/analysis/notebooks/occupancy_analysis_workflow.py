@@ -11,7 +11,6 @@ from cellpack_analysis.lib import distance, occupancy, visualization
 from cellpack_analysis.lib.file_io import get_project_root
 from cellpack_analysis.lib.load_data import get_position_data_from_outputs
 from cellpack_analysis.lib.mesh_tools import get_mesh_information_dict_for_structure
-from cellpack_analysis.lib.stats import normalize_distances
 
 logger = logging.getLogger(__name__)
 
@@ -19,14 +18,18 @@ start_time = time.time()
 # %% [markdown]
 # ## Set up parameters
 # %% [markdown]
-# ### Set structure ID
+# ### Set simulation parameters
 # SLC25A17: peroxisomes
 # RAB5A: early endosomes
 # SEC61B: ER
 # ST6GAL1: Golgi
-STRUCTURE_ID = "SLC25A17"
-PACKING_ID = "peroxisome"
-STRUCTURE_NAME = "peroxisome"
+STRUCTURE_ID = "SLC25A17"  # structure ID to analyze, this is the gene name
+PACKING_ID = "peroxisome"  # packing ID to analyze, e.g., "peroxisome", "ER_peroxisome"
+STRUCTURE_NAME = "peroxisome"  # this is the name of the packed punctate structure
+CONDITION = (
+    "norm_weights"  # this is the condition name in the packing outputs, e.g., "norm_weights",
+)
+RESULT_SUBFOLDER = "occupancy_test"  # subfolder within results/ to save outputs for this workflow
 # %% [markdown]
 # ### Set packing modes and channel map
 save_format = "pdf"
@@ -35,11 +38,11 @@ packing_modes = [
     "random",
     "nucleus_gradient",
     "membrane_gradient",
-    # "apical_gradient",
     "apical_gradient",
     # "struct_gradient",
-    "interpolated",
+    # "interpolated",
 ]
+baseline_mode = STRUCTURE_ID
 
 channel_map = {
     "SLC25A17": "SLC25A17",
@@ -47,15 +50,14 @@ channel_map = {
     "nucleus_gradient": "SLC25A17",
     "membrane_gradient": "SLC25A17",
     "apical_gradient": "SLC25A17",
-    "interpolated": "SLC25A17",
+    # "interpolated": "SLC25A17",
     # "struct_gradient_weak": "ST6GAL1",
     # "struct_gradient_weak": "ST6GAL1",
     # "struct_gradient": "ST6GAL1",
 }
 
 # relative path to packing outputs
-packing_output_folder = "packing_outputs/8d_sphere_data/norm_weights/"
-baseline_mode = STRUCTURE_ID
+packing_output_folder = f"packing_outputs/8d_sphere_data/{CONDITION}/"
 
 all_structures = list(set(channel_map.values()))
 # %% [markdown]
@@ -64,7 +66,7 @@ project_root = get_project_root()
 base_datadir = project_root / "data"
 base_results_dir = project_root / "results"
 
-results_dir = base_results_dir / f"occupancy_analysis/{PACKING_ID}/occupancy_emd"
+results_dir = base_results_dir / RESULT_SUBFOLDER / PACKING_ID
 results_dir.mkdir(exist_ok=True, parents=True)
 
 figures_dir = results_dir / "figures/"
@@ -74,7 +76,7 @@ figures_dir.mkdir(exist_ok=True, parents=True)
 # Options are "nucleus", "z", "scaled_nucleus", "membrane"
 occupancy_distance_measures = [
     "nucleus",
-    # "z",
+    "z",
 ]
 # %% [markdown]
 # ### Set normalization
@@ -118,7 +120,7 @@ all_distance_dict = distance.get_distance_dictionary(
     recalculate=False,
     num_workers=32,
 )
-all_distance_dict = normalize_distances(
+all_distance_dict = distance.normalize_distance_dictionary(
     all_distance_dict=all_distance_dict,
     mesh_information_dict=combined_mesh_information_dict,
     channel_map=channel_map,
@@ -149,7 +151,7 @@ distance_kde_dict = distance.get_distance_distribution_kde(
     mesh_information_dict=combined_mesh_information_dict,
     channel_map=channel_map,
     save_dir=results_dir,
-    recalculate=False,
+    recalculate=True,
     suffix=suffix,
     normalization=normalization,
     distance_measure=occupancy_distance_measure,
@@ -161,12 +163,12 @@ distance_kde_dict = distance.get_distance_distribution_kde(
 pdf_occupied, pdf_available, xvals, occupancy_vals, fig_ill, axs_ill = (
     visualization.plot_occupancy_illustration(
         kde_dict=distance_kde_dict,
-        baseline_mode="random",
+        packing_mode="random",
         suffix=suffix,
         distance_measure=occupancy_distance_measure,
         normalization=normalization,
         method="pdf",
-        seed_index=743916,
+        cellid_index=743916,
         figures_dir=occupancy_figures_dir,
         save_format=save_format,
         xlim=occupancy_params[occupancy_distance_measure]["xlim"],

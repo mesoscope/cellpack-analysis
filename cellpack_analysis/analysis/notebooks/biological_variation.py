@@ -15,7 +15,6 @@ from cellpack_analysis.lib.file_io import get_project_root
 from cellpack_analysis.lib.label_tables import DISTANCE_LIMITS
 from cellpack_analysis.lib.load_data import get_position_data_from_outputs
 from cellpack_analysis.lib.mesh_tools import get_mesh_information_dict_for_structure
-from cellpack_analysis.lib.stats import normalize_distances
 
 logger = logging.getLogger(__name__)
 
@@ -30,12 +29,6 @@ STRUCTURE_NAME = "peroxisome"
 # %% [markdown]
 # ### Set packing modes to analyze
 save_format = "pdf"
-packing_modes = [
-    "mean_count_and_size",
-    "variable_count",
-    "variable_size",
-    "shape",
-]
 
 channel_map = {
     "mean_count_and_size": "mean",
@@ -48,6 +41,7 @@ packing_output_folder = "packing_outputs/stochastic_variation_analysis/"
 baseline_mode = "mean_count_and_size"
 
 all_structures = list(set(channel_map.values()))
+packing_modes = list(channel_map.keys())
 # %% [markdown]
 # ### Set file paths and setup parameters
 project_root = get_project_root()
@@ -86,7 +80,7 @@ all_positions = get_position_data_from_outputs(
     base_datadir=base_datadir,
     results_dir=results_dir,
     packing_output_folder=packing_output_folder,
-    recalculate=False,
+    recalculate=True,
 )
 # %% [markdown]
 # ### Get mesh information
@@ -100,20 +94,20 @@ for structure_id in all_structures:
     combined_mesh_information_dict[structure_id] = mesh_information_dict
 # %% [markdown]
 # ### Calculate distance measures and normalize
-all_distance_dict = distance.get_distance_dictionary_serial(
+all_distance_dict = distance.get_distance_dictionary(
     all_positions=all_positions,
     distance_measures=distance_measures,
     mesh_information_dict=combined_mesh_information_dict,
     channel_map=channel_map,
     results_dir=results_dir,
-    recalculate=False,
+    recalculate=True,
 )
 
 all_distance_dict = distance.filter_invalids_from_distance_distribution_dict(
     distance_distribution_dict=all_distance_dict, minimum_distance=None
 )
 
-all_distance_dict = normalize_distances(
+all_distance_dict = distance.normalize_distance_dictionary(
     all_distance_dict=all_distance_dict,
     mesh_information_dict=combined_mesh_information_dict,
     channel_map=channel_map,
