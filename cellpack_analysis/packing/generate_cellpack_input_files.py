@@ -1,6 +1,5 @@
 import concurrent.futures
 import logging
-import multiprocessing
 from pathlib import Path
 from typing import Any
 
@@ -345,11 +344,9 @@ def generate_recipes(workflow_config: Any) -> None:
     recipe_data = workflow_config.data.get("recipe_data", {})
 
     if hasattr(workflow_config, "num_processes"):
-        num_processes = workflow_config.num_processes
+        num_processes = min(1, workflow_config.num_processes)
     else:
-        num_processes = np.min(
-            [int(np.floor(0.8 * multiprocessing.cpu_count())), len(cell_id_list)]
-        )
+        num_processes = 1
 
     recipe_template = read_json(workflow_config.recipe_template_path)
 
@@ -359,8 +356,9 @@ def generate_recipes(workflow_config: Any) -> None:
         if rule_name not in workflow_config.data.get("packings_to_run", {}).get("rules", []):
             continue
         logger.info(f"Generating recipes for rule: {rule_name}")
+        logger.debug(f"Processing {len(cell_id_list)} cell IDs for rule {rule_name}")
         with tqdm(total=len(cell_id_list)) as pbar:
-            with concurrent.futures.ProcessPoolExecutor(max_workers=num_processes) as executor:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=num_processes) as executor:
                 futures = []
                 for cell_id in cell_id_list:
                     # get count from cell stats
@@ -372,7 +370,6 @@ def generate_recipes(workflow_config: Any) -> None:
                     radius = None
                     if workflow_config.get_size_from_data:
                         radius = stats_df.loc[cell_id, "radius"].astype(float)  # type: ignore
-
                     future = executor.submit(
                         update_and_save_recipe,
                         cell_id=cell_id,
@@ -392,7 +389,14 @@ def generate_recipes(workflow_config: Any) -> None:
                     )
                     futures.append(future)
 
-                for _ in concurrent.futures.as_completed(futures):
+                for future in concurrent.futures.as_completed(futures):
+                    try:
+                        result = future.result()
+                        logger.debug(
+                            f"Successfully generated recipe {result['name']}_{result['version']}"
+                        )
+                    except Exception as e:
+                        logger.error(f"Failed to generate recipe: {e}", exc_info=True)
                     pbar.update(1)
 
 

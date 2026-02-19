@@ -54,6 +54,15 @@ class WorkflowConfig:
     def _setup(self) -> None:
         self.structure_name = self.data.get("structure_name", default_values.STRUCTURE_NAME)
         self.structure_id = self.data.get("structure_id", default_values.STRUCTURE_ID)
+        if (
+            self.data.get("use_mean_cell", default_values.USE_MEAN_CELL)
+            and self.structure_id != "mean"
+        ):
+            logger.warning(
+                f"Using mean cell but structure_id is {self.structure_id}. "
+                f"Overriding structure_id to 'mean'."
+            )
+            self.structure_id = "mean"
         self.condition = self.data.get("condition", default_values.CONDITION)
 
         # Base level data directory

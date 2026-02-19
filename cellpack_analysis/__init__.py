@@ -26,6 +26,7 @@ def setup_logging(level: int = logging.INFO) -> None:
     config_path = Path(__file__).parents[1] / "logging.conf"
     if config_path.exists():
         logging.config.fileConfig(config_path, disable_existing_loggers=False)
+        # Don't override the root logger level from logging.conf
     else:
         logging.basicConfig(
             level=level,
@@ -33,7 +34,7 @@ def setup_logging(level: int = logging.INFO) -> None:
             datefmt="%Y-%m-%d %H:%M:%S",
             force=True,
         )
-    logging.getLogger().setLevel(level)
+        logging.getLogger().setLevel(level)
 
 
 # Initialize logging automatically when the package is imported

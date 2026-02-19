@@ -1,0 +1,94 @@
+{
+    "version": "variable_size",
+    "format_version": "2.1",
+    "name": "peroxisome",
+    "bounding_box": [
+        [
+            -103,
+            -41,
+            -60
+        ],
+        [
+            103,
+            43,
+            60
+        ]
+    ],
+    "objects": {
+        "membrane_mesh": {
+            "type": "mesh",
+            "color": [
+                1,
+                0,
+                1
+            ],
+            "representations": {
+                "mesh": {
+                    "path": "/allen/aics/animated-cell/Saurabh/dev/cellpack-analysis/data/structure_data/mean/meshes",
+                    "name": "mem_mesh_mean",
+                    "format": "obj"
+                }
+            }
+        },
+        "nucleus_mesh": {
+            "type": "mesh",
+            "color": [
+                0,
+                1,
+                1
+            ],
+            "representations": {
+                "mesh": {
+                    "path": "/allen/aics/animated-cell/Saurabh/dev/cellpack-analysis/data/structure_data/mean/meshes/",
+                    "name": "nuc_mesh_mean",
+                    "format": "obj"
+                }
+            }
+        },
+        "peroxisome": {
+            "jitter_attempts": 300,
+            "type": "single_sphere",
+            "color": [
+                0.20,
+                0.70,
+                0.10
+            ],
+            "radius": 2.38
+        }
+    },
+    "composition": {
+        "bounding_area": {
+            "regions": {
+                "interior": [
+                    "membrane"
+                ]
+            }
+        },
+        "membrane": {
+            "object": "membrane_mesh",
+            "count": 1,
+            "regions": {
+                "interior": [
+                    "nucleus",
+                    {
+                        "object": "peroxisome",
+                        "count": 111,
+                        "size_options": {
+                            "distribution": "normal",
+                            "mean": 2.38,
+                            "std": 0.24
+                        }
+                    }
+                ]
+            }
+        },
+        "nucleus": {
+            "object": "nucleus_mesh",
+            "count": 1,
+            "regions": {
+                "interior": []
+            }
+        }
+    },
+    "grid_file_path": "/allen/aics/animated-cell/Saurabh/dev/cellpack-analysis/data/structure_data/mean/grids/mean_grid.dat"
+}

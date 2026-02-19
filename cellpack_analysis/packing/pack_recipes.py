@@ -199,8 +199,10 @@ def get_input_file_dictionary(workflow_config: Any) -> dict[str, dict[str, Any]]
     :
         The dictionary containing the configuration path and recipe paths for each rule
     """
+    logger.debug("Building input file dictionary for packing workflow")
     packing_info = workflow_config.data.get("packings_to_run", {})
     rule_list = packing_info.get("rules", [])
+    logger.debug(f"Rules to process: {rule_list}")
 
     cell_ids_to_pack = get_cell_ids_to_pack(workflow_config)
 
@@ -272,11 +274,10 @@ def pack_recipes(workflow_config: Any) -> int:
     workflow_config
         Workflow configuration object
     """
+    logger.debug("Starting pack_recipes workflow")
     input_file_dict = get_input_file_dictionary(workflow_config)
     start = time.time()
 
-    log_folder = workflow_config.output_path / "logs"
-    log_folder.mkdir(parents=True, exist_ok=True)
     total_count = total_failed_count = 0
     for rule, input_files in input_file_dict.items():
         rule_start = time.time()
@@ -336,6 +337,7 @@ def pack_recipes(workflow_config: Any) -> int:
                 gc.collect()
         total_count += count
         total_failed_count += failed_count
+
     logger.info(f"Packing complete. Total time: {format_time(time.time() - start)}")
     logger.info(f"Total count: {total_count}, Total failed: {total_failed_count}")
 

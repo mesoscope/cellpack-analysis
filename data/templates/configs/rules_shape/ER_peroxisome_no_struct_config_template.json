@@ -1,0 +1,20 @@
+{
+    "name": "rules_shape",
+    "out": "/allen/aics/animated-cell/Saurabh/dev/cellpack-analysis/data/packing_outputs/8d_sphere_data/rules_shape/ER_peroxisome_no_struct",
+    "save_analyze_result": true,
+    "show_progress_bar": true,
+    "save_plot_figures": false,
+    "load_from_grid_file": true,
+    "spacing": 2,
+    "image_export_options": {
+        "hollow": false,
+        "voxel_size": [
+            1,
+            1,
+            1
+        ],
+        "projection_axis": "z"
+    },
+    "open_results_in_browser": false,
+    "upload_results": false
+}

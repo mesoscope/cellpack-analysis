@@ -1,0 +1,13 @@
+{
+    "name": "replicate",
+    "out": "/allen/aics/animated-cell/Saurabh/dev/cellpack-analysis/data/packing_outputs/8d_sphere_data/replicate/golgi_peroxisome",
+    "save_analyze_result": true,
+    "show_progress_bar": true,
+    "save_plot_figures": false,
+    "load_from_grid_file": true,
+    "parallel": true,
+    "spacing": 2,
+    "number_of_packings": 99,
+    "open_results_in_browser": false,
+    "upload_results": false
+}
