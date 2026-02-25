@@ -20,7 +20,6 @@ from cellpack_analysis.lib.label_tables import (
     DISTANCE_LIMITS,
     DISTANCE_MEASURE_LABELS,
     GRID_DISTANCE_LABELS,
-    MODE_LABELS,
     STATS_LABELS,
 )
 from cellpack_analysis.lib.mesh_tools import get_mesh_information_dict_for_structure

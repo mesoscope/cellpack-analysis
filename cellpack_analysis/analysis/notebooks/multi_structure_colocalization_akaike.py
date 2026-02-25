@@ -52,7 +52,7 @@ figures_dir.mkdir(exist_ok=True, parents=True)
 # %% [markdown]
 # ### Load occupancy EMD data
 df_list: list[pd.DataFrame] = []
-for packing_id, comparison_mode in packing_id_info.items():
+for packing_id, comparison_mode in packing_id_info.items():  # noqa: B007
     logger.info(f"Loading data for packing id: {packing_id}")
 
     occupancy_emd_df_path = occupancy_emd_folder / packing_id / "occupancy_emd.parquet"
@@ -155,13 +155,13 @@ def calculate_bayes_factor(emd_with_struct, emd_without_struct):
 
     # Calculate log marginal likelihoods
     # For model with structure, evaluate likelihood of all data points
-    log_L_with = np.sum(norm.logpdf(emd_with_struct, mu_with, sigma_with))
+    log_l_with = np.sum(norm.logpdf(emd_with_struct, mu_with, sigma_with))
     # For model without structure
-    log_L_without = np.sum(norm.logpdf(emd_without_struct, mu_without, sigma_without))
+    log_l_without = np.sum(norm.logpdf(emd_without_struct, mu_without, sigma_without))
 
     # Bayes Factor = L(with) / L(without)
     # Using log: log(BF) = log(L_with) - log(L_without)
-    log_bf = log_L_with - log_L_without
+    log_bf = log_l_with - log_l_without
     bayes_factor = np.exp(log_bf)
 
     return bayes_factor, log_bf, mu_with - mu_without

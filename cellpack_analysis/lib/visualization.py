@@ -1796,6 +1796,8 @@ def plot_rejection_bars_by_sign(
         Fraction of cells rejected with negative deviations, indexed by packing_mode
     title
         Plot title
+    test_statistic
+        Which test statistic to display in the title ("intdev" or "supremum")
     ax
         Optional Matplotlib Axes to plot on. If None, creates a new figure.
 
@@ -1881,7 +1883,7 @@ def plot_grouped_rejection_bars_by_sign(
     ax: Axes | None = None,
 ) -> tuple[Figure, Axes]:
     """
-    Plot grouped bar chart of rejection rates by distance measure and test statistic deviation direction.
+    Plot grouped bar chart of rejection rates by distance measure and deviation direction.
 
     Creates a grouped barplot where each packing mode has grouped bars for each distance
     measure, with positive deviations extending upward and negative deviations downward.
@@ -1896,6 +1898,8 @@ def plot_grouped_rejection_bars_by_sign(
         MultiIndex with (packing_mode, distance_measure)
     title
         Plot title
+    test_statistic
+        Which test statistic to display in the title ("intdev" or "supremum")
     ax
         Optional Matplotlib Axes to plot on. If None, creates a new figure.
 

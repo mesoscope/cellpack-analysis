@@ -10,7 +10,9 @@ def get_local_variance_dataframe_path() -> Path:
     return get_datadir_path() / "variance_dataset.parquet"
 
 
-def get_variance_dataframe(redownload: bool = False, pkg: quilt3.Package | None = None) -> pd.DataFrame:
+def get_variance_dataframe(
+    redownload: bool = False, pkg: quilt3.Package | None = None
+) -> pd.DataFrame:
     df_path = get_local_variance_dataframe_path()
     if not df_path.exists() or redownload:
         if pkg is None:
