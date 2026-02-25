@@ -49,7 +49,6 @@ from cellpack_analysis.lib.io import format_time
 from cellpack_analysis.lib.label_tables import DISTANCE_LIMITS
 from cellpack_analysis.lib.load_data import get_position_data_from_outputs
 from cellpack_analysis.lib.mesh_tools import get_mesh_information_dict_for_structure
-from cellpack_analysis.lib.stats import normalize_distances
 
 logger = logging.getLogger(__name__)
 
@@ -261,7 +260,7 @@ class AnalysisRunner:
             distance_distribution_dict=all_distance_dict, minimum_distance=None
         )
 
-        all_distance_dict = normalize_distances(
+        all_distance_dict = distance.normalize_distance_dictionary(
             all_distance_dict=all_distance_dict,
             mesh_information_dict=self.shared_data["combined_mesh_information_dict"],
             channel_map=config.channel_map,

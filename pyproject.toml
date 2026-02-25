@@ -171,6 +171,7 @@ check_untyped_defs = true
 show_error_codes = true
 exclude = [
     ".*/archive/.*",
+    ".*/test_notebooks/.*",
 ]
 
 [[tool.mypy.overrides]]

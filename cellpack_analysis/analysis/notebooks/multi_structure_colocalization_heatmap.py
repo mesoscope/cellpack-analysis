@@ -13,7 +13,6 @@ from cellpack_analysis.lib.file_io import get_project_root
 from cellpack_analysis.lib.label_tables import COLOR_PALETTE
 from cellpack_analysis.lib.load_data import get_position_data_from_outputs
 from cellpack_analysis.lib.mesh_tools import get_mesh_information_dict_for_structure
-from cellpack_analysis.lib.stats import normalize_distances
 
 logger = logging.getLogger(__name__)
 # %% [markdown]
@@ -143,7 +142,7 @@ for packing_id, mode_dict in distance_dict.items():
         distance_distribution_dict=all_distance_dict, minimum_distance=None
     )
 
-    all_distance_dict = normalize_distances(
+    all_distance_dict = distance.normalize_distance_dictionary(
         all_distance_dict=all_distance_dict,
         mesh_information_dict=combined_mesh_dict,
         channel_map=channel_map,
