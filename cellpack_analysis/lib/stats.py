@@ -620,12 +620,10 @@ def summarize_across_cells(
     # Rejection rates by supremum sign
     rejected_distance_measure = per_distance_measure_q < alpha
     rej_distance_measure_positive = (
-        (rejected_distance_measure)
-        & (per_distance_measure_sign == 1)
+        (rejected_distance_measure) & (per_distance_measure_sign == 1)
     ).mean(axis=0)
     rej_distance_measure_negative = (
-        (rejected_distance_measure)
-        & (per_distance_measure_sign == -1)
+        (rejected_distance_measure) & (per_distance_measure_sign == -1)
     ).mean(axis=0)
 
     rejected_joint = joint_q < alpha
