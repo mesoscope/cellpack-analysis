@@ -69,7 +69,7 @@ MODE_LABELS = {
     "SEC61B": "ER",
     "ST6GAL1": "Golgi",
     "TOMM20": "Mitochondria",
-    "mean_count_and_size": "Baseline",
+    "baseline": "Baseline",
     "variable_size": "Size",
     "variable_count": "Count",
     "variable_count_and_size": "Count and size",
@@ -95,7 +95,7 @@ MODE_LABELS = {
 
 # Packing modes in the mean shape - do not have a cell ID associated
 STATIC_SHAPE_MODES = [
-    "mean_count_and_size",
+    "baseline",
     "variable_size",
     "variable_count",
     "variable_count_and_size",
@@ -179,7 +179,7 @@ STATS_LABELS = {
 # Color palette for plotting
 COLOR_PALETTE = {
     # used in main plotting functions
-    "mean_count_and_size": colormap[0],
+    "baseline": colormap[0],
     "variable_count": colormap[8],
     "variable_size": colormap[4],
     "shape": colormap[5],

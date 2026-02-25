@@ -1173,7 +1173,7 @@ def log_central_tendencies_for_emd(
     df_emd: pd.DataFrame,
     distance_measures: list[str],
     packing_modes: list[str],
-    baseline_mode: str = "mean_count_and_size",
+    baseline_mode: str = "baseline",
     comparison_type: str = "intra_mode",
     log_file_path: Path | None = None,
 ) -> None:

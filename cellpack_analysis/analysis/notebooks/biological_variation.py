@@ -31,14 +31,15 @@ STRUCTURE_NAME = "peroxisome"
 save_format = "pdf"
 
 channel_map = {
-    "mean_count_and_size": "mean",
+    "baseline": "mean",
     "variable_count": "mean",
     "variable_size": "mean",
     "shape": "SLC25A17",
 }
 
-packing_output_folder = "packing_outputs/stochastic_variation_analysis/"
-baseline_mode = "mean_count_and_size"
+# packing_output_folder = "packing_outputs/stochastic_variation_analysis/"
+packing_output_folder = "packing_outputs/biological_variation/"
+baseline_mode = "baseline"
 
 all_structures = list(set(channel_map.values()))
 packing_modes = list(channel_map.keys())
@@ -48,7 +49,7 @@ project_root = get_project_root()
 base_datadir = project_root / "data"
 base_results_dir = project_root / "results"
 
-results_dir = base_results_dir / f"biological_variation/{STRUCTURE_NAME}/update_emd/"
+results_dir = base_results_dir / f"biological_variation/{STRUCTURE_NAME}/cross_comparisons/"
 results_dir.mkdir(exist_ok=True, parents=True)
 
 figures_dir = results_dir / "figures"
