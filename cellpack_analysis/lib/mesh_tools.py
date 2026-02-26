@@ -325,22 +325,29 @@ def get_mesh_information_for_shape(
     mem_mesh = trimesh.load_mesh(str(mem_mesh_path))
 
     nuc_bounds = nuc_mesh.bounds
-    cell_bounds = mem_mesh.bounds
+    mem_bounds = mem_mesh.bounds
 
     nuc_diameter = np.abs(np.diff(nuc_bounds, axis=0)).max()
-    cell_diameter = np.abs(np.diff(cell_bounds, axis=0)).max()
+    mem_diameter = np.abs(np.diff(mem_bounds, axis=0)).max()
 
-    intracellular_radius = (cell_diameter - nuc_diameter) / 2
+    intracellular_radius = (mem_diameter - nuc_diameter) / 2
+
+    mem_sphericity = (np.pi ** (1 / 3) * (6 * mem_mesh.volume) ** (2 / 3)) / mem_mesh.area
+    nuc_sphericity = (np.pi ** (1 / 3) * (6 * nuc_mesh.volume) ** (2 / 3)) / nuc_mesh.area
 
     return {
         "nuc_mesh": nuc_mesh,
         "mem_mesh": mem_mesh,
         "nuc_diameter": nuc_diameter,
-        "cell_diameter": cell_diameter,
+        "mem_diameter": mem_diameter,
         "nuc_bounds": nuc_bounds,
-        "cell_bounds": cell_bounds,
+        "mem_bounds": mem_bounds,
         "nuc_volume": nuc_mesh.volume,
-        "cell_volume": mem_mesh.volume,
+        "mem_volume": mem_mesh.volume,
+        "mem_area": mem_mesh.area,
+        "nuc_area": nuc_mesh.area,
+        "mem_sphericity": mem_sphericity,
+        "nuc_sphericity": nuc_sphericity,
         "intracellular_radius": intracellular_radius,
         "nuc_grid_distances": nuc_grid_distances,
         "mem_grid_distances": mem_grid_distances,

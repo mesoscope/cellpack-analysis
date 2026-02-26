@@ -167,13 +167,15 @@ DISTANCE_LIMITS = {
 }
 
 STATS_LABELS = {
-    "cell_volumes": "Cell Volume (µm\u00b3)",
+    "mem_volumes": "Cell Volume (µm\u00b3)",
     "nuc_volumes": "Nuclear Volume (µm\u00b3)",
-    "cell_heights": "Cell Height (µm)",
+    "mem_heights": "Cell Height (µm)",
     "nuc_heights": "Nuclear Height (µm)",
-    "cell_diameters": "Cell Diameter (µm)",
+    "mem_diameters": "Cell Diameter (µm)",
     "nuc_diameters": "Nuclear Diameter (µm)",
     "intracellular_radii": "Intracellular Radius (µm)",
+    "mem_sphericities": "Cell Sphericity",
+    "nuc_sphericities": "Nuclear Sphericity",
 }
 
 # Color palette for plotting
