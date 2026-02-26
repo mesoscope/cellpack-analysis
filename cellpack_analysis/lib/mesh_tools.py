@@ -1033,3 +1033,19 @@ def get_weights_from_distances(
     else:
         weights = 1 - scaled_distances
     return weights
+
+
+def invert_mesh_faces(input_mesh_path: str | Path, output_mesh_path: str | Path) -> None:
+    """
+    Invert the faces of a mesh and save to a new file.
+
+    Parameters
+    ----------
+    input_mesh_path
+        Path to the input mesh file
+    output_mesh_path
+        Path to save the inverted mesh file
+    """
+    mesh = trimesh.load_mesh(input_mesh_path)
+    mesh.invert()
+    mesh.export(output_mesh_path)
