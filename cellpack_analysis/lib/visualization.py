@@ -23,9 +23,6 @@ from cellpack_analysis.lib.stats import create_padded_numpy_array, get_pdf_ratio
 
 logger = logging.getLogger(__name__)
 
-plt.rcParams["pdf.fonttype"] = 42
-plt.rcParams["ps.fonttype"] = 42
-
 
 def plot_cell_diameter_distribution(
     mesh_information_dict: dict[Any, dict[str, float]],

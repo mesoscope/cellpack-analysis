@@ -1,5 +1,8 @@
 from pathlib import Path
 
+MPLSTYLE_PATH = Path(__file__).parent / "cellpack_analysis.mplstyle"
+"""Path to the shared matplotlib style sheet."""
+
 # Top level parameters
 PIXEL_SIZE_IN_UM = 0.108
 """Pixel size in microns."""

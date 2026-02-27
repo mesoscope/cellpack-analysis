@@ -11,8 +11,6 @@ from cellpack_analysis.lib.file_io import get_results_path
 from cellpack_analysis.lib.get_structure_stats_dataframe import get_structure_stats_dataframe
 from cellpack_analysis.lib.label_tables import COLOR_PALETTE
 
-plt.rcParams["pdf.fonttype"] = 42
-plt.rcParams["ps.fonttype"] = 42
 plt.rcParams["font.size"] = 6
 
 # %% [markdown]

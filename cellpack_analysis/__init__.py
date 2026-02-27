@@ -10,10 +10,16 @@ import logging
 import logging.config
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 from dotenv import load_dotenv
+
+from cellpack_analysis.lib.default_values import MPLSTYLE_PATH
 
 # Load environment variables
 load_dotenv()
+
+# Apply the shared matplotlib style for all figures in this package
+plt.style.use(MPLSTYLE_PATH)
 
 
 def get_module_version() -> str:

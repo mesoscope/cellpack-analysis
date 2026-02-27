@@ -16,8 +16,6 @@ from cellpack_analysis.lib.file_io import (
 )
 from cellpack_analysis.lib.mesh_tools import get_mesh_information_dict_for_structure
 
-plt.rcParams["pdf.fonttype"] = 42
-plt.rcParams["ps.fonttype"] = 42
 fontsize = 6
 plt.rcParams["font.size"] = fontsize
 

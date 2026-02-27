@@ -4,13 +4,13 @@
     "packing_id": "peroxisome",
     "structure_name": "peroxisome",
     "channel_map": {
-        "mean_count_and_size": "mean",
+        "baseline": "mean",
         "variable_count": "mean",
         "variable_size": "mean",
         "shape": "SLC25A17"
     },
     "packing_output_folder": "packing_outputs/stochastic_variation_analysis/",
-    "baseline_mode": "mean_count_and_size",
+    "baseline_mode": "baseline",
     "distance_measures": [
         "nearest",
         "pairwise",

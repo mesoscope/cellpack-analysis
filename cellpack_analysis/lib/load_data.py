@@ -190,12 +190,11 @@ def _ensure_positions_file_exists(
 
     # Create combined file for cellPACK outputs
     data_folder = mode_file_path.parent
-    rule_name = mode if mode not in STATIC_SHAPE_MODES else "random"
     combine_multiple_seeds_to_dictionary(
         data_folder,
         ingredient_key=ingredient_key,
         search_prefix="positions_",
-        rule_name=rule_name,
+        rule_name=mode,
         save_name=mode_file_path.name,
     )
 
