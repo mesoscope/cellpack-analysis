@@ -8,7 +8,8 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 from matplotlib.axes import Axes
-from matplotlib.colors import Colormap, LinearSegmentedColormap
+from matplotlib.cm import ScalarMappable
+from matplotlib.colors import Colormap, LinearSegmentedColormap, Normalize
 from matplotlib.figure import Figure
 from matplotlib.ticker import MaxNLocator
 from scipy.stats import gaussian_kde
@@ -19,7 +20,13 @@ from cellpack_analysis.lib import label_tables
 from cellpack_analysis.lib.default_values import PIXEL_SIZE_IN_UM
 from cellpack_analysis.lib.distance import filter_invalid_distances, get_scaled_structure_radius
 from cellpack_analysis.lib.occupancy import get_cell_id_map_from_distance_kde_dict
-from cellpack_analysis.lib.stats import create_padded_numpy_array, get_pdf_ratio, normalize_pdf
+from cellpack_analysis.lib.stats import (
+    create_padded_numpy_array,
+    get_pdf_ratio,
+    make_r_grid_from_pooled,
+    normalize_pdf,
+    pointwise_envelope,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -225,6 +232,229 @@ def plot_distance_distributions_kde(
         plt.show()
         fig.savefig(
             figures_dir / f"distance_distribution_kdeplot{suffix}.{save_format}",
+            dpi=300,
+            transparent=True,
+            bbox_inches="tight",
+        )
+        plt.close(fig)
+
+    return fig, all_ax_dict
+
+
+def plot_distance_distributions_discrete(
+    distance_measures: list[str],
+    packing_modes: list[str],
+    all_distance_dict: dict[str, dict[str, dict[str, dict[str, np.ndarray]]]],
+    figures_dir: Path | None = None,
+    suffix: str = "",
+    normalization: str | None = None,
+    distance_limits: dict[str, tuple[float, float]] | None = None,
+    bin_width: float | dict[str, float] = 0.5,
+    save_format: Literal["svg", "png", "pdf"] = "png",
+    minimum_distance: float | None = 0,
+    plot_individual_curves: bool = False,
+    envelope_alpha: float = 0.05,
+    n_grid: int = 100,
+    production_mode: bool = False,
+) -> tuple[Figure, dict[str, dict[int, Axes]]]:
+    """
+    Plot distance distributions using discrete histogram bins.
+
+    Parameters
+    ----------
+    distance_measures
+        List of distance measures to plot
+    packing_modes
+        List of packing modes to plot
+    all_distance_dict
+        Dictionary containing distance distributions for each packing mode and distance measure
+        {distance_measure: {mode: {cell_id: {seed: distances}}}}
+    figures_dir
+        Directory to save the figures, if None figures will not be saved
+    suffix
+        Suffix to append to figure filenames
+    normalization
+        Normalization method to apply to distance measures
+    distance_limits
+        Dictionary containing limits for each distance measure.
+        If provided, limits are used to define the bin edges for the corresponding measure.
+    bin_width
+        Width of each histogram bin (in the same units as the distances).
+        Can be a single float applied to every distance measure, or a ``dict``
+        mapping distance-measure names to per-measure bin widths (e.g.
+        ``{"nucleus": 0.25, "membrane": 0.5}``).
+        Passed to ``make_r_grid_from_pooled`` when *distance_limits* is not provided.
+    save_format
+        Format to save figures in
+    minimum_distance
+        Minimum distance threshold for filtering
+    plot_individual_curves
+        If True, plot individual curves for each seed.
+    envelope_alpha
+        Significance level for the envelope (default 0.05 gives a 95 % envelope)
+    n_grid
+        Number of grid points when *bin_width* is None and *distance_limits* is not
+        provided.
+    production_mode
+        If True, adjust plotting parameters for production-quality figures.
+
+    Returns
+    -------
+    :
+        Tuple containing figure and dictionary mapping distance measures to axes
+    """
+    logger.info("Starting discrete distance distribution plot")
+    plt.rcParams.update({"font.size": 5})
+
+    all_ax_dict: dict[str, dict[int, Axes]] = {}
+    num_rows = len(packing_modes)
+    num_cols = len(distance_measures)
+    if production_mode:
+        figsize = (4.6, 2.25)
+    else:
+        figsize = (num_cols * 1.2, num_rows * 0.5)
+    fig, axs = plt.subplots(
+        num_rows,
+        num_cols,
+        figsize=figsize,
+        dpi=300,
+        squeeze=False,
+        sharex="col",
+        sharey="col",
+    )
+
+    for col, distance_measure in enumerate(distance_measures):
+        distance_dict = all_distance_dict[distance_measure]
+        if distance_measure not in all_ax_dict:
+            all_ax_dict[distance_measure] = {}
+
+        # Build axis label
+        if normalization is not None:
+            unit = ""
+            distance_label = (
+                f"{label_tables.DISTANCE_MEASURE_LABELS[distance_measure]}"
+                f" / {label_tables.NORMALIZATION_LABELS[normalization]}"
+            )
+        elif "scaled" in distance_measure:
+            unit = ""
+            distance_label = label_tables.DISTANCE_MEASURE_LABELS[distance_measure]
+        else:
+            unit = "\u03bcm"
+            distance_label = f"{label_tables.DISTANCE_MEASURE_LABELS[distance_measure]} ({unit})"
+
+        # Resolve per-distance-measure bin width
+        measure_bin_width = (
+            bin_width[distance_measure] if isinstance(bin_width, dict) else bin_width
+        )
+
+        # ── Collect all distance arrays across modes for a shared r-grid ──
+        all_arrays_for_measure: list[np.ndarray] = []
+        for mode in packing_modes:
+            mode_dict = distance_dict[mode]
+            for seed_distance_dict in mode_dict.values():
+                for distances in seed_distance_dict.values():
+                    all_arrays_for_measure.append(np.asarray(distances))
+
+        # Build r-grid from distance_limits or pooled data
+        if distance_limits is not None and distance_measure in distance_limits:
+            lo_lim, hi_lim = distance_limits[distance_measure]
+            n_bins = int((hi_lim - lo_lim) / measure_bin_width) + 1
+            r_grid = np.linspace(lo_lim, hi_lim, n_bins)
+        else:
+            r_grid = make_r_grid_from_pooled(
+                all_arrays_for_measure, n=n_grid, bin_width=measure_bin_width
+            )
+
+        bin_edges = np.concatenate(
+            [r_grid - measure_bin_width / 2, [r_grid[-1] + measure_bin_width / 2]]
+        )
+
+        for row, mode in enumerate(packing_modes):
+            logger.info(f"Plotting discrete distribution for: {distance_measure}, Mode: {mode}")
+
+            ax = axs[row, col]
+            mode_dict = distance_dict[mode]
+            mode_color = label_tables.COLOR_PALETTE.get(mode, "gray")
+            mode_label = label_tables.MODE_LABELS.get(mode, mode)
+
+            # ── Compute normalised histogram curve for every replicate ──
+            # Use Laplace smoothing (pseudocount) to prevent spiky bins from
+            # low-count replicates, then normalise to a proper PDF.
+            pseudocount = 1.0
+            individual_curves: list[np.ndarray] = []
+            for _, seed_distance_dict in tqdm(mode_dict.items(), total=len(mode_dict)):
+                for _, distances in seed_distance_dict.items():
+                    filtered = filter_invalid_distances(
+                        np.asarray(distances), minimum_distance=minimum_distance
+                    )
+                    raw_counts, _ = np.histogram(filtered, bins=bin_edges)
+                    smoothed = raw_counts.astype(float) + pseudocount
+                    pdf = normalize_pdf(r_grid, smoothed)
+                    individual_curves.append(pdf)
+
+                    # Plot the individual line
+                    if plot_individual_curves:
+                        ax.plot(
+                            r_grid,
+                            pdf,
+                            color=mode_color,
+                            linewidth=0.15,
+                            alpha=0.05,
+                        )
+            # ── Plot mean curve with envelope ──
+            curves_array = np.vstack(individual_curves)
+            lo_env, hi_env, mu_env, _ = pointwise_envelope(curves_array, alpha=envelope_alpha)
+            ax.fill_between(
+                r_grid,
+                lo_env,
+                hi_env,
+                color=mode_color,
+                alpha=0.15,
+                edgecolor="none",
+                label=f"{int((1 - envelope_alpha) * 100)}% envelope",
+            )
+            ax.plot(
+                r_grid,
+                mu_env,
+                color=mode_color,
+                linewidth=0.7,
+                label=f"{mode_label} mean",
+            )
+
+            # ── Axis limits ──
+            if distance_limits is not None and distance_measure in distance_limits:
+                ax.set_xlim(distance_limits[distance_measure])
+            else:
+                ax.set_xlim(r_grid[0], r_grid[-1])
+
+            # Set y-limits based on the envelope so individual spikes
+            # don't dominate the axis range
+            y_max = hi_env.max() * 1.02
+            ax.set_ylim(0, y_max)
+
+            # Remove top and right spines
+            sns.despine(fig=fig)
+
+            # Labels
+            if col == 0:
+                ax.set_ylabel(f"{mode_label}\nPDF" if not production_mode else "")
+            if row == num_rows - 1:
+                ax.set_xlabel(distance_label if not production_mode else "")
+            if production_mode:
+                fig.supylabel("Probability Density", fontsize=8)
+                fig.supxlabel("Distance (\u03bcm)", fontsize=8)
+
+            all_ax_dict[distance_measure][row] = ax
+
+            # Integer tick locators
+            ax.xaxis.set_major_locator(MaxNLocator(3, integer=True))
+            ax.yaxis.set_major_locator(MaxNLocator(2, integer=True))
+
+    if figures_dir is not None:
+        fig.tight_layout()
+        plt.show()
+        fig.savefig(
+            figures_dir / f"distance_distribution_discrete{suffix}.{save_format}",
             dpi=300,
             transparent=True,
             bbox_inches="tight",
@@ -1676,7 +1906,15 @@ def plot_envelope_for_cell(
         fig = ax.get_figure(root=True)
         if fig is None:
             raise ValueError("The provided Axes object does not have an associated Figure")
-    ax.fill_between(r, info["lo"], info["hi"], color="lightgray", alpha=0.7, label="MC envelope")
+    ax.fill_between(
+        r,
+        info["lo"],
+        info["hi"],
+        color="lightgray",
+        alpha=0.7,
+        label="MC envelope",
+        edgecolor="none",
+    )
     ax.plot(r, info["mu"], "--", color="dimgray", label="Sim mean")
     ax.plot(r, info["obs_curve"], color="crimson", lw=2, label="Observed")
     ttl = title or (
@@ -1989,3 +2227,473 @@ def plot_grouped_rejection_bars_by_sign(
     sns.despine(fig=fig, left=False)
     plt.tight_layout()
     return fig, ax
+
+
+def plot_pairwise_envelope_matrix(
+    pairwise_results: dict[str, Any],
+    distance_measure: str | None = None,
+    figsize: tuple[float, float] | None = None,
+    cmap_name: str = "Reds",
+    figures_dir: Path | None = None,
+    suffix: str = "",
+    save_format: Literal["svg", "png", "pdf"] = "pdf",
+) -> tuple[Figure, np.ndarray]:
+    """
+    Plot NxN matrix summarizing pairwise Monte Carlo envelope test results.
+
+    Rows correspond to the *test mode* (cells being evaluated) and columns
+    to the *reference mode* (whose envelope is used).  Diagonal cells show
+    the ECDF envelope for that mode; off-diagonal cells show an annotated
+    heatmap of the BH-corrected rejection fraction.
+
+    Parameters
+    ----------
+    pairwise_results
+        Output dictionary from :func:`pairwise_envelope_test`
+    distance_measure
+        Specific distance measure to plot.  If ``None``, uses the joint
+        (all-distance-measures-concatenated) test results.
+    figsize
+        Figure size ``(width, height)`` in inches; auto-scaled if not given
+    cmap_name
+        Matplotlib colormap name for heatmap cells
+    figures_dir
+        Directory to save figure; figure is not saved when ``None``
+    suffix
+        Suffix appended to the saved filename
+    save_format
+        File format for saving
+
+    Returns
+    -------
+    :
+        Tuple of (Figure, 2-D ndarray of Axes)
+    """
+    modes = pairwise_results["packing_modes"]
+    envelopes = pairwise_results["envelopes"]
+    n = len(modes)
+
+    if distance_measure is not None:
+        result_dict = pairwise_results["per_distance_measure"].get(distance_measure, {})
+    else:
+        result_dict = pairwise_results["joint"]
+
+    if figsize is None:
+        figsize = (n, n)
+
+    fig, axs = plt.subplots(n, n, figsize=figsize, dpi=300, squeeze=False)
+
+    base_cmap = plt.get_cmap(cmap_name)
+    cmap_colors = base_cmap(np.linspace(0, 1, 256))
+    cmap_colors[:, 3] = 0.7
+    cmap = LinearSegmentedColormap.from_list(f"{cmap_name}_alpha07", cmap_colors)
+    norm = Normalize(vmin=0, vmax=1)
+
+    for i in range(n):
+        for j in range(n):
+            ax = axs[i, j]
+            mode_i = modes[i]
+            mode_j = modes[j]
+
+            if i == j:
+                # --- Diagonal: ECDF envelope (per-dm) or mode label (joint) ---
+                mode = modes[i]
+                mode_label = label_tables.MODE_LABELS.get(mode, mode) or mode
+                mode_color = label_tables.COLOR_PALETTE.get(mode, "lightgray")
+                if distance_measure is not None and distance_measure in envelopes.get(mode, {}):
+                    env = envelopes[mode][distance_measure]
+                    ax.fill_between(
+                        env["r"],
+                        env["lo"],
+                        env["hi"],
+                        color=mode_color,
+                        alpha=0.7,
+                        label="Envelope",
+                        edgecolor="none",
+                    )
+                    ax.plot(env["r"], env["mu"], "--", color="dimgray", lw=1, label="Mean")
+                    ax.set_ylabel("ECDF" if j == 0 else "")
+                    ax.set_xlabel("Distance (µm)" if i == n - 1 else "")
+                    ax.xaxis.set_major_locator(MaxNLocator(5, integer=True))
+                    sns.despine(ax=ax)
+                elif distance_measure is None:
+                    # Joint view: overlay mean ECDFs for each distance measure
+                    for dm in pairwise_results["distance_measures"]:
+                        if dm in envelopes.get(mode, {}):
+                            env = envelopes[mode][dm]
+                            color = label_tables.COLOR_PALETTE.get(dm, "#808080")
+                            dm_label = label_tables.DISTANCE_MEASURE_TITLES.get(dm, dm)
+                            ax.plot(env["r"], env["mu"], color=color, lw=1, label=dm_label)
+                            # also plot the envelope for the joint test if available
+                            ax.fill_between(
+                                env["r"],
+                                env["lo"],
+                                env["hi"],
+                                color=color,
+                                alpha=0.3,
+                                edgecolor="none",
+                            )
+
+                    if i == n - 1:
+                        ax.legend(fontsize=5, frameon=False, loc="lower right")
+                    ax.set_ylabel("ECDF" if j == 0 else "")
+                    ax.set_xlabel("Distance (µm)" if i == n - 1 else "")
+                    ax.xaxis.set_major_locator(MaxNLocator(5, integer=True))
+                    sns.despine(ax=ax)
+                else:
+                    ax.text(
+                        0.5,
+                        0.5,
+                        mode_label,
+                        ha="center",
+                        va="center",
+                        transform=ax.transAxes,
+                        fontsize=12,
+                        fontweight="bold",
+                    )
+                    ax.axis("off")
+
+                ax.set_title(mode_label, fontsize=9, fontweight="bold")
+            else:
+                # --- Off-diagonal: annotated heatmap cell ---
+                pair = (mode_i, mode_j)
+                if pair in result_dict:
+                    val = result_dict[pair]["rejection_fraction"]
+                    n_tested = len(result_dict[pair]["pvals"])
+
+                    rgba = (*cmap(norm(val))[:3], 0.7)
+                    ax.set_facecolor(rgba)
+
+                    # Adaptive text colour for readability
+                    r_c, g_c, b_c, _ = rgba
+                    luminance = 0.299 * r_c + 0.587 * g_c + 0.114 * b_c
+                    text_color = "white" if luminance < 0.5 else "black"
+
+                    ax.text(
+                        0.5,
+                        0.6,
+                        f"{val:.2f}",
+                        ha="center",
+                        va="center",
+                        transform=ax.transAxes,
+                        fontsize=10,
+                        fontweight="bold",
+                        color=text_color,
+                    )
+                    ax.text(
+                        0.5,
+                        0.25,
+                        f"n={n_tested}",
+                        ha="center",
+                        va="center",
+                        transform=ax.transAxes,
+                        fontsize=8,
+                        color=text_color,
+                    )
+                else:
+                    ax.text(
+                        0.5,
+                        0.5,
+                        "N/A",
+                        ha="center",
+                        va="center",
+                        transform=ax.transAxes,
+                        fontsize=10,
+                        color="gray",
+                    )
+
+                ax.set_xlim(0, 1)
+                ax.set_ylim(0, 1)
+                ax.set_xticks([])
+                ax.set_yticks([])
+                sns.despine(ax=ax, left=True, bottom=True)
+
+            # Row label on left column (skip diagonal to avoid redundancy)
+            if j == 0 and i != 0:
+                row_label = label_tables.MODE_LABELS.get(mode_i, mode_i) or mode_i
+                ax.set_ylabel(row_label, fontsize=9)
+
+    # Colorbar
+    sm = ScalarMappable(cmap=cmap, norm=norm)
+    sm.set_array([])
+    cbar_ax = fig.add_axes((1.02, 0.15, 0.02, 0.7))
+    fig.colorbar(sm, cax=cbar_ax, label="Rejection fraction")
+
+    # Axis description labels
+    fig.text(
+        0.45,
+        -0.01,
+        "\u2190 Reference condition (envelope source) \u2192",
+        ha="center",
+        fontsize=8,
+    )
+    fig.text(
+        -0.01,
+        0.45,
+        "\u2190 Test condition \u2192",
+        ha="center",
+        va="center",
+        rotation=90,
+        fontsize=8,
+    )
+
+    fig.tight_layout()
+    plt.show()
+
+    if figures_dir is not None:
+        dm_label = distance_measure or "joint"
+        filepath = figures_dir / f"pairwise_envelope_matrix_{dm_label}{suffix}.{save_format}"
+        fig.savefig(filepath, format=save_format, bbox_inches="tight")
+        logger.info("Saved pairwise envelope matrix to %s", filepath)
+
+    return fig, axs
+
+
+def plot_pairwise_emd_matrix(
+    df_emd: pd.DataFrame,
+    all_distance_dict: dict[str, dict[str, dict[str, dict[str, np.ndarray]]]],
+    packing_modes: list[str],
+    distance_measure: str,
+    normalization: str | None = None,
+    distance_limits: dict[str, tuple[float, float]] | None = None,
+    bin_width: float | dict[str, float] = 0.5,
+    minimum_distance: float | None = 0,
+    envelope_alpha: float = 0.05,
+    figsize: tuple[float, float] | None = None,
+    figures_dir: Path | None = None,
+    suffix: str = "",
+    save_format: Literal["svg", "png", "pdf"] = "pdf",
+) -> tuple[Figure, np.ndarray]:
+    """Plot an NxN matrix of pairwise EMD comparisons and distance distributions.
+
+    For a single distance measure, create an *n_modes* x *n_modes* grid of
+    subplots:
+
+    * **Lower triangle** (row > col): distance-distribution overlay of the
+      row mode and column mode (using discrete histogram curves).
+    * **Diagonal** (row == col): intra-mode EMD KDE (filled) coloured by the
+      mode colour.
+    * **Upper triangle** (row < col): cross-mode EMD KDE (filled) comparing
+      the row mode versus the column mode, coloured by the column (reference)
+      mode colour.
+
+    Parameters
+    ----------
+    df_emd
+        DataFrame with columns ``distance_measure``, ``packing_mode_1``,
+        ``packing_mode_2``, and ``emd``.
+    all_distance_dict
+        ``{distance_measure: {mode: {cell_id: {seed: distances}}}}``
+    packing_modes
+        Ordered list of packing modes forming the matrix axes.
+    distance_measure
+        The distance measure to plot.
+    normalization
+        Normalization method applied to distances (used for axis labelling).
+    distance_limits
+        Optional per-measure ``(lo, hi)`` used to fix axis ranges and bin
+        edges.
+    bin_width
+        Histogram bin width (scalar or per-measure dict).
+    minimum_distance
+        Minimum distance for filtering invalid values.
+    envelope_alpha
+        Significance level for pointwise envelope shading.
+    figsize
+        Figure size in inches; auto-scaled from *n* when ``None``.
+    figures_dir
+        Directory to save the figure; skipped when ``None``.
+    suffix
+        Suffix appended to the saved filename.
+    save_format
+        Image format for saving.
+
+    Returns
+    -------
+    :
+        Tuple of ``(Figure, 2-D ndarray of Axes)``.
+    """
+    n = len(packing_modes)
+    if figsize is None:
+        figsize = (n * 1.8, n * 1.6)
+
+    plt.rcParams.update({"font.size": 6})
+    fig, axs = plt.subplots(n, n, figsize=figsize, dpi=300, squeeze=False)
+
+    # ── Build shared r-grid for the distance distributions ──────────────
+    distance_dict = all_distance_dict[distance_measure]
+    measure_bin_width = bin_width[distance_measure] if isinstance(bin_width, dict) else bin_width
+
+    all_arrays: list[np.ndarray] = []
+    for mode in packing_modes:
+        for seed_dict in distance_dict[mode].values():
+            for arr in seed_dict.values():
+                all_arrays.append(np.asarray(arr))
+
+    if distance_limits is not None and distance_measure in distance_limits:
+        lo_lim, hi_lim = distance_limits[distance_measure]
+        n_bins = int((hi_lim - lo_lim) / measure_bin_width) + 1
+        r_grid = np.linspace(lo_lim, hi_lim, n_bins)
+    else:
+        r_grid = make_r_grid_from_pooled(all_arrays, bin_width=measure_bin_width)
+
+    bin_edges = np.concatenate(
+        [r_grid - measure_bin_width / 2, [r_grid[-1] + measure_bin_width / 2]]
+    )
+
+    # ── Pre-compute per-mode mean curves and envelopes ──────────────────
+    pseudocount = 1.0
+    mode_curves: dict[str, np.ndarray] = {}  # vstack of individual PDFs
+    mode_mean: dict[str, np.ndarray] = {}
+    mode_lo: dict[str, np.ndarray] = {}
+    mode_hi: dict[str, np.ndarray] = {}
+
+    for mode in packing_modes:
+        curves: list[np.ndarray] = []
+        for seed_dict in distance_dict[mode].values():
+            for distances in seed_dict.values():
+                filtered = filter_invalid_distances(
+                    np.asarray(distances), minimum_distance=minimum_distance
+                )
+                raw_counts, _ = np.histogram(filtered, bins=bin_edges)
+                smoothed = raw_counts.astype(float) + pseudocount
+                pdf = normalize_pdf(r_grid, smoothed)
+                curves.append(pdf)
+        arr = np.vstack(curves)
+        lo, hi, mu, _ = pointwise_envelope(arr, alpha=envelope_alpha)
+        mode_curves[mode] = arr
+        mode_mean[mode] = mu
+        mode_lo[mode] = lo
+        mode_hi[mode] = hi
+
+    # ── Axis label helper ───────────────────────────────────────────────
+    if normalization is not None:
+        distance_label = (
+            f"{label_tables.DISTANCE_MEASURE_LABELS[distance_measure]}"
+            f" / {label_tables.NORMALIZATION_LABELS[normalization]}"
+        )
+    elif "scaled" in distance_measure:
+        distance_label = label_tables.DISTANCE_MEASURE_LABELS[distance_measure]
+    else:
+        distance_label = f"{label_tables.DISTANCE_MEASURE_LABELS[distance_measure]} (\u03bcm)"
+
+    # ── Shared x-limits for EMD histogram subplots ──────────────────────
+    dm_emd = df_emd.query(f"distance_measure == '{distance_measure}'")
+    emd_xmax = dm_emd["emd"].quantile(0.99) * 1.1 if len(dm_emd) > 0 else 1.0
+
+    # ── Fill matrix ─────────────────────────────────────────────────────
+    for i in range(n):
+        for j in range(n):
+            ax = axs[i, j]
+            mode_i = packing_modes[i]
+            mode_j = packing_modes[j]
+            color_i = label_tables.COLOR_PALETTE.get(mode_i, "gray")
+            color_j = label_tables.COLOR_PALETTE.get(mode_j, "gray")
+            label_i = label_tables.MODE_LABELS.get(mode_i, mode_i)
+            label_j = label_tables.MODE_LABELS.get(mode_j, mode_j)
+
+            if i == j:
+                # ── Diagonal: intra-mode EMD KDE ────────────────────────
+                sub = dm_emd.query(f"packing_mode_1 == '{mode_i}' and packing_mode_2 == '{mode_i}'")
+                if len(sub) > 0:
+                    sns.kdeplot(
+                        data=sub,
+                        x="emd",
+                        ax=ax,
+                        color=color_i,
+                        fill=True,
+                        alpha=0.4,
+                        linewidth=0.8,
+                        cut=0,
+                    )
+                ax.set_title(label_i, fontsize=8, fontweight="bold")
+                ax.set_xlim(0, emd_xmax)
+                ax.set_ylabel("Density" if j == 0 else "")
+                ax.set_xlabel("EMD" if i == n - 1 else "")
+                ax.xaxis.set_major_locator(MaxNLocator(3))
+                ax.yaxis.set_major_locator(MaxNLocator(3))
+                sns.despine(ax=ax)
+
+            elif i < j:
+                # ── Upper triangle: cross-mode EMD KDE ──────────────────
+                # Show EMD for (mode_i vs mode_j), coloured by reference
+                # mode_j.
+                sub = dm_emd.query(
+                    "(packing_mode_1 == @mode_i and packing_mode_2 == @mode_j) or "
+                    "(packing_mode_1 == @mode_j and packing_mode_2 == @mode_i)"
+                )
+                if len(sub) > 0:
+                    sns.kdeplot(
+                        data=sub,
+                        x="emd",
+                        ax=ax,
+                        color=color_j,
+                        fill=True,
+                        alpha=0.4,
+                        linewidth=0.8,
+                        cut=0,
+                    )
+                ax.set_xlim(0, emd_xmax)
+                ax.set_ylabel("")
+                ax.set_xlabel("EMD" if i == n - 1 else "")
+                ax.xaxis.set_major_locator(MaxNLocator(3))
+                ax.yaxis.set_major_locator(MaxNLocator(3))
+                sns.despine(ax=ax)
+
+            else:
+                # ── Lower triangle: distance-distribution overlay ───────
+                for mode, color in [(mode_j, color_j), (mode_i, color_i)]:
+                    mode_lbl = label_tables.MODE_LABELS.get(mode, mode)
+                    ax.fill_between(
+                        r_grid,
+                        mode_lo[mode],
+                        mode_hi[mode],
+                        color=color,
+                        alpha=0.12,
+                        edgecolor="none",
+                    )
+                    ax.plot(
+                        r_grid,
+                        mode_mean[mode],
+                        color=color,
+                        linewidth=0.8,
+                        label=mode_lbl,
+                    )
+
+                if distance_limits is not None and distance_measure in distance_limits:
+                    ax.set_xlim(distance_limits[distance_measure])
+                else:
+                    ax.set_xlim(r_grid[0], r_grid[-1])
+
+                y_max = max(mode_hi[mode_i].max(), mode_hi[mode_j].max()) * 1.05
+                ax.set_ylim(0, y_max)
+                ax.set_ylabel("PDF" if j == 0 else "")
+                ax.set_xlabel(distance_label if i == n - 1 else "")
+                ax.xaxis.set_major_locator(MaxNLocator(3, integer=True))
+                ax.yaxis.set_major_locator(MaxNLocator(2))
+                ax.legend(fontsize=5, frameon=False, loc="upper right")
+                sns.despine(ax=ax)
+
+            # Column header on the first row
+            if i == 0 and j != 0:
+                ax.set_title(label_j, fontsize=8)
+
+            # Row labels on leftmost column (skip diagonal – already labelled)
+            if j == 0 and i != 0:
+                ax.set_ylabel(
+                    f"{label_i}\n{'PDF' if i > j else 'Density'}",
+                    fontsize=7,
+                )
+
+    # ── Axis description labels ─────────────────────────────────────────
+    dm_title = label_tables.DISTANCE_MEASURE_TITLES.get(distance_measure, distance_measure)
+    fig.suptitle(f"Pairwise EMD — {dm_title}", fontsize=10, fontweight="bold", y=1.02)
+    fig.tight_layout()
+    plt.show()
+
+    if figures_dir is not None:
+        filepath = figures_dir / f"pairwise_emd_matrix_{distance_measure}{suffix}.{save_format}"
+        fig.savefig(filepath, format=save_format, dpi=300, bbox_inches="tight")
+        logger.info("Saved pairwise EMD matrix to %s", filepath)
+
+    return fig, axs

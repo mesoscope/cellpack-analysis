@@ -76,7 +76,8 @@
                         "count_options": {
                             "distribution": "normal",
                             "mean": 111,
-                            "std": 34
+                            "std": 34,
+                            "min": 2
                         }
                     }
                 ]

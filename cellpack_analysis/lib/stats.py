@@ -1,5 +1,6 @@
+import logging
 from collections.abc import Sequence
-from typing import Literal
+from typing import Any, Literal
 
 import numpy as np
 import pandas as pd
@@ -643,4 +644,215 @@ def summarize_across_cells(
         "rejection_per_distance_measure_negative": rej_distance_measure_negative,
         "rejection_joint_positive": rej_joint_positive,
         "rejection_joint_negative": rej_joint_negative,
+    }
+
+
+def pairwise_envelope_test(
+    all_distance_dict: dict[str, dict[str, dict[str, dict[str, np.ndarray]]]],
+    packing_modes: list[str],
+    distance_measures: list[str],
+    alpha: float = 0.05,
+    r_grid_size: int = 150,
+    statistic: Literal["supremum", "intdev"] = "intdev",
+) -> dict[str, Any]:
+    """
+    Pairwise Monte Carlo envelope test between all ordered pairs of packing modes.
+
+    For each ordered pair (mode_a, mode_b) and each distance measure, builds an
+    ECDF-based Monte Carlo envelope from mode_b's cells, tests each mode_a cell
+    against it, and reports BH-corrected rejection fractions.
+
+    Comparisons are asymmetric: testing mode_a against mode_b's envelope differs
+    from the reverse because the envelope captures mode_b's specific variability.
+    A mode with high internal variability produces a wide envelope that is harder
+    to reject, while a tight envelope from a homogeneous mode is easier to reject.
+
+    Parameters
+    ----------
+    all_distance_dict
+        Distance data with structure
+        {distance_measure: {mode: {cell_id: {seed: distances_array}}}}
+    packing_modes
+        List of packing modes to compare pairwise
+    distance_measures
+        List of distance measures to analyze
+    alpha
+        Significance level for BH correction and envelope construction
+    r_grid_size
+        Number of points in the ECDF evaluation grid
+    statistic
+        Test statistic: "supremum" for max standardized deviation,
+        "intdev" for integrated standardized deviation
+
+    Returns
+    -------
+    :
+        Dictionary containing:
+        - 'per_distance_measure': {dm: {(mode_a, mode_b): {pvals, qvals, signs,
+          rejection_fraction, rejection_fraction_positive, rejection_fraction_negative}}}
+        - 'joint': {(mode_a, mode_b): {same keys as above}}
+        - 'envelopes': {mode: {dm: {r, lo, hi, mu, sd}}}
+        - 'packing_modes', 'distance_measures', 'alpha', 'statistic': input params
+    """
+    logger = logging.getLogger(__name__)
+
+    # Step 1: Flatten distance arrays per (mode, distance_measure)
+    flat_arrays: dict[tuple[str, str], list[np.ndarray]] = {}
+    for mode in packing_modes:
+        for dm in distance_measures:
+            arrays: list[np.ndarray] = []
+            mode_dict = all_distance_dict.get(dm, {}).get(mode, {})
+            for _cell_id, seed_dict in mode_dict.items():
+                for _seed, distances in seed_dict.items():
+                    arr = np.asarray(distances)
+                    if arr.size > 0 and np.any(np.isfinite(arr)):
+                        arrays.append(arr)
+            flat_arrays[(mode, dm)] = arrays
+    logger.info(
+        "Flattened arrays: %s",
+        {k: len(v) for k, v in flat_arrays.items()},
+    )
+
+    # Step 2: Build envelopes for each mode (for diagonal display)
+    envelopes: dict[str, dict[str, dict[str, np.ndarray]]] = {}
+    for mode in packing_modes:
+        envelopes[mode] = {}
+        for dm in distance_measures:
+            arrays = flat_arrays[(mode, dm)]
+            if len(arrays) < 2:
+                logger.warning(
+                    "Mode %s, dm %s has < 2 arrays (%d), skipping envelope",
+                    mode, dm, len(arrays),
+                )
+                continue
+            r_grid = make_r_grid_from_pooled(arrays, n=r_grid_size)
+            curves = np.vstack([ecdf(arr, r_grid) for arr in arrays])
+            lo, hi, mu, sd = pointwise_envelope(curves, alpha=alpha)
+            envelopes[mode][dm] = {
+                "r": r_grid,
+                "lo": lo,
+                "hi": hi,
+                "mu": mu,
+                "sd": sd,
+            }
+
+    # Step 3: Pairwise tests
+    per_dm_results: dict[str, dict[tuple[str, str], dict[str, Any]]] = {
+        dm: {} for dm in distance_measures
+    }
+    joint_results: dict[tuple[str, str], dict[str, Any]] = {}
+
+    for mode_a in packing_modes:
+        for mode_b in packing_modes:
+            if mode_a == mode_b:
+                continue
+
+            logger.info("Testing %s against %s envelope", mode_a, mode_b)
+
+            # Pre-compute r_grids and reference ECDF curves per distance measure
+            r_grids: dict[str, np.ndarray] = {}
+            ref_ecdf_curves: dict[str, np.ndarray] = {}
+            for dm in distance_measures:
+                ref_arr = flat_arrays[(mode_b, dm)]
+                test_arr = flat_arrays[(mode_a, dm)]
+                r_grid = make_r_grid_from_pooled(ref_arr + test_arr, n=r_grid_size)
+                r_grids[dm] = r_grid
+                if len(ref_arr) >= 2:
+                    ref_ecdf_curves[dm] = np.vstack(
+                        [ecdf(a, r_grid) for a in ref_arr]
+                    )
+
+            # Per distance measure tests
+            for dm in distance_measures:
+                test_arr = flat_arrays[(mode_a, dm)]
+                if dm not in ref_ecdf_curves or len(test_arr) == 0:
+                    continue
+
+                pvals: list[float] = []
+                signs: list[int] = []
+                for arr in test_arr:
+                    obs_curve = ecdf(arr, r_grids[dm])
+                    pval, _, _, sign = get_test_statistic_and_pvalue(
+                        obs_curve, ref_ecdf_curves[dm], statistic=statistic
+                    )
+                    pvals.append(pval)
+                    signs.append(sign)
+
+                pvals_arr = np.array(pvals)
+                signs_arr = np.array(signs)
+                qvals = false_discovery_control(pvals_arr, method="bh")
+                rejected = qvals < alpha
+
+                per_dm_results[dm][(mode_a, mode_b)] = {
+                    "pvals": pvals_arr,
+                    "qvals": qvals,
+                    "signs": signs_arr,
+                    "rejection_fraction": float(rejected.mean()),
+                    "rejection_fraction_positive": float(
+                        (rejected & (signs_arr == 1)).mean()
+                    ),
+                    "rejection_fraction_negative": float(
+                        (rejected & (signs_arr == -1)).mean()
+                    ),
+                }
+
+            # Joint test: concatenate ECDFs across distance measures
+            if not all(dm in ref_ecdf_curves for dm in distance_measures):
+                logger.warning(
+                    "Skipping joint test for %s vs %s: missing reference curves",
+                    mode_a, mode_b,
+                )
+                continue
+
+            num_test = min(
+                len(flat_arrays[(mode_a, dm)]) for dm in distance_measures
+            )
+            num_ref = min(
+                ref_ecdf_curves[dm].shape[0] for dm in distance_measures
+            )
+            if num_test == 0 or num_ref < 2:
+                continue
+
+            # Build concatenated reference curves
+            sim_concat = np.hstack(
+                [ref_ecdf_curves[dm][:num_ref] for dm in distance_measures]
+            )
+
+            joint_pvals: list[float] = []
+            joint_signs: list[int] = []
+            for obs_idx in range(num_test):
+                obs_concat = np.concatenate(
+                    [
+                        ecdf(flat_arrays[(mode_a, dm)][obs_idx], r_grids[dm])
+                        for dm in distance_measures
+                    ]
+                )
+                pval, _, _, sign = get_test_statistic_and_pvalue(
+                    obs_concat, sim_concat, statistic=statistic
+                )
+                joint_pvals.append(pval)
+                joint_signs.append(sign)
+
+            jp = np.array(joint_pvals)
+            js = np.array(joint_signs)
+            jq = false_discovery_control(jp, method="bh")
+            rej = jq < alpha
+
+            joint_results[(mode_a, mode_b)] = {
+                "pvals": jp,
+                "qvals": jq,
+                "signs": js,
+                "rejection_fraction": float(rej.mean()),
+                "rejection_fraction_positive": float((rej & (js == 1)).mean()),
+                "rejection_fraction_negative": float((rej & (js == -1)).mean()),
+            }
+
+    return {
+        "per_distance_measure": per_dm_results,
+        "joint": joint_results,
+        "envelopes": envelopes,
+        "packing_modes": packing_modes,
+        "distance_measures": distance_measures,
+        "alpha": alpha,
+        "statistic": statistic,
     }

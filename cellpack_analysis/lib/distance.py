@@ -7,7 +7,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 from scipy.spatial.distance import cdist, squareform
-from scipy.stats import gaussian_kde, ks_2samp, wasserstein_distance
+from scipy.stats import gaussian_kde, ks_2samp
 from tqdm import tqdm
 from trimesh import proximity
 
@@ -332,7 +332,7 @@ def _calculate_distances_for_cell_id(
         3D coordinates of particles in the cell, shape (N, 3)
     mesh_dict
         Dictionary containing mesh information for the cell including
-        'nuc_mesh', 'mem_mesh', and 'cell_bounds'
+        'nuc_mesh', 'mem_mesh', and 'mem_bounds'
 
     Returns
     -------
@@ -385,7 +385,7 @@ def _calculate_distances_for_cell_id(
         )
 
     # Distance from z-surface
-    z_min = mesh_dict[cell_id]["cell_bounds"][:, 2].min()
+    z_min = mesh_dict[cell_id]["mem_bounds"][:, 2].min()
     z_distances = positions[:, 2] - z_min
     z_distances = filter_invalid_distances(z_distances)
 
@@ -762,6 +762,39 @@ def bootstrap_ks_tests(
     return bootstrap_df
 
 
+def _wasserstein_1d_presorted(u_sorted: np.ndarray, v_sorted: np.ndarray) -> float:
+    """
+    Compute 1D Wasserstein distance between two pre-sorted distributions.
+
+    Equivalent to ``scipy.stats.wasserstein_distance`` but skips the internal
+    sort, which is the dominant cost when the same arrays are reused across
+    many pairwise comparisons.
+    """
+    n_u = len(u_sorted)
+    n_v = len(v_sorted)
+    # mergesort on two concatenated sorted runs is O(n_u + n_v)
+    all_values = np.concatenate((u_sorted, v_sorted))
+    all_values.sort(kind="mergesort")
+
+    deltas = np.diff(all_values)
+    u_cdf = np.searchsorted(u_sorted, all_values[:-1], side="right") / n_u
+    v_cdf = np.searchsorted(v_sorted, all_values[:-1], side="right") / n_v
+
+    return float(np.sum(np.abs(u_cdf - v_cdf) * deltas))
+
+
+def _compute_emd_chunk(
+    pair_indices: list[tuple[int, int]],
+    sorted_arrays: list[np.ndarray],
+) -> list[tuple[int, int, float]]:
+    """Compute EMD for a chunk of index pairs using pre-sorted arrays."""
+    results: list[tuple[int, int, float]] = []
+    for i, j in pair_indices:
+        emd = _wasserstein_1d_presorted(sorted_arrays[i], sorted_arrays[j])
+        results.append((i, j, emd))
+    return results
+
+
 def get_distance_distribution_emd_df(
     all_distance_dict: dict[str, dict[str, dict[str, dict[str, np.ndarray]]]],
     packing_modes: list[str],
@@ -769,6 +802,7 @@ def get_distance_distribution_emd_df(
     results_dir: Path | None = None,
     recalculate: bool = False,
     suffix: str = "",
+    num_workers: int = 1,
 ) -> pd.DataFrame:
     """
     Calculate pairwise EMD between packing modes for each distance measure.
@@ -788,6 +822,10 @@ def get_distance_distribution_emd_df(
         Whether to recalculate the EMD even if results already exist
     suffix
         Suffix to add to the saved EMD file name
+    num_workers
+        Number of parallel threads to use for EMD computation.
+        NumPy/SciPy operations release the GIL, so threading gives real
+        speedup here.  Defaults to 1 (sequential).
 
     Returns
     -------
@@ -803,37 +841,92 @@ def get_distance_distribution_emd_df(
         if cached_df is not None:
             return cached_df
 
-    record_list = []
+    # Pre-allocate column lists for efficient DataFrame construction
+    col_distance_measure: list[str] = []
+    col_mode_1: list[str] = []
+    col_mode_2: list[str] = []
+    col_cell_id_1: list[str] = []
+    col_cell_id_2: list[str] = []
+    col_seed_1: list[str] = []
+    col_seed_2: list[str] = []
+    col_emd: list[float] = []
+
     for distance_measure in distance_measures:
         logger.info("Calculating EMD for %s", distance_measure)
 
-        # Collect all (mode, cell_id, seed) combinations
-        all_pairs = []
+        # Collect all (mode, cell_id, seed) combinations and pre-sort arrays
+        # once so that sorting cost is O(n log n) per array instead of
+        # O(n log n) per *pair*.
+        metadata: list[tuple[str, str, str]] = []
+        sorted_arrays: list[np.ndarray] = []
         for mode in packing_modes:
-            for cell_id in all_distance_dict[distance_measure][mode].keys():
-                for seed in all_distance_dict[distance_measure][mode][cell_id].keys():
-                    all_pairs.append((mode, cell_id, seed))
+            for cell_id in all_distance_dict[distance_measure][mode]:
+                for seed in all_distance_dict[distance_measure][mode][cell_id]:
+                    metadata.append((mode, cell_id, seed))
+                    sorted_arrays.append(
+                        np.sort(all_distance_dict[distance_measure][mode][cell_id][seed])
+                    )
 
-        for i in tqdm(range(len(all_pairs)), desc=f"EMD calculations for {distance_measure}"):
-            mode_1, cell_id_1, seed_1 = all_pairs[i]
-            distances_1 = all_distance_dict[distance_measure][mode_1][cell_id_1][seed_1]
-            for j in range(i + 1, len(all_pairs)):
-                mode_2, cell_id_2, seed_2 = all_pairs[j]
-                distances_2 = all_distance_dict[distance_measure][mode_2][cell_id_2][seed_2]
-                emd = wasserstein_distance(distances_1, distances_2)
-                record_list.append(
-                    {
-                        "distance_measure": distance_measure,
-                        "packing_mode_1": mode_1,
-                        "packing_mode_2": mode_2,
-                        "cell_id_1": cell_id_1,
-                        "cell_id_2": cell_id_2,
-                        "seed_1": seed_1,
-                        "seed_2": seed_2,
-                        "emd": emd,
-                    }
-                )
-    df_emd = pd.DataFrame.from_records(record_list)
+        n = len(metadata)
+        n_pairs = n * (n - 1) // 2
+
+        # Build flat list of (i, j) pair indices
+        pair_indices: list[tuple[int, int]] = [(i, j) for i in range(n) for j in range(i + 1, n)]
+
+        if num_workers > 1 and n_pairs > 0:
+            # Split pairs into chunks for parallel processing.
+            # NumPy/SciPy functions release the GIL, so ThreadPoolExecutor
+            # provides real parallelism for this workload.
+            chunk_size = max(1, n_pairs // (num_workers * 4))
+            chunks = [pair_indices[k : k + chunk_size] for k in range(0, n_pairs, chunk_size)]
+
+            emd_results: list[tuple[int, int, float]] = []
+            with ThreadPoolExecutor(max_workers=num_workers) as executor:
+                futures = {
+                    executor.submit(_compute_emd_chunk, chunk, sorted_arrays): idx
+                    for idx, chunk in enumerate(chunks)
+                }
+                with tqdm(
+                    total=len(chunks),
+                    desc=f"EMD calculations for {distance_measure}",
+                    unit="chunks",
+                ) as pbar:
+                    for future in as_completed(futures):
+                        emd_results.extend(future.result())
+                        pbar.update(1)
+        else:
+            # Sequential path (also used when n_pairs == 0)
+            emd_results = []
+            for i in tqdm(range(n), desc=f"EMD calculations for {distance_measure}"):
+                u = sorted_arrays[i]
+                for j in range(i + 1, n):
+                    emd_results.append((i, j, _wasserstein_1d_presorted(u, sorted_arrays[j])))
+
+        # Append results using column lists (faster than list-of-dicts)
+        for i, j, emd in emd_results:
+            m1, c1, s1 = metadata[i]
+            m2, c2, s2 = metadata[j]
+            col_distance_measure.append(distance_measure)
+            col_mode_1.append(m1)
+            col_mode_2.append(m2)
+            col_cell_id_1.append(c1)
+            col_cell_id_2.append(c2)
+            col_seed_1.append(s1)
+            col_seed_2.append(s2)
+            col_emd.append(emd)
+
+    df_emd = pd.DataFrame(
+        {
+            "distance_measure": col_distance_measure,
+            "packing_mode_1": col_mode_1,
+            "packing_mode_2": col_mode_2,
+            "cell_id_1": col_cell_id_1,
+            "cell_id_2": col_cell_id_2,
+            "seed_1": col_seed_1,
+            "seed_2": col_seed_2,
+            "emd": col_emd,
+        }
+    )
     if results_dir is not None:
         file_path = results_dir / file_name
         df_emd.to_parquet(file_path, index=False)
@@ -983,21 +1076,34 @@ def normalize_distance_dictionary(
         if "scaled" in measure:
             continue
         for mode, distance_dict in mode_distance_dict.items():
-            mode_mesh_dict = mesh_information_dict.get(channel_map.get(mode, ""), {})
+            channel_key = channel_map.get(mode, "")
+            mode_mesh_dict = mesh_information_dict.get(channel_key, {})
             for cell_id, seed_distance_dict in distance_dict.items():
+                if cell_id not in mode_mesh_dict:
+                    logger.warning(
+                        f"Mesh information not found for cell_id {cell_id} in mode {mode}, "
+                        f"using default normalization factor"
+                    )
                 mesh_info = mode_mesh_dict.get(
                     cell_id,
-                    mode_mesh_dict.get("mean", {"intracellular_radius": 1}),
+                    {
+                        "intracellular_radius": 1,
+                        "cell_diameter": 1,
+                    },
                 )
+                # Compute the per-cell normalization factor once outside the seed loop.
+                # Only 'max_distance' varies per seed; all other methods are cell-level constants.
+                if normalization == "intracellular_radius":
+                    cell_factor: float | None = mesh_info["intracellular_radius"]
+                elif normalization == "cell_diameter":
+                    cell_factor = mesh_info["cell_diameter"]
+                elif normalization == "max_distance":
+                    cell_factor = None  # computed per seed below
+                else:
+                    cell_factor = 1 / pixel_size_in_um
+
                 for seed, distance in seed_distance_dict.items():
-                    if normalization == "intracellular_radius":
-                        normalization_factor = mesh_info["intracellular_radius"]
-                    elif normalization == "cell_diameter":
-                        normalization_factor = mesh_info["cell_diameter"]
-                    elif normalization == "max_distance":
-                        normalization_factor = distance.max()
-                    else:
-                        normalization_factor = 1 / pixel_size_in_um
+                    normalization_factor = distance.max() if cell_factor is None else cell_factor
                     seed_distance_dict[seed] = distance / normalization_factor
 
     return all_distance_dict
@@ -1243,6 +1349,76 @@ def log_central_tendencies_for_emd(
                 f"{label}: {mean:.2f} ± {std:.2f} "
                 f"(median: {median:.2f}, 95% CI: {lower:.2f}, {upper:.2f})"
             )
+
+    remove_file_handler_from_logger(emd_logger, log_file_path)
+
+
+def log_pairwise_emd_central_tendencies(
+    df_emd: pd.DataFrame,
+    distance_measures: list[str],
+    packing_modes: list[str],
+    log_file_path: Path | None = None,
+) -> None:
+    """Log central tendencies for all pairwise EMD comparisons.
+
+    For every ordered pair of packing modes (including intra-mode) and every
+    distance measure, report mean, std, median, and 95% CI of the EMD
+    distribution.
+
+    Parameters
+    ----------
+    df_emd
+        DataFrame with columns ``distance_measure``, ``packing_mode_1``,
+        ``packing_mode_2``, and ``emd``.
+    distance_measures
+        Distance measures to report.
+    packing_modes
+        Packing modes forming the matrix rows/columns.
+    log_file_path
+        Optional file to which the log is also written.
+    """
+    if log_file_path is not None:
+        emd_logger = add_file_handler_to_logger(logger, log_file_path)
+    else:
+        emd_logger = logger
+
+    emd_logger.info("=== Pairwise EMD central tendencies ===")
+    for distance_measure in distance_measures:
+        emd_logger.info("Distance measure: %s", distance_measure)
+        for mode_i in packing_modes:
+            for mode_j in packing_modes:
+                sub_df = df_emd.loc[
+                    (df_emd["distance_measure"] == distance_measure)
+                    & (
+                        (
+                            (df_emd["packing_mode_1"] == mode_i)
+                            & (df_emd["packing_mode_2"] == mode_j)
+                        )
+                        | (
+                            (df_emd["packing_mode_1"] == mode_j)
+                            & (df_emd["packing_mode_2"] == mode_i)
+                        )
+                    ),
+                    "emd",
+                ]
+                if sub_df.empty:
+                    continue
+                mean = sub_df.mean()
+                std = sub_df.std()
+                median = sub_df.median()
+                lower = sub_df.quantile(0.025)
+                upper = sub_df.quantile(0.975)
+                emd_logger.info(
+                    "  %s vs %s: %.2f ± %.2f "
+                    "(median: %.2f, 95%% CI: %.2f, %.2f)",
+                    mode_i,
+                    mode_j,
+                    mean,
+                    std,
+                    median,
+                    lower,
+                    upper,
+                )
 
     remove_file_handler_from_logger(emd_logger, log_file_path)
 

@@ -15,6 +15,7 @@ from cellpack_analysis.lib.file_io import get_project_root
 from cellpack_analysis.lib.label_tables import DISTANCE_LIMITS
 from cellpack_analysis.lib.load_data import get_position_data_from_outputs
 from cellpack_analysis.lib.mesh_tools import get_mesh_information_dict_for_structure
+from cellpack_analysis.lib.stats import pairwise_envelope_test
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +82,7 @@ all_positions = get_position_data_from_outputs(
     base_datadir=base_datadir,
     results_dir=results_dir,
     packing_output_folder=packing_output_folder,
-    recalculate=True,
+    recalculate=False,
 )
 # %% [markdown]
 # ### Get mesh information
@@ -101,9 +102,9 @@ all_distance_dict = distance.get_distance_dictionary(
     mesh_information_dict=combined_mesh_information_dict,
     channel_map=channel_map,
     results_dir=results_dir,
-    recalculate=True,
+    recalculate=False,
 )
-
+# %%
 all_distance_dict = distance.filter_invalids_from_distance_distribution_dict(
     distance_distribution_dict=all_distance_dict, minimum_distance=None
 )
@@ -120,17 +121,19 @@ all_distance_dict = distance.normalize_distance_dictionary(
 distance_figures_dir = figures_dir / "distance_distributions"
 distance_figures_dir.mkdir(exist_ok=True, parents=True)
 # %% [markdown]
-# ### plot distance distribution kde
-fig, axs = visualization.plot_distance_distributions_kde(
+# ### plot distance distribution histograms
+fig, axs = visualization.plot_distance_distributions_discrete(
     distance_measures=distance_measures,
     packing_modes=packing_modes,
     all_distance_dict=all_distance_dict,
     figures_dir=distance_figures_dir,
     suffix=suffix,
     normalization=normalization,
+    plot_individual_curves=False,
     distance_limits=DISTANCE_LIMITS,
-    bandwidth=0.2,
+    bin_width=0.2,
     save_format=save_format,
+    production_mode=True,
 )
 # %% [markdown]
 # ### log central tendencies for distance distributions
@@ -158,33 +161,74 @@ df_emd = distance.get_distance_distribution_emd_df(
     results_dir=results_dir,
     recalculate=False,
     suffix=suffix,
+    num_workers=8,
 )
 # %% [markdown]
 # ### Create plots for within rule EMD
-for comparison_type in ["intra_mode", "baseline"]:
-    fig_bar, axs_bar, fig_violin, axs_violin = visualization.plot_emd_comparisons(
+for dm in distance_measures:
+    fig, axs = visualization.plot_pairwise_emd_matrix(
         df_emd=df_emd,
-        distance_measures=distance_measures,
-        baseline_mode=baseline_mode,
-        comparison_type=comparison_type,  # type: ignore
+        all_distance_dict=all_distance_dict,
+        packing_modes=packing_modes,
+        distance_measure=dm,
+        normalization=normalization,
+        distance_limits=DISTANCE_LIMITS,
+        bin_width=0.2,
+        minimum_distance=0,
         figures_dir=emd_figures_dir,
         suffix=suffix,
         save_format=save_format,
-        annotate_significance=False,
     )
 # %% [markdown]
 # ### Log statistics for EMD comparisons
-for comparison_type in ["intra_mode", "baseline"]:
-    emd_log_file_path = (
-        results_dir / f"{STRUCTURE_NAME}_emd_central_tendencies_{comparison_type}{suffix}.log"
-    )
-    distance.log_central_tendencies_for_emd(
-        df_emd=df_emd,
-        distance_measures=distance_measures,
-        packing_modes=packing_modes,
-        baseline_mode=baseline_mode,
-        log_file_path=emd_log_file_path,
-        comparison_type=comparison_type,
-    )
+emd_log_file_path = (
+    results_dir / f"{STRUCTURE_NAME}_emd_pairwise_central_tendencies{suffix}.log"
+)
+distance.log_pairwise_emd_central_tendencies(
+    df_emd=df_emd,
+    distance_measures=distance_measures,
+    packing_modes=packing_modes,
+    log_file_path=emd_log_file_path,
+)
 
+# %% [markdown]
+# ## Pairwise Monte Carlo Envelope Test
+# Compare each mode against every other mode's envelope.
+# Comparisons are asymmetric: row = test mode, column = reference (envelope source).
+# %% [markdown]
+# ### Run pairwise envelope test
+# %%
+pairwise_results = pairwise_envelope_test(
+    all_distance_dict=all_distance_dict,
+    packing_modes=packing_modes,
+    distance_measures=distance_measures,
+    alpha=0.05,
+    r_grid_size=150,
+    statistic="intdev",
+)
+# %% [markdown]
+# ### Plot pairwise envelope matrix per distance measure
+# %%
+csr_figures_dir = figures_dir / "pairwise_envelope"
+csr_figures_dir.mkdir(exist_ok=True, parents=True)
+
+for dm in distance_measures:
+    fig, axs = visualization.plot_pairwise_envelope_matrix(
+        pairwise_results=pairwise_results,
+        distance_measure=dm,
+        figures_dir=csr_figures_dir,
+        suffix=suffix,
+        save_format=save_format,
+    )
+# %% [markdown]
+# ### Plot pairwise envelope matrix - joint test
+# %%
+fig, axs = visualization.plot_pairwise_envelope_matrix(
+    pairwise_results=pairwise_results,
+    distance_measure=None,
+    figures_dir=csr_figures_dir,
+    figsize=(7, 3),
+    suffix=suffix,
+    save_format=save_format,
+)
 # %%
