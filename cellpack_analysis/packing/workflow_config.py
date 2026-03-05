@@ -52,7 +52,7 @@ class WorkflowConfig:
             return self.project_root / path_obj
 
     def _setup(self) -> None:
-        self.structure_name = self.data.get("structure_name", default_values.STRUCTURE_NAME)
+        self.packing_id = self.data.get("packing_id", default_values.PACKING_ID)
         self.structure_id = self.data.get("structure_id", default_values.STRUCTURE_ID)
         if (
             self.data.get("use_mean_cell", default_values.USE_MEAN_CELL)
@@ -110,21 +110,23 @@ class WorkflowConfig:
             self.recipe_template_path = self._resolve_path(self.data["recipe_template_path"])
         else:
             self.recipe_template_path = (
-                self.datadir / f"templates/recipes/{self.structure_name}_recipe_template.json"
+                self.datadir
+                / f"templates/recipes/{self.condition}/{self.packing_id}_recipe_template.json"
             )
 
         if "config_template_path" in self.data:
             self.config_template_path = self._resolve_path(self.data["config_template_path"])
         else:
             self.config_template_path = (
-                self.datadir / f"templates/configs/{self.structure_name}_config_template.json"
+                self.datadir
+                / f"templates/configs/{self.condition}/{self.packing_id}_config_template.json"
             )
 
         if "generated_recipe_path" in self.data:
             self.generated_recipe_path = self._resolve_path(self.data["generated_recipe_path"])
         else:
             self.generated_recipe_path = (
-                self.datadir / f"recipes/{self.structure_name}/{self.condition}"
+                self.datadir / f"recipes/{self.packing_id}/{self.condition}"
             )
         self.generated_recipe_path.mkdir(parents=True, exist_ok=True)
 
@@ -132,7 +134,7 @@ class WorkflowConfig:
             self.generated_config_path = self._resolve_path(self.data["generated_config_path"])
         else:
             self.generated_config_path = (
-                self.datadir / f"configs/{self.structure_name}/{self.condition}"
+                self.datadir / f"configs/{self.packing_id}/{self.condition}"
             )
         self.generated_config_path.mkdir(parents=True, exist_ok=True)
 
@@ -165,4 +167,5 @@ class WorkflowConfig:
             self.output_path = self._resolve_path(self.data["output_path"])
         else:
             self.output_path = self.datadir / f"packing_outputs/{subfolder}/{self.condition}"
+        logger.debug(f"Output path set to {self.output_path}")
         self.output_path.mkdir(parents=True, exist_ok=True)

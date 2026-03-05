@@ -31,7 +31,7 @@ def integration_test_dir(tmp_path):
 def integration_config(integration_test_dir, test_data_dir):
     """Create an integration test configuration."""
     config_data = {
-        "structure_name": "peroxisome",
+        "packing_id": "peroxisome",
         "structure_id": "SLC25A17",
         "condition": "test_integration",
         "datadir": str(integration_test_dir),
@@ -96,7 +96,7 @@ class TestPackingWorkflowIntegration:
     def test_workflow_creates_directory_structure(self, integration_config, integration_test_dir):
         """Test that workflow creates necessary directory structure."""
         # Execute workflow config initialization
-        config = WorkflowConfig(config_file_path=integration_config)
+        config = WorkflowConfig(workflow_config_path=integration_config)
 
         # Verify directories were created
         assert config.generated_recipe_path.exists()
@@ -115,8 +115,8 @@ class TestPackingWorkflowIntegration:
         # Execute
         result = _run_packing_workflow(integration_config)
 
-        # Verify dry run returns None (no packing executed)
-        assert result is None
+        # Verify dry run returns 0 (pack_recipes is called but skips actual packing)
+        assert result == 0
 
         # Verify recipe files were generated
         recipe_dir = integration_test_dir / "recipes" / "peroxisome" / "test_integration" / "random"
@@ -216,8 +216,12 @@ class TestPackingWorkflowIntegration:
         with open(integration_config, "w") as f:
             json.dump(config_data, f)
 
-        # Execute
-        _run_packing_workflow(integration_config)
+        # Mock pack_recipes since the config file won't exist when config generation is skipped
+        with patch("cellpack_analysis.packing.run_packing_workflow.pack_recipes") as mock_pack:
+            mock_pack.return_value = 0
+
+            # Execute
+            _run_packing_workflow(integration_config)
 
         # Verify recipe files WERE generated
         recipe_dir = integration_test_dir / "recipes" / "peroxisome" / "test_integration" / "random"
@@ -263,7 +267,7 @@ class TestPackingWorkflowIntegration:
     def test_workflow_error_handling_missing_template(self, integration_test_dir):
         """Test that workflow handles missing template files gracefully."""
         config_data = {
-            "structure_name": "peroxisome",
+            "packing_id": "peroxisome",
             "condition": "missing_template",
             "datadir": str(integration_test_dir),
             "recipe_template_path": str(integration_test_dir / "nonexistent_recipe.json"),

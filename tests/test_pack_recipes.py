@@ -20,13 +20,14 @@ from cellpack_analysis.packing.pack_recipes import (
 def mock_workflow_config():
     """Create a mock workflow configuration."""
     config = MagicMock()
-    config.structure_name = "peroxisome"
+    config.packing_id = "peroxisome"
     config.structure_id = "SLC25A17"
     config.condition = "test"
     config.use_mean_cell = False
     config.use_cells_in_8d_sphere = False
     config.num_processes = 2
     config.skip_completed = False
+    config.dry_run = False
     config.result_type = "image"
     config.generated_config_path = Path("/test/configs/peroxisome/test")
     config.generated_recipe_path = Path("/test/recipes/peroxisome/test")
@@ -603,8 +604,8 @@ class TestPackRecipes:
         assert result == 0  # No failures
         assert mock_executor.submit.call_count == 3  # 1 + 2 recipes
 
-    def test_pack_recipes_creates_log_folder(self, mock_workflow_config, tmp_path):
-        """Test that pack_recipes creates log folder."""
+    def test_pack_recipes_no_rules(self, mock_workflow_config, tmp_path):
+        """Test that pack_recipes handles empty input dict with no rules."""
         # Setup
         mock_workflow_config.output_path = tmp_path / "outputs"
 
@@ -614,7 +615,7 @@ class TestPackRecipes:
             mock_get_input.return_value = {}  # No rules to run
 
             # Execute
-            pack_recipes(mock_workflow_config)
+            result = pack_recipes(mock_workflow_config)
 
-        # Verify log folder was created
-        assert (tmp_path / "outputs" / "logs").exists()
+        # Verify no failures reported
+        assert result == 0

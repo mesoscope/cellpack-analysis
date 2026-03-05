@@ -178,7 +178,7 @@ def process_rule_dict(
 
 def update_and_save_recipe(
     cell_id: int | str,
-    structure_name: str,
+    packing_id: str,
     recipe_template: dict[str, Any],
     rule_name: str,
     rule_dict: dict[str, Any],
@@ -199,8 +199,8 @@ def update_and_save_recipe(
     ----------
     cell_id
         The ID of the cell
-    structure_name
-        The name of the structure
+    packing_id
+        The ID of the packing
     recipe_template
         The template recipe to be updated
     rule_name
@@ -241,7 +241,6 @@ def update_and_save_recipe(
         bounding_box = get_bounding_box(
             Path(mesh_path) / f"mem_mesh_{cell_id}.obj", expand=1.05
         ).tolist()
-        # print(f"Bounding box for {structure_name}_{cell_id}: {bounding_box}")
         updated_recipe["bounding_box"] = bounding_box
 
     # update seed if needed
@@ -272,29 +271,31 @@ def update_and_save_recipe(
             "name"
         ] = f"struct_mesh_{cell_id}.obj"
 
+    # resolve gradient_structure_name before using it for counts/radius/rules
+    if gradient_structure_name is None:
+        gradient_structure_name = packing_id
+
     # update counts
     if count is not None:
         updated_recipe["composition"]["membrane"]["regions"]["interior"] = [
             "nucleus",
             {
-                "object": f"{structure_name}",
+                "object": gradient_structure_name,
                 "count": int(count),
             },
         ]
 
     # update size
     if radius is not None:
-        updated_recipe["objects"][structure_name]["radius"] = radius
+        updated_recipe["objects"][gradient_structure_name]["radius"] = radius
 
     # update recipe rule data
-    if gradient_structure_name is None:
-        gradient_structure_name = structure_name
     updated_recipe = process_rule_dict(updated_recipe, rule_dict, gradient_structure_name)
 
     # save recipe
     rule_path = f"{generated_recipe_path}/{rule_name}"
     Path(rule_path).mkdir(parents=True, exist_ok=True)
-    recipe_path = f"{rule_path}/{structure_name}_{rule_name}_{cell_id}.json"
+    recipe_path = f"{rule_path}/{packing_id}_{rule_name}_{cell_id}.json"
     logger.debug(f"Saving recipe to {recipe_path}")
     write_json(recipe_path, updated_recipe)
 
@@ -373,7 +374,7 @@ def generate_recipes(workflow_config: Any) -> None:
                     future = executor.submit(
                         update_and_save_recipe,
                         cell_id=cell_id,
-                        structure_name=workflow_config.structure_name,
+                        packing_id=workflow_config.packing_id,
                         recipe_template=recipe_template,
                         rule_name=rule_name,
                         rule_dict=rule_dict,
@@ -435,7 +436,7 @@ def generate_configs(workflow_config: Any) -> None:
     for rule in rule_list:
         rule_config_path = (
             f"{workflow_config.generated_config_path}"
-            f"/{rule}/{workflow_config.structure_name}_{rule}_config.json"
+            f"/{rule}/{workflow_config.packing_id}_{rule}_config.json"
         )
         Path(rule_config_path).parent.mkdir(parents=True, exist_ok=True)
 

@@ -399,6 +399,7 @@ def monte_carlo_per_cell(
     alpha: float = 0.05,
     distance_measures: list[str] | None = None,
     r_grid_size: int = 150,
+    bin_width: float | None = None,
     statistic: Literal["supremum", "intdev"] = "supremum",
 ) -> dict[str, dict]:
     """
@@ -421,6 +422,10 @@ def monte_carlo_per_cell(
         List of distance measures to analyze; if None, use all from observed_distances
     r_grid_size
         Number of points in r-grid for ECDF evaluation
+    bin_width
+        Optional bin width for r-grid construction; if None, uses r_grid_size to determine grid
+        Overrides r_grid_size if provided, ensuring grid points are spaced by bin_width up to the
+        extended max
     statistic
         Test statistic to use for joint test.
         "supremum": use maximum standardized deviation across r-grid points
@@ -453,7 +458,9 @@ def monte_carlo_per_cell(
             pooled = [observed_distances.get(distance_measure, np.array([]))] + [
                 rep.get(distance_measure, np.array([])) for rep in reps
             ]
-            r_grids[distance_measure] = make_r_grid_from_pooled(pooled, n=r_grid_size)
+            r_grids[distance_measure] = make_r_grid_from_pooled(
+                pooled, n=r_grid_size, bin_width=bin_width
+            )
 
         # Second pass: compute curves, envelopes, p-values
         sim_curves_by_distance_measure = {}
@@ -653,6 +660,7 @@ def pairwise_envelope_test(
     distance_measures: list[str],
     alpha: float = 0.05,
     r_grid_size: int = 150,
+    bin_width: float | None = None,
     statistic: Literal["supremum", "intdev"] = "intdev",
 ) -> dict[str, Any]:
     """
@@ -680,6 +688,10 @@ def pairwise_envelope_test(
         Significance level for BH correction and envelope construction
     r_grid_size
         Number of points in the ECDF evaluation grid
+    bin_width
+        Optional bin width for r-grid construction; if None, uses r_grid_size to determine grid
+        Overrides r_grid_size if provided, ensuring grid points are spaced by bin_width up to the
+        extended max
     statistic
         Test statistic: "supremum" for max standardized deviation,
         "intdev" for integrated standardized deviation
@@ -722,10 +734,12 @@ def pairwise_envelope_test(
             if len(arrays) < 2:
                 logger.warning(
                     "Mode %s, dm %s has < 2 arrays (%d), skipping envelope",
-                    mode, dm, len(arrays),
+                    mode,
+                    dm,
+                    len(arrays),
                 )
                 continue
-            r_grid = make_r_grid_from_pooled(arrays, n=r_grid_size)
+            r_grid = make_r_grid_from_pooled(arrays, n=r_grid_size, bin_width=bin_width)
             curves = np.vstack([ecdf(arr, r_grid) for arr in arrays])
             lo, hi, mu, sd = pointwise_envelope(curves, alpha=alpha)
             envelopes[mode][dm] = {
@@ -755,12 +769,12 @@ def pairwise_envelope_test(
             for dm in distance_measures:
                 ref_arr = flat_arrays[(mode_b, dm)]
                 test_arr = flat_arrays[(mode_a, dm)]
-                r_grid = make_r_grid_from_pooled(ref_arr + test_arr, n=r_grid_size)
+                r_grid = make_r_grid_from_pooled(
+                    ref_arr + test_arr, n=r_grid_size, bin_width=bin_width
+                )
                 r_grids[dm] = r_grid
                 if len(ref_arr) >= 2:
-                    ref_ecdf_curves[dm] = np.vstack(
-                        [ecdf(a, r_grid) for a in ref_arr]
-                    )
+                    ref_ecdf_curves[dm] = np.vstack([ecdf(a, r_grid) for a in ref_arr])
 
             # Per distance measure tests
             for dm in distance_measures:
@@ -788,35 +802,26 @@ def pairwise_envelope_test(
                     "qvals": qvals,
                     "signs": signs_arr,
                     "rejection_fraction": float(rejected.mean()),
-                    "rejection_fraction_positive": float(
-                        (rejected & (signs_arr == 1)).mean()
-                    ),
-                    "rejection_fraction_negative": float(
-                        (rejected & (signs_arr == -1)).mean()
-                    ),
+                    "rejection_fraction_positive": float((rejected & (signs_arr == 1)).mean()),
+                    "rejection_fraction_negative": float((rejected & (signs_arr == -1)).mean()),
                 }
 
             # Joint test: concatenate ECDFs across distance measures
             if not all(dm in ref_ecdf_curves for dm in distance_measures):
                 logger.warning(
                     "Skipping joint test for %s vs %s: missing reference curves",
-                    mode_a, mode_b,
+                    mode_a,
+                    mode_b,
                 )
                 continue
 
-            num_test = min(
-                len(flat_arrays[(mode_a, dm)]) for dm in distance_measures
-            )
-            num_ref = min(
-                ref_ecdf_curves[dm].shape[0] for dm in distance_measures
-            )
+            num_test = min(len(flat_arrays[(mode_a, dm)]) for dm in distance_measures)
+            num_ref = min(ref_ecdf_curves[dm].shape[0] for dm in distance_measures)
             if num_test == 0 or num_ref < 2:
                 continue
 
             # Build concatenated reference curves
-            sim_concat = np.hstack(
-                [ref_ecdf_curves[dm][:num_ref] for dm in distance_measures]
-            )
+            sim_concat = np.hstack([ref_ecdf_curves[dm][:num_ref] for dm in distance_measures])
 
             joint_pvals: list[float] = []
             joint_signs: list[int] = []

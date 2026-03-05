@@ -66,7 +66,7 @@ def check_recipe_completed(
     if isinstance(seed_vals, int):
         seed_vals = [seed_vals]
 
-    base_folder = Path(config_data["out"]) / f"{workflow_config.structure_name}/spheresSST"
+    base_folder = Path(config_data["out"]) / f"{workflow_config.packing_id}/spheresSST"
 
     if workflow_config.result_type == "image":
         folder_to_check = base_folder / "figures"
@@ -211,7 +211,7 @@ def get_input_file_dictionary(workflow_config: Any) -> dict[str, dict[str, Any]]
         input_file_dict[rule] = {}
         rule_config_path = (
             f"{workflow_config.generated_config_path}"
-            f"/{rule}/{workflow_config.structure_name}_{rule}_config.json"
+            f"/{rule}/{workflow_config.packing_id}_{rule}_config.json"
         )
         input_file_dict[rule]["config_path"] = rule_config_path
 
@@ -220,7 +220,7 @@ def get_input_file_dictionary(workflow_config: Any) -> dict[str, dict[str, Any]]
         rule_recipe_list = []
         for cell_id in cell_ids_to_pack:
             cell_id_recipe_path = (
-                rule_recipe_folder / f"{workflow_config.structure_name}_{rule}_{cell_id}.json"
+                rule_recipe_folder / f"{workflow_config.packing_id}_{rule}_{cell_id}.json"
             )
             if cell_id_recipe_path.exists():
                 rule_recipe_list.append(cell_id_recipe_path)

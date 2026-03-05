@@ -39,7 +39,7 @@ def _run_packing_workflow(workflow_config_path: Path):
     workflow_log_file = setup_workflow_logging(
         workflow_config.output_path
         / "logs"
-        / f"{workflow_config.structure_name}_{workflow_config.condition}.log"
+        / f"{workflow_config.packing_id}_{workflow_config.condition}.log"
     )
     logger.info(f"Logging all debug messages to {workflow_log_file}")
 

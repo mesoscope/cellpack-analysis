@@ -7,8 +7,8 @@ MPLSTYLE_PATH = Path(__file__).parent / "cellpack_analysis.mplstyle"
 PIXEL_SIZE_IN_UM = 0.108
 """Pixel size in microns."""
 
-STRUCTURE_NAME = "peroxisome"
-"""Name of the structure to pack."""
+PACKING_ID = "peroxisome"
+"""ID of the packing."""
 
 STRUCTURE_ID = "SLC25A17"
 """ID of the structure to pack."""

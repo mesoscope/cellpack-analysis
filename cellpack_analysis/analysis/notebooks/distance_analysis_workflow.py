@@ -3,7 +3,8 @@
 # Compare distributions of various measures of distance using:
 # 1. Pairwise EMD
 # 2. KS test
-# 3. Ripley's K
+# 3. Pairwise Monte Carlo Envelope Test
+
 #
 # Can be used to compare distirbutions in the presence or absence
 # of other influencing structures
@@ -13,11 +14,14 @@
 import logging
 import time
 
+import pandas as pd
+
 from cellpack_analysis.lib import distance, visualization
 from cellpack_analysis.lib.file_io import get_project_root
 from cellpack_analysis.lib.label_tables import DISTANCE_LIMITS
 from cellpack_analysis.lib.load_data import get_position_data_from_outputs
 from cellpack_analysis.lib.mesh_tools import get_mesh_information_dict_for_structure
+from cellpack_analysis.lib.stats import pairwise_envelope_test
 
 logger = logging.getLogger(__name__)
 
@@ -30,14 +34,16 @@ start_time = time.time()
 # RAB5A: early endosomes
 # SEC61B: ER
 # ST6GAL1: Golgi
-STRUCTURE_ID = "RAB5A"
+PUNCTATE_STRUCTURE_ID = "RAB5A"  # This is the ID for the packed structure
+CELL_STRUCTURE_ID = "RAB5A"  # This is the ID for the cell shapes used for packing
 PACKING_ID = "endosome"
 STRUCTURE_NAME = "endosome"
+OUTPUT_SUBFOLDER = "rules_shape_with_seed"
 # %% [markdown]
 # ### Set packing modes to analyze
 save_format = "pdf"
 packing_modes = [
-    STRUCTURE_ID,
+    PUNCTATE_STRUCTURE_ID,
     "random",
     "nucleus_gradient",
     "membrane_gradient",
@@ -45,18 +51,17 @@ packing_modes = [
 ]
 
 channel_map = {
-    "RAB5A": "RAB5A",
-    "random": "RAB5A",
-    "nucleus_gradient": "RAB5A",
-    "membrane_gradient": "RAB5A",
-    "apical_gradient": "RAB5A",
-    # "apical_gradient": "RAB5A",
-    # "struct_gradient": "SEC61B",
+    PUNCTATE_STRUCTURE_ID: PUNCTATE_STRUCTURE_ID,
+    "random": CELL_STRUCTURE_ID,
+    "nucleus_gradient": CELL_STRUCTURE_ID,
+    "membrane_gradient": CELL_STRUCTURE_ID,
+    "apical_gradient": CELL_STRUCTURE_ID,
+    # "struct_gradient": CELL_STRUCTURE_ID,
 }
 
 # relative path to packing outputs
 packing_output_folder = "packing_outputs/8d_sphere_data/norm_weights/"
-baseline_mode = STRUCTURE_ID
+baseline_mode = PUNCTATE_STRUCTURE_ID
 
 all_structures = list(set(channel_map.values()))
 # %% [markdown]
@@ -91,14 +96,14 @@ if normalization is not None:
 # %% [markdown]
 # ### Read position data from outputs
 all_positions = get_position_data_from_outputs(
-    structure_id=STRUCTURE_ID,
+    structure_id=PUNCTATE_STRUCTURE_ID,
     packing_id=PACKING_ID,
     packing_modes=packing_modes,
     base_datadir=base_datadir,
     results_dir=results_dir,
     packing_output_folder=packing_output_folder,
     ingredient_key=f"membrane_interior_{STRUCTURE_NAME}",
-    recalculate=False,
+    recalculate=True,
 )
 # %% [markdown]
 # ### Get mesh information
@@ -107,7 +112,7 @@ for structure_id in all_structures:
     mesh_information_dict = get_mesh_information_dict_for_structure(
         structure_id=structure_id,
         base_datadir=base_datadir,
-        recalculate=False,
+        recalculate=True,
     )
     combined_mesh_information_dict[structure_id] = mesh_information_dict
 # %% [markdown]
@@ -174,7 +179,7 @@ df_emd = distance.get_distance_distribution_emd_df(
     packing_modes=packing_modes,
     distance_measures=distance_measures,
     results_dir=results_dir,
-    recalculate=False,
+    recalculate=True,
     suffix=suffix,
 )
 # %% [markdown]
@@ -202,6 +207,33 @@ for comparison_type in ["intra_mode", "baseline"]:
         log_file_path=emd_log_file_path,
         comparison_type=comparison_type,
     )
+# %% [markdown]
+# ### Create plots for pairwise EMD matrix
+for dm in distance_measures:
+    fig, axs = visualization.plot_pairwise_emd_matrix(
+        df_emd=df_emd,
+        all_distance_dict=all_distance_dict,
+        packing_modes=packing_modes,
+        distance_measure=dm,
+        normalization=normalization,
+        distance_limits=DISTANCE_LIMITS,
+        bin_width=0.2,
+        minimum_distance=0,
+        figures_dir=emd_figures_dir,
+        suffix=suffix,
+        save_format=save_format,
+    )
+# %% [markdown]
+# ### Log pairwise EMD central tendencies
+emd_pairwise_log_file_path = (
+    results_dir / f"{PACKING_ID}_emd_pairwise_central_tendencies{suffix}.log"
+)
+distance.log_pairwise_emd_central_tendencies(
+    df_emd=df_emd,
+    distance_measures=distance_measures,
+    packing_modes=packing_modes,
+    log_file_path=emd_pairwise_log_file_path,
+)
 # %% [markdown]
 # ## KS Test Analysis for distance distributions
 # %% [markdown]
@@ -245,3 +277,110 @@ distance.log_central_tendencies_for_ks(
     distance_measures=distance_measures,
     file_path=ks_log_file_path,
 )
+# %% [markdown]
+# ## Pairwise KS Test Analysis
+# Compare each mode against every other mode (not just the baseline).
+# %% [markdown]
+# ### Run pairwise KS tests across all mode pairs
+# %%
+pairwise_ks_figures_dir = figures_dir / "pairwise_ks_test"
+pairwise_ks_figures_dir.mkdir(exist_ok=True, parents=True)
+
+pairwise_ks_dfs: list[pd.DataFrame] = []
+for ref_mode in packing_modes:
+    other_modes = [m for m in packing_modes if m != ref_mode]
+    ks_df = distance.get_ks_test_df(
+        distance_measures=distance_measures,
+        packing_modes=packing_modes,
+        all_distance_dict=all_distance_dict,
+        baseline_mode=ref_mode,
+        significance_level=ks_significance_level,
+        save_dir=None,
+        recalculate=True,
+    )
+    ks_df["baseline_mode"] = ref_mode
+    pairwise_ks_dfs.append(ks_df)
+
+pairwise_ks_test_df = pd.concat(pairwise_ks_dfs, ignore_index=True)
+# %% [markdown]
+# ### Bootstrap pairwise KS tests
+# %%
+pairwise_ks_bootstrap_dfs: list[pd.DataFrame] = []
+for ref_mode in packing_modes:
+    ref_ks_df = pairwise_ks_test_df.query("baseline_mode == @ref_mode")
+    other_modes = [m for m in packing_modes if m != ref_mode]
+    df_boot = distance.bootstrap_ks_tests(
+        ks_test_df=ref_ks_df,
+        distance_measures=distance_measures,
+        packing_modes=other_modes,
+        n_bootstrap=1000,
+    )
+    df_boot["baseline_mode"] = ref_mode
+    pairwise_ks_bootstrap_dfs.append(df_boot)
+
+pairwise_ks_bootstrap_df = pd.concat(pairwise_ks_bootstrap_dfs, ignore_index=True)
+# %% [markdown]
+# ### Plot pairwise KS results per baseline mode
+# %%
+for ref_mode in packing_modes:
+    ref_boot_df = pairwise_ks_bootstrap_df.query("baseline_mode == @ref_mode")
+    fig_list, ax_list = visualization.plot_ks_test_results(
+        df_ks_bootstrap=ref_boot_df,
+        distance_measures=distance_measures,
+        figures_dir=pairwise_ks_figures_dir,
+        suffix=f"{suffix}_vs_{ref_mode}",
+        save_format=save_format,
+    )
+# %% [markdown]
+# ### Log pairwise KS central tendencies
+pairwise_ks_log_file_path = (
+    results_dir / f"{STRUCTURE_NAME}_pairwise_ks_central_tendencies{suffix}.log"
+)
+for ref_mode in packing_modes:
+    ref_boot_df = pairwise_ks_bootstrap_df.query("baseline_mode == @ref_mode")
+    distance.log_central_tendencies_for_ks(
+        df_ks_bootstrap=ref_boot_df,
+        distance_measures=distance_measures,
+        file_path=pairwise_ks_log_file_path,
+    )
+# %% [markdown]
+# ## Pairwise Monte Carlo Envelope Test
+# Compare each mode against every other mode's envelope.
+# Comparisons are asymmetric: row = test mode, column = reference (envelope source).
+# %% [markdown]
+# ### Run pairwise envelope test
+# %%
+pairwise_results = pairwise_envelope_test(
+    all_distance_dict=all_distance_dict,
+    packing_modes=packing_modes,
+    distance_measures=distance_measures,
+    alpha=0.05,
+    bin_width=0.2,
+    statistic="intdev",
+)
+# %% [markdown]
+# ### Plot pairwise envelope matrix per distance measure
+# %%
+envelope_figures_dir = figures_dir / "pairwise_envelope"
+envelope_figures_dir.mkdir(exist_ok=True, parents=True)
+
+for dm in distance_measures:
+    fig, axs = visualization.plot_pairwise_envelope_matrix(
+        pairwise_results=pairwise_results,
+        distance_measure=dm,
+        figures_dir=envelope_figures_dir,
+        suffix=suffix,
+        save_format=save_format,
+    )
+# %% [markdown]
+# ### Plot pairwise envelope matrix - joint test
+# %%
+fig, axs = visualization.plot_pairwise_envelope_matrix(
+    pairwise_results=pairwise_results,
+    distance_measure=None,
+    figures_dir=envelope_figures_dir,
+    # figsize=(7, 3),
+    suffix=suffix,
+    save_format=save_format,
+)
+# %%

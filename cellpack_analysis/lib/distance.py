@@ -632,7 +632,7 @@ def get_distance_dictionary(
 def get_ks_test_df(
     distance_measures: list[str],
     packing_modes: list[str],
-    all_distance_dict: dict[str, dict[str, dict[str, np.ndarray]]],
+    all_distance_dict: dict[str, dict[str, dict[str, dict[str, np.ndarray]]]],
     baseline_mode: str = "SLC25A17",
     significance_level: float = 0.05,
     save_dir: Path | None = None,
@@ -641,6 +641,12 @@ def get_ks_test_df(
     """
     Perform KS test between distance distributions of different packing modes and combine results.
 
+    For each non-baseline mode, iterates over all ``(cell_id, seed)``
+    combinations and compares the test-mode distances against the
+    baseline-mode distances for the same ``(cell_id, seed)``.  When a
+    matching seed is not found in the baseline, the ``(cell_id, seed)`` pair
+    is skipped with a warning.
+
     Parameters
     ----------
     distance_measures
@@ -648,7 +654,8 @@ def get_ks_test_df(
     packing_modes
         List of packing modes to compare
     all_distance_dict
-        Dictionary containing distance distributions for each packing mode and distance measure
+        Distance distributions with structure
+        ``{distance_measure: {mode: {cell_id: {seed: distances}}}}``
     baseline_mode
         The packing mode to use as the baseline for comparison
     significance_level
@@ -661,8 +668,9 @@ def get_ks_test_df(
     Returns
     -------
     :
-        DataFrame containing the KS observed results, with columns for cell_id, distance_measure,
-        packing_mode, and ks_observed
+        DataFrame containing the KS test results with columns
+        ``distance_measure``, ``packing_mode``, ``cell_id``, ``seed``,
+        ``ks_stat``, ``p_value``, ``different``, ``similar``
     """
     file_name = "ks_observed_combined_df.parquet"
     if save_dir is not None:
@@ -676,18 +684,39 @@ def get_ks_test_df(
     for distance_measure in distance_measures:
         logger.info(f"Calculating KS observed for distance measure: {distance_measure}")
 
-        # Collect all (mode, cell_id) combinations
-        all_pairs = []
+        # Collect all (mode, cell_id, seed) combinations
+        all_triples: list[tuple[str, str, str]] = []
         for mode in packing_modes:
             if mode == baseline_mode:
                 continue
-            for cell_id in all_distance_dict[distance_measure][mode].keys():
-                all_pairs.append((mode, cell_id))
-        for mode, cell_id in tqdm(all_pairs, desc=f"KS tests for {distance_measure}"):
-            distances_1 = all_distance_dict[distance_measure][baseline_mode].get(cell_id, None)
-            distances_2 = all_distance_dict[distance_measure][mode].get(cell_id, None)
-            if distances_1 is None or distances_2 is None:
-                logger.warning(f"Missing distances for {mode}, {cell_id}, skipping KS test")
+            for cell_id, seed_dict in all_distance_dict[distance_measure][mode].items():
+                for seed in seed_dict:
+                    all_triples.append((mode, cell_id, seed))
+
+        for mode, cell_id, seed in tqdm(
+            all_triples, desc=f"KS tests for {distance_measure}"
+        ):
+            baseline_cell = all_distance_dict[distance_measure][baseline_mode].get(
+                cell_id, None
+            )
+            if baseline_cell is None:
+                logger.warning(
+                    f"Missing baseline cell_id {cell_id} for {mode}, skipping KS test"
+                )
+                continue
+            distances_1 = baseline_cell.get(seed, None)
+            if distances_1 is None:
+                # Fall back to the first available seed in the baseline
+                first_seed = next(iter(baseline_cell))
+                distances_1 = baseline_cell[first_seed]
+                logger.debug(
+                    f"Seed {seed} not in baseline for {cell_id}; using seed {first_seed}"
+                )
+            distances_2 = all_distance_dict[distance_measure][mode][cell_id][seed]
+            if len(distances_1) == 0 or len(distances_2) == 0:
+                logger.warning(
+                    f"Empty distances for {mode}, {cell_id}, seed {seed}, skipping KS test"
+                )
                 continue
             ks_result = ks_2samp(distances_1, distances_2)
             ks_stat, p_value = ks_result.statistic, ks_result.pvalue  # type: ignore
@@ -696,6 +725,7 @@ def get_ks_test_df(
                     "distance_measure": distance_measure,
                     "packing_mode": mode,
                     "cell_id": cell_id,
+                    "seed": seed,
                     "ks_stat": ks_stat,
                     "p_value": p_value,
                     "different": p_value < significance_level,
@@ -720,10 +750,17 @@ def bootstrap_ks_tests(
     """
     Perform bootstrap KS tests to estimate the distribution of KS statistics.
 
+    Resampling is done at the **cell_id** level (with replacement) so that
+    all seeds belonging to the same cell are included or excluded together,
+    preserving within-cell correlation.  When there is only one seed per
+    cell_id this is equivalent to resampling individual observations.
+
     Parameters
     ----------
     ks_test_df
-        DataFrame containing the KS observed results
+        DataFrame containing per-observation KS test results.  Must have
+        columns ``cell_id``, ``distance_measure``, ``packing_mode``, and
+        ``similar``.  A ``seed`` column is allowed but not required.
     distance_measures
         List of distance measures to analyze
     packing_modes
@@ -734,21 +771,31 @@ def bootstrap_ks_tests(
     Returns
     -------
     :
-        DataFrame containing the bootstrap KS statistics with columns for distance_measure,
-        packing_mode, and similar_fraction
+        DataFrame containing the bootstrap KS statistics with columns
+        ``distance_measure``, ``packing_mode``, ``experiment_number``, and
+        ``similar_fraction``
     """
     record_list = []
     cell_ids = ks_test_df["cell_id"].unique()
+    n_cells = len(cell_ids)
+
     for exp_num in tqdm(range(n_bootstrap), desc="Bootstrapping KS tests"):
-        sampled_cell_ids = np.random.choice(cell_ids, size=len(cell_ids), replace=True)
+        sampled_cell_ids = np.random.choice(cell_ids, size=n_cells, replace=True)
+        # Build a boolean mask once for all (distance_measure, packing_mode) combos.
+        # Using isin handles the case where a cell_id appears multiple times in
+        # the resample (multiple seeds, or the same cell drawn more than once).
+        mask = ks_test_df["cell_id"].isin(sampled_cell_ids)
+        sampled_df = ks_test_df.loc[mask]
         for distance_measure in distance_measures:
             for packing_mode in packing_modes:
-                mode_df = ks_test_df.query(
-                    "distance_measure == @distance_measure and packing_mode == @packing_mode"
-                )
-                similar_fraction = np.mean(
-                    mode_df[mode_df["cell_id"].isin(sampled_cell_ids)]["similar"].to_numpy()
-                )
+                mode_df = sampled_df.loc[
+                    (sampled_df["distance_measure"] == distance_measure)
+                    & (sampled_df["packing_mode"] == packing_mode)
+                ]
+                if mode_df.empty:
+                    similar_fraction = np.nan
+                else:
+                    similar_fraction = mode_df["similar"].mean()
                 record_list.append(
                     {
                         "distance_measure": distance_measure,

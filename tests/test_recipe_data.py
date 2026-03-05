@@ -64,19 +64,19 @@ class TestUpdateAndSaveRecipe:
         """Test basic functionality of update_and_save_recipe."""
 
         # Setup mocks - process_rule_dict should return whatever it receives
-        def mock_process_side_effect(recipe, rule_dict, structure_name):
+        def mock_process_side_effect(recipe, rule_dict, packing_id):
             return recipe
 
         mock_process_rule_dict.side_effect = mock_process_side_effect
 
         # Define inputs
         cell_id = 743916
-        structure_name = "peroxisome"
+        packing_id = "peroxisome"
         rule_name = "test_rule"
         grid_path = Path("./grid_path")
         mesh_path = Path("./mesh_path")
         generated_recipe_path = Path("./generated_recipe_path")
-        multiple_replicates = False
+        number_of_replicates = 1
         count = 10
         radius = 5.0
         get_bounding_box_from_mesh = False
@@ -84,14 +84,14 @@ class TestUpdateAndSaveRecipe:
         # Call function
         result = update_and_save_recipe(
             cell_id=cell_id,
-            structure_name=structure_name,
+            packing_id=packing_id,
             recipe_template=sample_recipe_template,
             rule_name=rule_name,
             rule_dict=sample_rule_dict,
             grid_path=grid_path,
             mesh_path=mesh_path,
             generated_recipe_path=generated_recipe_path,
-            multiple_replicates=multiple_replicates,
+            number_of_replicates=number_of_replicates,
             count=count,
             radius=radius,
             get_bounding_box_from_mesh=get_bounding_box_from_mesh,
@@ -120,13 +120,13 @@ class TestUpdateAndSaveRecipe:
 
         # Verify mocks were called correctly
         mock_mkdir.assert_called_once_with(parents=True, exist_ok=True)
-        mock_process_rule_dict.assert_called_once_with(result, sample_rule_dict, structure_name)
+        mock_process_rule_dict.assert_called_once_with(result, sample_rule_dict, packing_id)
         mock_write_json.assert_called_once()
 
         # Verify the file path passed to write_json
         write_json_call_args = mock_write_json.call_args[0]
         expected_path = (
-            f"{generated_recipe_path}/{rule_name}/" f"{structure_name}_{rule_name}_{cell_id}.json"
+            f"{generated_recipe_path}/{rule_name}/" f"{packing_id}_{rule_name}_{cell_id}.json"
         )
         assert write_json_call_args[0] == expected_path
 
@@ -148,14 +148,14 @@ class TestUpdateAndSaveRecipe:
         mock_bounding_box = [[0, 0, 0], [50, 50, 50]]
         mock_get_bounding_box.return_value.tolist.return_value = mock_bounding_box
 
-        def mock_process_side_effect(recipe, rule_dict, structure_name):
+        def mock_process_side_effect(recipe, rule_dict, packing_id):
             return recipe
 
         mock_process_rule_dict.side_effect = mock_process_side_effect
 
         # Define inputs
         cell_id = 743916
-        structure_name = "peroxisome"
+        packing_id = "peroxisome"
         rule_name = "test_rule"
         grid_path = Path("./grid_path")
         mesh_path = Path("./mesh_path")
@@ -165,14 +165,14 @@ class TestUpdateAndSaveRecipe:
         # Call function
         result = update_and_save_recipe(
             cell_id=cell_id,
-            structure_name=structure_name,
+            packing_id=packing_id,
             recipe_template=sample_recipe_template,
             rule_name=rule_name,
             rule_dict=sample_rule_dict,
             grid_path=grid_path,
             mesh_path=mesh_path,
             generated_recipe_path=generated_recipe_path,
-            multiple_replicates=False,
+            number_of_replicates=1,
             get_bounding_box_from_mesh=get_bounding_box_from_mesh,
         )
 
@@ -197,31 +197,31 @@ class TestUpdateAndSaveRecipe:
         """Test update_and_save_recipe with multiple replicates (no seed update)."""
 
         # Setup mocks
-        def mock_process_side_effect(recipe, rule_dict, structure_name):
+        def mock_process_side_effect(recipe, rule_dict, packing_id):
             return recipe
 
         mock_process_rule_dict.side_effect = mock_process_side_effect
 
         # Define inputs
         cell_id = 743916
-        structure_name = "peroxisome"
+        packing_id = "peroxisome"
         rule_name = "test_rule"
         grid_path = Path("./grid_path")
         mesh_path = Path("./mesh_path")
         generated_recipe_path = Path("./generated_recipe_path")
-        multiple_replicates = True
+        number_of_replicates = 3
 
         # Call function
         result = update_and_save_recipe(
             cell_id=cell_id,
-            structure_name=structure_name,
+            packing_id=packing_id,
             recipe_template=sample_recipe_template,
             rule_name=rule_name,
             rule_dict=sample_rule_dict,
             grid_path=grid_path,
             mesh_path=mesh_path,
             generated_recipe_path=generated_recipe_path,
-            multiple_replicates=multiple_replicates,
+            number_of_replicates=number_of_replicates,
         )
 
         # Assertions - randomness_seed should remain unchanged when multiple_replicates=True
@@ -247,14 +247,14 @@ class TestUpdateAndSaveRecipe:
             }
         }
 
-        def mock_process_side_effect(recipe, rule_dict, structure_name):
+        def mock_process_side_effect(recipe, rule_dict, packing_id):
             return recipe
 
         mock_process_rule_dict.side_effect = mock_process_side_effect
 
         # Define inputs
         cell_id = 743916
-        structure_name = "peroxisome"
+        packing_id = "peroxisome"
         rule_name = "test_rule"
         grid_path = Path("./grid_path")
         mesh_path = Path("./mesh_path")
@@ -264,14 +264,14 @@ class TestUpdateAndSaveRecipe:
         # Call function
         result = update_and_save_recipe(
             cell_id=cell_id,
-            structure_name=structure_name,
+            packing_id=packing_id,
             recipe_template=recipe_with_struct,
             rule_name=rule_name,
             rule_dict=sample_rule_dict,
             grid_path=grid_path,
             mesh_path=mesh_path,
             generated_recipe_path=generated_recipe_path,
-            multiple_replicates=False,
+            number_of_replicates=1,
             use_additional_struct=use_additional_struct,
         )
 
@@ -296,14 +296,14 @@ class TestUpdateAndSaveRecipe:
         """Test update_and_save_recipe with custom gradient structure name."""
 
         # Setup mocks
-        def mock_process_side_effect(recipe, rule_dict, structure_name):
+        def mock_process_side_effect(recipe, rule_dict, packing_id):
             return recipe
 
         mock_process_rule_dict.side_effect = mock_process_side_effect
 
         # Define inputs
         cell_id = 743916
-        structure_name = "peroxisome"
+        packing_id = "peroxisome"
         gradient_structure_name = "custom_gradient_structure"
         rule_name = "test_rule"
         grid_path = Path("./grid_path")
@@ -313,14 +313,14 @@ class TestUpdateAndSaveRecipe:
         # Call function
         result = update_and_save_recipe(
             cell_id=cell_id,
-            structure_name=structure_name,
+            packing_id=packing_id,
             recipe_template=sample_recipe_template,
             rule_name=rule_name,
             rule_dict=sample_rule_dict,
             grid_path=grid_path,
             mesh_path=mesh_path,
             generated_recipe_path=generated_recipe_path,
-            multiple_replicates=False,
+            number_of_replicates=1,
             gradient_structure_name=gradient_structure_name,
         )
 

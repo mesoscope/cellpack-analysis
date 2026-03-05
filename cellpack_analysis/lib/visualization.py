@@ -794,11 +794,7 @@ def plot_occupancy_illustration(
     logger.info(f"Using cell ID {cell_id} for occupancy illustration")
 
     # Use first seed available for the baseline mode
-    seeds = kde_dict[cell_id]["occupied"].keys()
-    if not seeds:
-        raise ValueError(f"No seeds found for cell ID {cell_id} in occupied KDE data")
-    seed = next(iter(seeds))
-    occupied_kde = kde_dict[cell_id]["occupied"][seed][packing_mode]
+    occupied_kde = kde_dict[cell_id][packing_mode]
     available_kde = kde_dict[cell_id]["available"]
     xmax = occupied_kde.dataset.max()
     if xlim is not None and xlim < xmax:
@@ -2289,6 +2285,23 @@ def plot_pairwise_envelope_matrix(
     cmap = LinearSegmentedColormap.from_list(f"{cmap_name}_alpha07", cmap_colors)
     norm = Normalize(vmin=0, vmax=1)
 
+    # Pre-compute global x range across all diagonal envelopes so that all
+    # diagonal subplots share the same x-axis limits for easier comparison.
+    diag_xmax = 0.0
+    for mode in modes:
+        if distance_measure is not None:
+            if distance_measure in envelopes.get(mode, {}):
+                r = envelopes[mode][distance_measure]["r"]
+                diag_xmax = max(diag_xmax, float(r.max()))
+        else:
+            for dm in pairwise_results.get("distance_measures", []):
+                if dm in envelopes.get(mode, {}):
+                    r = envelopes[mode][dm]["r"]
+                    diag_xmax = max(diag_xmax, float(r.max()))
+    diag_xlim = (0, diag_xmax) if diag_xmax > 0 else None
+
+    diagonal_axes: list[Axes] = []
+
     for i in range(n):
         for j in range(n):
             ax = axs[i, j]
@@ -2313,7 +2326,10 @@ def plot_pairwise_envelope_matrix(
                     )
                     ax.plot(env["r"], env["mu"], "--", color="dimgray", lw=1, label="Mean")
                     ax.set_ylabel("ECDF" if j == 0 else "")
-                    ax.set_xlabel("Distance (µm)" if i == n - 1 else "")
+                    label_str = label_tables.DISTANCE_MEASURE_LABELS.get(
+                        distance_measure, distance_measure
+                    )
+                    ax.set_xlabel(label_str if i == n - 1 else "")
                     ax.xaxis.set_major_locator(MaxNLocator(5, integer=True))
                     sns.despine(ax=ax)
                 elif distance_measure is None:
@@ -2354,6 +2370,7 @@ def plot_pairwise_envelope_matrix(
                     ax.axis("off")
 
                 ax.set_title(mode_label, fontsize=9, fontweight="bold")
+                diagonal_axes.append(ax)
             else:
                 # --- Off-diagonal: annotated heatmap cell ---
                 pair = (mode_i, mode_j)
@@ -2412,6 +2429,12 @@ def plot_pairwise_envelope_matrix(
             if j == 0 and i != 0:
                 row_label = label_tables.MODE_LABELS.get(mode_i, mode_i) or mode_i
                 ax.set_ylabel(row_label, fontsize=9)
+
+    # Apply shared x-axis limits to all diagonal plots that have data
+    if diag_xlim is not None:
+        for diag_ax in diagonal_axes:
+            if diag_ax.get_visible() and diag_ax.axison:
+                diag_ax.set_xlim(diag_xlim)
 
     # Colorbar
     sm = ScalarMappable(cmap=cmap, norm=norm)

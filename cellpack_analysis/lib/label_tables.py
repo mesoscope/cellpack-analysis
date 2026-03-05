@@ -123,11 +123,11 @@ VARIABLE_SHAPE_MODES = [
 
 # Labels for distance measures
 DISTANCE_MEASURE_LABELS = {
-    "nucleus": "Distance from nucleus",
-    "membrane": "Distance from membrane",
-    "z": "Z distance",
-    "nearest": "Nearest neighbor distance",
-    "pairwise": "Pairwise distance",
+    "nucleus": "Distance from nucleus (µm)",
+    "membrane": "Distance from membrane (µm)",
+    "z": "Z distance (µm)",
+    "nearest": "Nearest neighbor distance (µm)",
+    "pairwise": "Pairwise distance (µm)",
     "scaled_nucleus": "Scaled distance from nucleus",
 }
 
