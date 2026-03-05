@@ -260,15 +260,30 @@ class TestRunPackingWorkflowUnit:
         mock_pack_recipes.assert_called_once()
         assert result == 0
 
+    @patch("cellpack_analysis.packing.run_packing_workflow.pack_recipes")
+    @patch("cellpack_analysis.packing.run_packing_workflow.generate_configs")
+    @patch("cellpack_analysis.packing.run_packing_workflow.generate_recipes")
+    @patch("cellpack_analysis.packing.run_packing_workflow.setup_workflow_logging")
     @patch("cellpack_analysis.packing.run_packing_workflow.WorkflowConfig")
-    def test_run_packing_workflow_config_initialization(self, mock_config_class, temp_config_file):
+    def test_run_packing_workflow_config_initialization(
+        self,
+        mock_config_class,
+        mock_setup_logging,
+        mock_generate_recipes,
+        mock_generate_configs,
+        mock_pack_recipes,
+        temp_config_file,
+        tmp_path,
+    ):
         """Test that WorkflowConfig is properly initialized with the config file path."""
         # Setup
         mock_config = MagicMock()
         mock_config.generate_recipes = False
         mock_config.generate_configs = False
         mock_config.dry_run = True
+        mock_config.output_path = tmp_path / "mock_output"
         mock_config_class.return_value = mock_config
+        mock_pack_recipes.return_value = 0
 
         # Execute
         _run_packing_workflow(temp_config_file)
