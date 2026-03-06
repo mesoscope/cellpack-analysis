@@ -31,6 +31,39 @@ from cellpack_analysis.lib.stats import (
 logger = logging.getLogger(__name__)
 
 
+def get_distance_label(distance_measure: str, normalization: str | None = None) -> str:
+    """
+    Get the label for a distance measure, optionally including normalization.
+
+    Parameters
+    ----------
+    distance_measure
+        The name of the distance measure (e.g. "nucleus", "membrane", "z", etc.)
+    normalization
+        The normalization method applied to the distance measure
+        (e.g. "cell_diameter", "intracellular_radius", "max_distance"),
+        or None if no normalization is applied
+
+    Returns
+    -------
+    :
+        The label for the distance measure, optionally including normalization
+    """
+    if normalization is not None and normalization not in label_tables.NORMALIZATION_LABELS:
+        logger.warning(
+            f"Normalization '{normalization}' not recognized. "
+            f"Available normalizations: {list(label_tables.NORMALIZATION_LABELS.keys())}"
+        )
+
+    distance_label = label_tables.DISTANCE_MEASURE_LABELS.get(distance_measure, distance_measure)
+    if normalization is not None:
+        distance_label = (
+            f"{distance_label} / "
+            f"{label_tables.NORMALIZATION_LABELS.get(normalization, normalization)}"
+        )
+    return distance_label
+
+
 def plot_cell_diameter_distribution(
     mesh_information_dict: dict[Any, dict[str, float]],
 ) -> tuple[Figure, Axes]:
@@ -131,18 +164,8 @@ def plot_distance_distributions_kde(
         if distance_measure not in all_ax_dict:
             all_ax_dict[distance_measure] = {}
 
-        if normalization is not None:
-            unit = ""
-            distance_label = (
-                f"{label_tables.DISTANCE_MEASURE_LABELS[distance_measure]}"
-                f" / {label_tables.NORMALIZATION_LABELS[normalization]}"
-            )
-        elif "scaled" in distance_measure:
-            unit = ""
-            distance_label = label_tables.DISTANCE_MEASURE_LABELS[distance_measure]
-        else:
-            unit = "\u03bcm"
-            distance_label = f"{label_tables.DISTANCE_MEASURE_LABELS[distance_measure]} ({unit})"
+        # Build axis label
+        distance_label = get_distance_label(distance_measure, normalization)
 
         for row, mode in enumerate(packing_modes):
             logger.info(f"Plotting distance distribution for: {distance_measure}, Mode: {mode}")
@@ -249,7 +272,7 @@ def plot_distance_distributions_discrete(
     suffix: str = "",
     normalization: str | None = None,
     distance_limits: dict[str, tuple[float, float]] | None = None,
-    bin_width: float | dict[str, float] = 0.5,
+    bin_width: float | dict[str, float] = 0.2,
     save_format: Literal["svg", "png", "pdf"] = "png",
     minimum_distance: float | None = 0,
     plot_individual_curves: bool = False,
@@ -329,18 +352,7 @@ def plot_distance_distributions_discrete(
             all_ax_dict[distance_measure] = {}
 
         # Build axis label
-        if normalization is not None:
-            unit = ""
-            distance_label = (
-                f"{label_tables.DISTANCE_MEASURE_LABELS[distance_measure]}"
-                f" / {label_tables.NORMALIZATION_LABELS[normalization]}"
-            )
-        elif "scaled" in distance_measure:
-            unit = ""
-            distance_label = label_tables.DISTANCE_MEASURE_LABELS[distance_measure]
-        else:
-            unit = "\u03bcm"
-            distance_label = f"{label_tables.DISTANCE_MEASURE_LABELS[distance_measure]} ({unit})"
+        distance_label = get_distance_label(distance_measure, normalization)
 
         # Resolve per-distance-measure bin width
         measure_bin_width = (
@@ -369,6 +381,7 @@ def plot_distance_distributions_discrete(
             [r_grid - measure_bin_width / 2, [r_grid[-1] + measure_bin_width / 2]]
         )
 
+        y_max = -np.inf  # Track max y-value across modes to set consistent y-limits
         for row, mode in enumerate(packing_modes):
             logger.info(f"Plotting discrete distribution for: {distance_measure}, Mode: {mode}")
 
@@ -429,8 +442,9 @@ def plot_distance_distributions_discrete(
 
             # Set y-limits based on the envelope so individual spikes
             # don't dominate the axis range
-            y_max = hi_env.max() * 1.02
-            ax.set_ylim(0, y_max)
+            y_max = max(
+                y_max, np.nanmax(hi_env) * 1.02
+            )  # Add small margin above max envelope value
 
             # Remove top and right spines
             sns.despine(fig=fig)
@@ -449,6 +463,8 @@ def plot_distance_distributions_discrete(
             # Integer tick locators
             ax.xaxis.set_major_locator(MaxNLocator(3, integer=True))
             ax.yaxis.set_major_locator(MaxNLocator(2, integer=True))
+        for ax in axs[:, col]:
+            ax.set_ylim(0, y_max)
 
     if figures_dir is not None:
         fig.tight_layout()
@@ -842,13 +858,7 @@ def plot_occupancy_illustration(
     ax.set_ylabel("Occupancy ratio")
 
     for ax in axs:
-        distance_label = label_tables.DISTANCE_MEASURE_LABELS[distance_measure]
-        if normalization is not None:
-            distance_label = (
-                f"{distance_label} / {label_tables.NORMALIZATION_LABELS[normalization]}"
-            )
-        elif "scaled" not in distance_measure:
-            distance_label = f"{distance_label} (\u03bcm)"
+        distance_label = get_distance_label(distance_measure, normalization)
         ax.xaxis.set_major_locator(MaxNLocator(4, integer=True))
         ax.set_xlabel(distance_label)
 
@@ -1029,11 +1039,7 @@ def plot_occupancy_ratio(
     if ylim is not None:
         ax.set_ylim((0, ylim))
     ax.axhline(1, linewidth=1, color="gray", linestyle="--", zorder=1)
-    distance_label = label_tables.DISTANCE_MEASURE_LABELS[distance_measure]
-    if normalization is not None:
-        distance_label = f"{distance_label} / {label_tables.NORMALIZATION_LABELS[normalization]}"
-    else:
-        distance_label = f"{distance_label} (\u03bcm)"
+    distance_label = get_distance_label(distance_measure, normalization)
     ax.set_xlabel(distance_label)
     ax.set_ylabel("Occupancy Ratio")
     if not show_legend:
@@ -1457,11 +1463,7 @@ def plot_mean_and_std_occupancy_ratio_kde(
     if ylim is not None:
         ax.set_ylim((0, ylim))
     ax.axhline(1, linewidth=1, color="gray", linestyle="--")
-    distance_label = label_tables.DISTANCE_MEASURE_LABELS[distance_measure]
-    if normalization is not None:
-        distance_label = f"{distance_label} / {label_tables.NORMALIZATION_LABELS[normalization]}"
-    else:
-        distance_label = f"{distance_label} (\u03bcm)"
+    distance_label = get_distance_label(distance_measure, normalization)
     ax.legend(handles=lines)
     ax.set_xlabel(distance_label)
     ylabel = "Occupancy Ratio"
@@ -1628,11 +1630,7 @@ def plot_binned_occupancy_ratio_calc(
         ax.set_ylim((0, ylim))
     ax.axhline(1, linewidth=1, color="gray", linestyle="--", zorder=1)
 
-    distance_label = label_tables.DISTANCE_MEASURE_LABELS[distance_measure]
-    if normalization is not None:
-        distance_label = f"{distance_label} / {label_tables.NORMALIZATION_LABELS[normalization]}"
-    else:
-        distance_label = f"{distance_label} (\u03bcm)"
+    distance_label = get_distance_label(distance_measure, normalization)
     ax.set_xlabel(distance_label)
     ax.set_ylabel("Occupancy Ratio")
     sns.despine(fig=fig)
@@ -1727,11 +1725,7 @@ def plot_binned_occupancy_ratio(
         ax.set_ylim((0, ylim))
     ax.axhline(1, linewidth=1, color="gray", linestyle="--", zorder=1)
 
-    distance_label = label_tables.DISTANCE_MEASURE_LABELS[distance_measure]
-    if normalization is not None:
-        distance_label = f"{distance_label} / {label_tables.NORMALIZATION_LABELS[normalization]}"
-    else:
-        distance_label = f"{distance_label} (\u03bcm)"
+    distance_label = get_distance_label(distance_measure, normalization)
     ax.set_xlabel(distance_label)
     ax.set_ylabel("Occupancy Ratio")
     sns.despine(fig=fig)
@@ -2590,15 +2584,7 @@ def plot_pairwise_emd_matrix(
         mode_hi[mode] = hi
 
     # ── Axis label helper ───────────────────────────────────────────────
-    if normalization is not None:
-        distance_label = (
-            f"{label_tables.DISTANCE_MEASURE_LABELS[distance_measure]}"
-            f" / {label_tables.NORMALIZATION_LABELS[normalization]}"
-        )
-    elif "scaled" in distance_measure:
-        distance_label = label_tables.DISTANCE_MEASURE_LABELS[distance_measure]
-    else:
-        distance_label = f"{label_tables.DISTANCE_MEASURE_LABELS[distance_measure]} (\u03bcm)"
+    distance_label = get_distance_label(distance_measure, normalization)
 
     # ── Shared x-limits for EMD histogram subplots ──────────────────────
     dm_emd = df_emd.query(f"distance_measure == '{distance_measure}'")

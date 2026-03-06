@@ -34,11 +34,22 @@ start_time = time.time()
 # RAB5A: early endosomes
 # SEC61B: ER
 # ST6GAL1: Golgi
-PUNCTATE_STRUCTURE_ID = "RAB5A"  # This is the ID for the packed structure
-CELL_STRUCTURE_ID = "RAB5A"  # This is the ID for the cell shapes used for packing
+PUNCTATE_STRUCTURE_ID = "RAB5A"
+"""This is the ID for the packed structure, it is used as the packing mode for observed data"""
+
+CELL_STRUCTURE_ID = "RAB5A"
+"""This is the ID for the cell shapes used for packing"""
+
 PACKING_ID = "endosome"
+"""This is the ID for the overall packing configuration,
+it is used for naming outputs and folders"""
+
 STRUCTURE_NAME = "endosome"
+"""This is the name of the structure being analyzed, it is used in cellPACK output files"""
+
 OUTPUT_SUBFOLDER = "rules_shape_with_seed"
+"""This is the experimental condition or packing output subfolder to analyze
+(e.g. a specific set of rules or random seed)"""
 # %% [markdown]
 # ### Set packing modes to analyze
 save_format = "pdf"
@@ -143,8 +154,8 @@ all_distance_dict = distance.normalize_distance_dictionary(
 distance_figures_dir = figures_dir / "distance_distributions"
 distance_figures_dir.mkdir(exist_ok=True, parents=True)
 # %% [markdown]
-# ### plot distance distribution kde
-fig, axs = visualization.plot_distance_distributions_kde(
+# ### plot distance distribution discrete
+fig, axs = visualization.plot_distance_distributions_discrete(
     distance_measures=distance_measures,
     packing_modes=packing_modes,
     all_distance_dict=all_distance_dict,
@@ -152,7 +163,7 @@ fig, axs = visualization.plot_distance_distributions_kde(
     suffix=suffix,
     normalization=normalization,
     distance_limits=DISTANCE_LIMITS,
-    bandwidth=0.2,
+    bin_width=0.21,
     save_format=save_format,
 )
 # %% [markdown]
@@ -250,7 +261,7 @@ ks_test_df = distance.get_ks_test_df(
     baseline_mode=baseline_mode,
     significance_level=ks_significance_level,
     save_dir=results_dir,
-    recalculate=False,
+    recalculate=True,
 )
 # %% [markdown]
 # ### Bootstrap KS test
