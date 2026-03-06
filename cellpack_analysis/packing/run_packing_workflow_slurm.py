@@ -115,16 +115,22 @@ logger = logging.getLogger(__name__)
 # Constants
 # ---------------------------------------------------------------------------
 SLURM_DEFAULTS: dict[str, str] = {
-    "partition": "aics_gpu",
+    "partition": "",
     "time": "1:00:00",
     "mem": "16G",
     "cpus_per_task": "4",
     "job_name": "cellpack",
 }
-"""Sensible SLURM defaults - override via CLI flags."""
+"""Sensible SLURM defaults - override via CLI flags.
+
+Partition defaults to empty string, which omits the ``--partition``
+directive so SLURM uses the cluster's default partition."""
 
 POLL_INTERVAL_SECONDS = 30
 """How often the orchestrator checks ``squeue`` for running jobs."""
+
+MAX_ARRAY_SIZE = 10000
+"""SLURM default MaxArraySize — check ``scontrol show config | grep MaxArraySize``."""
 
 
 # ===================================================================
@@ -222,9 +228,12 @@ def _build_sbatch_script(
         f"--result-path {result_path}"
     )
 
+    partition = slurm_opts.get("partition", "")
+    partition_line = f"#SBATCH --partition={partition}" if partition else ""
+
     script = f"""#!/usr/bin/env bash
 #SBATCH --job-name={job_name}
-#SBATCH --partition={slurm_opts.get("partition", SLURM_DEFAULTS["partition"])}
+{partition_line}
 #SBATCH --time={slurm_opts.get("time", SLURM_DEFAULTS["time"])}
 #SBATCH --mem={slurm_opts.get("mem", SLURM_DEFAULTS["mem"])}
 #SBATCH --cpus-per-task={slurm_opts.get("cpus_per_task", SLURM_DEFAULTS["cpus_per_task"])}
@@ -240,6 +249,86 @@ echo "Manifest: {manifest_path}"
 echo "Start: $(date)"
 
 {worker_cmd}
+
+echo "End: $(date)"
+"""
+    return script
+
+
+def _build_array_sbatch_script(
+    manifest_dir: Path,
+    result_dir: Path,
+    log_dir: Path,
+    num_batches: int,
+    max_concurrent: int,
+    slurm_opts: dict[str, str],
+    venv_path: str | None = None,
+) -> str:
+    """
+    Build an ``sbatch`` script for a SLURM **job array**.
+
+    Each array task uses ``$SLURM_ARRAY_TASK_ID`` to locate its manifest
+    and result path.  The ``%max_concurrent`` suffix on the ``--array``
+    directive limits how many tasks run simultaneously, preventing the
+    workflow from monopolising all cluster nodes.
+
+    Parameters
+    ----------
+    manifest_dir
+        Directory containing ``batch_NNNN.json`` manifests.
+    result_dir
+        Directory where workers write ``batch_NNNN_result.json``.
+    log_dir
+        Directory for SLURM stdout/stderr logs.
+    num_batches
+        Total number of array tasks (0 … num_batches-1).
+    max_concurrent
+        Maximum number of array tasks running at the same time.
+        Use ``0`` for no limit.
+    slurm_opts
+        Dictionary of SLURM options (partition, time, mem, …).
+    venv_path
+        Optional path to a virtual-environment activate script.
+    """
+    log_dir.mkdir(parents=True, exist_ok=True)
+    job_name = slurm_opts.get("job_name", "cellpack")
+
+    array_spec = f"0-{num_batches - 1}"
+    if max_concurrent > 0:
+        array_spec += f"%{max_concurrent}"
+
+    activate_cmd = f"source {venv_path}" if venv_path else ""
+    python_exec = sys.executable
+
+    partition = slurm_opts.get("partition", "")
+    partition_line = f"#SBATCH --partition={partition}" if partition else ""
+
+    script = f"""#!/usr/bin/env bash
+#SBATCH --job-name={job_name}
+{partition_line}
+#SBATCH --time={slurm_opts.get("time", SLURM_DEFAULTS["time"])}
+#SBATCH --mem={slurm_opts.get("mem", SLURM_DEFAULTS["mem"])}
+#SBATCH --cpus-per-task={slurm_opts.get("cpus_per_task", SLURM_DEFAULTS["cpus_per_task"])}
+#SBATCH --array={array_spec}
+#SBATCH --output={log_dir / f"{job_name}_%A_%a.out"}
+#SBATCH --error={log_dir / f"{job_name}_%A_%a.err"}
+
+set -euo pipefail
+
+{activate_cmd}
+
+BATCH_ID=$(printf "%04d" $SLURM_ARRAY_TASK_ID)
+MANIFEST="{manifest_dir}/batch_${{BATCH_ID}}.json"
+RESULT="{result_dir}/batch_${{BATCH_ID}}_result.json"
+
+echo "=== SLURM Array Job $SLURM_ARRAY_JOB_ID task $SLURM_ARRAY_TASK_ID on $(hostname) ==="
+echo "Manifest: $MANIFEST"
+echo "Start: $(date)"
+
+{python_exec} -m cellpack_analysis.packing.run_packing_workflow_slurm \\
+    --worker \\
+    --batch-manifest "$MANIFEST" \\
+    --result-path "$RESULT"
 
 echo "End: $(date)"
 """
@@ -390,6 +479,7 @@ def _run_orchestrator(
     venv_path: str | None = None,
     no_wait: bool = False,
     dry_run: bool = False,
+    max_jobs: int = 0,
 ) -> int:
     """
     Prepare recipes and submit batched SLURM jobs.
@@ -409,6 +499,11 @@ def _run_orchestrator(
         waiting for completion.
     dry_run
         If ``True``, write sbatch scripts but do not actually submit them.
+    max_jobs
+        Maximum number of SLURM jobs running concurrently.  When > 0 the
+        orchestrator submits all batches as a single **SLURM job array**
+        with a ``%max_jobs`` throttle (e.g. ``--array=0-152%20``).
+        Set to 0 (the default) for no concurrency limit.
 
     Returns
     -------
@@ -490,7 +585,6 @@ def _run_orchestrator(
         for batch in batches:
             manifest_path = manifest_dir / f"batch_{batch_counter:04d}.json"
             result_path = result_dir / f"batch_{batch_counter:04d}_result.json"
-            script_path = script_dir / f"batch_{batch_counter:04d}.sh"
 
             _write_batch_manifest(
                 manifest_path=manifest_path,
@@ -500,38 +594,90 @@ def _run_orchestrator(
                 workflow_config_path=str(workflow_config_path),
             )
 
+            all_result_paths.append(result_path)
+            total_submitted += len(batch)
+            batch_counter += 1
+
+    logger.info(
+        f"Manifest creation complete: {batch_counter} batches, "
+        f"{total_submitted} recipes queued, {total_skipped} skipped"
+    )
+
+    if batch_counter == 0:
+        logger.info("Nothing to submit.")
+        return 0
+
+    # ---- Submission strategy ----
+    # When --max-jobs is set we use a single SLURM job array with a
+    # %max_concurrent throttle.  Otherwise we submit individual jobs.
+    use_job_array = max_jobs > 0
+
+    if use_job_array:
+        if batch_counter > MAX_ARRAY_SIZE:
+            logger.warning(
+                f"Total batches ({batch_counter}) exceeds SLURM MaxArraySize "
+                f"({MAX_ARRAY_SIZE}).  Increase --batch-size to reduce the "
+                f"number of array tasks, or check `scontrol show config | "
+                f"grep MaxArraySize` if your cluster allows more."
+            )
+
+        array_script = _build_array_sbatch_script(
+            manifest_dir=manifest_dir,
+            result_dir=result_dir,
+            log_dir=slurm_log_dir,
+            num_batches=batch_counter,
+            max_concurrent=max_jobs,
+            slurm_opts=slurm_opts,
+            venv_path=venv_path,
+        )
+        array_script_path = script_dir / "job_array.sh"
+
+        if dry_run:
+            array_script_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(array_script_path, "w") as fh:
+                fh.write(array_script)
+            logger.info(
+                f"[DRY RUN] Would submit job array with {batch_counter} tasks "
+                f"(max {max_jobs} concurrent) — script: {array_script_path}"
+            )
+        else:
+            job_id = _submit_sbatch(array_script, array_script_path)
+            if job_id:
+                all_job_ids.append(job_id)
+                logger.info(
+                    f"Submitted job array {job_id} with {batch_counter} tasks "
+                    f"(max {max_jobs} concurrent)"
+                )
+            else:
+                logger.error("Failed to submit job array")
+    else:
+        # Individual job submission (original behaviour)
+        for idx in range(batch_counter):
+            manifest_path = manifest_dir / f"batch_{idx:04d}.json"
+            result_path = result_dir / f"batch_{idx:04d}_result.json"
+            script_path = script_dir / f"batch_{idx:04d}.sh"
+
             sbatch_script = _build_sbatch_script(
                 manifest_path=manifest_path,
                 result_path=result_path,
                 log_dir=slurm_log_dir,
-                batch_index=batch_counter,
+                batch_index=idx,
                 slurm_opts=slurm_opts,
                 venv_path=venv_path,
             )
 
             if dry_run:
-                # Write the script but don't submit
                 script_path.parent.mkdir(parents=True, exist_ok=True)
                 with open(script_path, "w") as fh:
                     fh.write(sbatch_script)
-                logger.info(
-                    f"[DRY RUN] Would submit batch {batch_counter} "
-                    f"({len(batch)} recipes) — script: {script_path}"
-                )
+                logger.info(f"[DRY RUN] Would submit batch {idx} — script: {script_path}")
             else:
                 job_id = _submit_sbatch(sbatch_script, script_path)
                 if job_id:
                     all_job_ids.append(job_id)
-                    logger.info(
-                        f"Submitted batch {batch_counter} as SLURM job {job_id} "
-                        f"({len(batch)} recipes)"
-                    )
+                    logger.info(f"Submitted batch {idx} as SLURM job {job_id}")
                 else:
-                    logger.error(f"Failed to submit batch {batch_counter}")
-
-            all_result_paths.append(result_path)
-            total_submitted += len(batch)
-            batch_counter += 1
+                    logger.error(f"Failed to submit batch {idx}")
 
     logger.info(
         f"Submission complete: {batch_counter} batches, "
@@ -555,6 +701,7 @@ def _run_orchestrator(
                     "job_ids": all_job_ids,
                     "result_paths": [str(p) for p in all_result_paths],
                     "workflow_config_path": str(workflow_config_path),
+                    "is_job_array": use_job_array,
                 },
                 fh,
                 indent=2,
@@ -790,8 +937,8 @@ Monitoring jobs
     slurm_group.add_argument(
         "--slurm-partition",
         type=str,
-        default=SLURM_DEFAULTS["partition"],
-        help=f"SLURM partition (default: {SLURM_DEFAULTS['partition']}).",
+        default="",
+        help="SLURM partition. Omit to use the cluster default.",
     )
     slurm_group.add_argument(
         "--slurm-time",
@@ -816,6 +963,18 @@ Monitoring jobs
         type=str,
         default=SLURM_DEFAULTS["job_name"],
         help=f"SLURM job name prefix (default: {SLURM_DEFAULTS['job_name']}).",
+    )
+    slurm_group.add_argument(
+        "--max-jobs",
+        type=int,
+        default=0,
+        metavar="N",
+        help=(
+            "Maximum number of worker SLURM jobs running at the same time. "
+            "When set, all batches are submitted as a single SLURM job array "
+            "with a %%N concurrency throttle (e.g. --max-jobs 20 => "
+            "--array=0-152%%20).  Set to 0 (default) for no limit."
+        ),
     )
 
     return parser
@@ -870,6 +1029,7 @@ def main() -> None:
         venv_path=args.venv_path,
         no_wait=args.no_wait,
         dry_run=args.dry_run,
+        max_jobs=args.max_jobs,
     )
 
     logger.info(f"Total time: {format_time(time.time() - start)}")

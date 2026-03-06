@@ -156,6 +156,7 @@ Both entry-points accept a **workflow config JSON** (`-c`).  Key fields:
   -m, --mem            Memory per worker job (default: 16G)
   --cpus               CPUs per worker task (default: 4)
   --job-name           Job name prefix (default: cellpack)
+  --max-jobs N         Max concurrent worker jobs (uses SLURM job arrays)
   --orch-time          Wall-clock limit for orchestrator job (default: 1:00:00)
   --orch-mem           Memory for orchestrator job (default: 16G)
   --orch-partition     Partition for orchestrator job (defaults to --partition)
@@ -180,6 +181,7 @@ SLURM resource options:
   --slurm-mem                  Memory per job (default: 16G)
   --slurm-cpus-per-task        CPUs per job (default: 4)
   --slurm-job-name             Job name prefix (default: cellpack)
+  --max-jobs N                 Max concurrent workers (SLURM job array, default: 0 = unlimited)
 ```
 
 ### Examples
@@ -205,6 +207,10 @@ bash cellpack_analysis/packing/submit_packing_slurm.sh \
 # Dry run — generates scripts but doesn't submit workers
 bash cellpack_analysis/packing/submit_packing_slurm.sh \
     -c data/configs/peroxisome.json --dry-run
+
+# Limit to 20 concurrent worker jobs (uses SLURM job arrays)
+bash cellpack_analysis/packing/submit_packing_slurm.sh \
+    -c data/configs/peroxisome.json --max-jobs 20
 ```
 
 #### Direct Python (orchestrator runs on login node)
@@ -229,9 +235,77 @@ python -m cellpack_analysis.packing.run_packing_workflow_slurm \
 python -m cellpack_analysis.packing.run_packing_workflow_slurm \
     -c data/configs/peroxisome.json --no-wait
 
+# Limit concurrency: max 20 workers at a time (job array)
+python -m cellpack_analysis.packing.run_packing_workflow_slurm \
+    -c data/configs/peroxisome.json --max-jobs 20
+
 # ... after jobs finish ...
 python -m cellpack_analysis.packing.run_packing_workflow_slurm \
     --aggregate path/to/slurm_staging/job_tracking.json
+```
+
+---
+
+## Limiting resource usage
+
+By default, the orchestrator submits all batches at once, which can
+saturate the cluster. Use `--max-jobs N` to cap how many worker jobs run
+concurrently.
+
+Under the hood this uses a **SLURM job array** with a `%N` throttle
+(e.g. `--array=0-152%20`). SLURM manages the queue natively — as soon as
+one task finishes, the next starts — so there is no wasted idle time
+between waves.
+
+### Quick examples
+
+```bash
+# Bash launcher: at most 20 workers at a time
+bash cellpack_analysis/packing/submit_packing_slurm.sh \
+    -c data/configs/peroxisome.json --max-jobs 20
+
+# Python CLI: same thing
+python -m cellpack_analysis.packing.run_packing_workflow_slurm \
+    -c data/configs/peroxisome.json --max-jobs 20
+```
+
+### Choosing a good value
+
+| Scenario | Suggested `--max-jobs` |
+|---|---|
+| Large run, shared cluster | 10–30 (leaves nodes for others) |
+| Off-hours / dedicated partition | 50–100 or omit (no limit) |
+| Quick test (few recipes) | Omit (no limit needed) |
+
+A good rule of thumb: check `sinfo -p <partition>` to see how many nodes
+are in the partition and pick a `--max-jobs` that uses roughly half of them.
+
+### How it works
+
+Without `--max-jobs`, the orchestrator submits each batch as an independent
+`sbatch` call — all jobs enter the SLURM queue immediately and compete for
+resources.
+
+With `--max-jobs N`, a single SLURM job array is submitted instead:
+
+```
+sbatch --array=0-152%20 job_array.sh   # 153 tasks, max 20 at a time
+```
+
+Each array task reads its batch manifest via `$SLURM_ARRAY_TASK_ID`.
+Benefits:
+
+- **Single job ID** — `scancel <array_job_id>` cancels everything
+- **Native throttling** — SLURM enforces the concurrency cap
+- **No idle gaps** — the next task starts as soon as a slot opens
+
+### Other SLURM-level controls
+
+Your SLURM administrator may also enforce limits via **QOS** policies
+(e.g. `MaxSubmitJobsPerUser`). Check with:
+
+```bash
+sacctmgr show qos format=Name,MaxSubmitJobsPerUser,MaxJobsPerUser
 ```
 
 ---

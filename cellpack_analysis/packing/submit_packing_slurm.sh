@@ -29,6 +29,7 @@
 #   --orch-time        Wall-clock limit for orchestrator job (default: 1:00:00)
 #   --orch-mem         Memory for orchestrator job (default: 16G)
 #   --orch-partition   Partition for orchestrator job (defaults to --partition)
+#   --max-jobs         Max concurrent worker jobs (uses SLURM job arrays)
 #   --dry-run          Pass --dry-run to orchestrator (no workers submitted)
 #   -h, --help         Show this help message
 #
@@ -47,6 +48,11 @@
 #       -c configs/peroxisome.json \
 #       -p my_partition -t 24:00:00 -m 32G
 #
+#   # Limit to max 20 concurrent worker jobs
+#   bash submit_packing_slurm.sh \
+#       -c configs/peroxisome.json \
+#       --max-jobs 20
+#
 # Monitoring:
 #   squeue -u $USER                     # list your jobs
 #   squeue -u $USER --name=cellpack     # filter by job name
@@ -60,17 +66,19 @@ set -euo pipefail
 
 # ----------------------------  defaults  ------------------------------------
 BATCH_SIZE=8
-PARTITION="aics_gpu"
+PARTITION=""
 TIME="1:00:00"
 MEM="16G"
 CPUS="4"
 JOB_NAME="cellpack"
 ORCH_TIME="1:00:00"
+ORCH_CPUS="4"
 ORCH_MEM="16G"
 ORCH_PARTITION=""
 CONFIG=""
 VENV=""
 DRY_RUN=""
+MAX_JOBS=0
 
 # ----------------------------  parse args  ----------------------------------
 usage() {
@@ -91,6 +99,8 @@ while [[ $# -gt 0 ]]; do
         --orch-time)       ORCH_TIME="$2";     shift 2 ;;
         --orch-mem)        ORCH_MEM="$2";      shift 2 ;;
         --orch-partition)  ORCH_PARTITION="$2"; shift 2 ;;
+        --orch-cpus)       ORCH_CPUS="$2";     shift 2 ;;
+        --max-jobs)        MAX_JOBS="$2";       shift 2 ;;
         --dry-run)         DRY_RUN="--dry-run"; shift ;;
         -h|--help)         usage 0 ;;
         *)                 echo "Unknown option: $1" >&2; usage 1 ;;
@@ -126,6 +136,7 @@ fi
 
 # Default orchestrator partition to the worker partition
 ORCH_PARTITION="${ORCH_PARTITION:-$PARTITION}"
+ORCH_CPUS="${ORCH_CPUS:-$CPUS}"
 
 # ----------------------------  detect python  -------------------------------
 # We need the python path inside the venv for the sbatch scripts.
@@ -147,17 +158,20 @@ if [[ -n "$VENV" ]]; then
 fi
 
 SLURM_ARGS=(
-    "--slurm-partition" "$PARTITION"
     "--slurm-time"      "$TIME"
     "--slurm-mem"       "$MEM"
     "--slurm-cpus-per-task" "$CPUS"
     "--slurm-job-name"  "$JOB_NAME"
 )
+if [[ -n "$PARTITION" ]]; then
+    SLURM_ARGS+=("--slurm-partition" "$PARTITION")
+fi
 
 ORCHESTRATOR_CMD="${PYTHON_EXEC} -m cellpack_analysis.packing.run_packing_workflow_slurm \
     --orchestrate \
     -c ${CONFIG} \
     -b ${BATCH_SIZE} \
+    --max-jobs ${MAX_JOBS} \
     --no-wait \
     ${DRY_RUN} \
     $(printf '%s ' "${SLURM_ARGS[@]}")"
@@ -169,13 +183,19 @@ fi
 
 # ----------------------------  submit orchestrator  -------------------------
 ORCH_SCRIPT=$(mktemp /tmp/cellpack_orch_XXXXXX.sh)
+# Build the partition directive only if a partition was specified
+ORCH_PARTITION_LINE=""
+if [[ -n "$ORCH_PARTITION" ]]; then
+    ORCH_PARTITION_LINE="#SBATCH --partition=${ORCH_PARTITION}"
+fi
+
 cat > "$ORCH_SCRIPT" <<SBATCH_EOF
 #!/usr/bin/env bash
 #SBATCH --job-name=${JOB_NAME}_orch
-#SBATCH --partition=${ORCH_PARTITION}
+${ORCH_PARTITION_LINE}
 #SBATCH --time=${ORCH_TIME}
 #SBATCH --mem=${ORCH_MEM}
-#SBATCH --cpus-per-task=2
+#SBATCH --cpus-per-task=${ORCH_CPUS}
 #SBATCH --output=/dev/null
 #SBATCH --error=/dev/null
 
@@ -200,11 +220,15 @@ chmod 755 "$ORCH_SCRIPT"
 echo "=== cellPACK SLURM Launcher ==="
 echo "Config:          $CONFIG"
 echo "Batch size:      $BATCH_SIZE"
-echo "Partition:       $PARTITION"
+echo "Partition:       ${PARTITION:-<cluster default>}"
 echo "Worker time:     $TIME"
 echo "Worker mem:      $MEM"
-echo "Orch partition:  $ORCH_PARTITION"
+echo "Orch partition:  ${ORCH_PARTITION:-<cluster default>}"
 echo "Orch time:       $ORCH_TIME"
+echo "Orch mem:        $ORCH_MEM"
+echo "Orch cpus:       $ORCH_CPUS"
+echo "Max jobs:        ${MAX_JOBS:-0 (unlimited)}"
+echo "Job name:        $JOB_NAME"
 echo "Venv:            ${VENV:-<none>}"
 echo ""
 
