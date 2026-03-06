@@ -1,20 +1,40 @@
 """
 SLURM-based workflow to generate simulated packed structures using cellPACK.
 
-This module provides two modes of operation:
+This module provides four modes of operation:
 
 1. **Orchestrator mode** (default): Reads the workflow configuration, generates
    recipes/configs if needed, partitions recipes into batches, and submits each
    batch as a SLURM job via ``sbatch``. It then monitors the jobs and aggregates
-   results into a single summary file.
+   results into a single summary file.  This mode runs Python on **whichever
+   node you invoke it from** (login or compute).
 
-2. **Worker mode** (``--worker``): Executed inside each SLURM job. Receives a
+2. **Orchestrate mode** (``--orchestrate``): Identical to orchestrator mode,
+   but intended to be called **inside** a SLURM job — typically by
+   ``submit_packing_slurm.sh``.  This keeps all heavy Python work off the
+   login node.
+
+3. **Worker mode** (``--worker``): Executed inside each SLURM job. Receives a
    batch manifest (JSON) and runs the packings sequentially or in parallel within
    that job.
 
-Usage
------
-Submit from a login/head node::
+4. **Aggregate mode** (``--aggregate``): Re-collects results from a previous
+   ``--no-wait`` submission.
+
+Recommended usage (zero compute on the login node)
+---------------------------------------------------
+Use the bash launcher which only runs ``sbatch`` on the login node::
+
+    bash cellpack_analysis/packing/submit_packing_slurm.sh \\
+        -c path/to/workflow_config.json \\
+        -b 8
+
+This submits an orchestrator SLURM job that generates configs/recipes and
+fans out worker batch jobs — all on compute nodes.
+
+Direct usage (runs Python on the login node)
+---------------------------------------------
+::
 
     python -m cellpack_analysis.packing.run_packing_workflow_slurm \\
         -c path/to/workflow_config.json \\
@@ -25,6 +45,40 @@ The ``--batch-size`` flag controls how many recipes are packed per SLURM job
 
 SLURM resource defaults can be overridden with ``--slurm-*`` flags (see
 ``--help``).
+
+Monitoring running jobs
+-----------------------
+Once jobs are submitted you can monitor them with standard SLURM commands:
+
+**Check cluster/partition availability**::
+
+    sinfo                              # overview of all partitions and node states
+    sinfo -p <partition> -N -l         # detailed per-node info for a specific partition
+
+**List your running and pending jobs**::
+
+    squeue -u $USER                    # all your jobs
+    squeue -u $USER -t RUNNING         # only running jobs
+    squeue -u $USER -t PENDING         # only pending (queued) jobs
+    squeue -u $USER --name=cellpack    # filter by job name prefix
+
+**Detailed info on a specific job**::
+
+    scontrol show job <JOBID>          # full job details (state, node, time, memory)
+
+**Cancel jobs**::
+
+    scancel <JOBID>                    # cancel a single job
+    scancel -u $USER --name=cellpack   # cancel all cellpack jobs
+
+**Review completed jobs (accounting)**::
+
+    sacct -j <JOBID> --format=JobID,JobName,State,Elapsed,MaxRSS,ExitCode
+    sacct -u $USER --starttime=today --format=JobID,JobName,State,Elapsed
+
+**Tail live SLURM log output** (paths are printed at submission time)::
+
+    tail -f <output_path>/logs/slurm/cellpack_batch0000_<JOBID>.out
 """
 
 import argparse
@@ -61,9 +115,9 @@ logger = logging.getLogger(__name__)
 # Constants
 # ---------------------------------------------------------------------------
 SLURM_DEFAULTS: dict[str, str] = {
-    "partition": "aics_gpu_general",
-    "time": "12:00:00",
-    "mem": "32G",
+    "partition": "aics_gpu",
+    "time": "1:00:00",
+    "mem": "16G",
     "cpus_per_task": "4",
     "job_name": "cellpack",
 }
@@ -621,7 +675,10 @@ def _build_parser() -> argparse.ArgumentParser:
         epilog="""
 Examples
 --------
-# Submit all recipes in batches of 8:
+# Recommended: zero compute on login node (bash launcher)
+  bash cellpack_analysis/packing/submit_packing_slurm.sh -c config.json -b 8
+
+# Direct: submit all recipes in batches of 8 (runs Python on login node)
   python -m cellpack_analysis.packing.run_packing_workflow_slurm -c config.json
 
 # Dry run (writes scripts but does not submit):
@@ -636,6 +693,16 @@ Examples
   # ... later ...
   python -m cellpack_analysis.packing.run_packing_workflow_slurm \\
       --aggregate path/to/slurm_staging/job_tracking.json
+
+Monitoring jobs
+---------------
+  sinfo                               # partition & node availability
+  squeue -u $USER                     # your running/pending jobs
+  squeue -u $USER --name=cellpack     # filter by job name prefix
+  scontrol show job <JOBID>           # detailed info for one job
+  sacct -j <JOBID> --format=JobID,JobName,State,Elapsed,MaxRSS,ExitCode
+  scancel <JOBID>                     # cancel a single job
+  tail -f <output_path>/logs/slurm/cellpack_batch0000_<JOBID>.out
 """,
     )
 
@@ -645,6 +712,15 @@ Examples
         "--worker",
         action="store_true",
         help="Run in worker mode (used internally by SLURM jobs).",
+    )
+    mode_group.add_argument(
+        "--orchestrate",
+        action="store_true",
+        help=(
+            "Run the orchestrator inside a SLURM job (used by "
+            "submit_packing_slurm.sh). Generates configs/recipes on the "
+            "compute node, then submits worker batch jobs."
+        ),
     )
     mode_group.add_argument(
         "--aggregate",
@@ -771,6 +847,10 @@ def main() -> None:
     if args.aggregate:
         total_failed = aggregate_from_tracking(Path(args.aggregate))
         sys.exit(1 if total_failed else 0)
+
+    # ---------- Orchestrate mode (inside SLURM) ----------
+    # Identical to default orchestrator; the flag exists so the bash
+    # launcher can be explicit about intent.
 
     # ---------- Orchestrator mode ----------
     start = time.time()
