@@ -344,10 +344,7 @@ def generate_recipes(workflow_config: Any) -> None:
 
     recipe_data = workflow_config.data.get("recipe_data", {})
 
-    if hasattr(workflow_config, "num_processes"):
-        num_processes = min(1, workflow_config.num_processes)
-    else:
-        num_processes = 1
+    num_processes = max(1, getattr(workflow_config, "num_processes", 1))
 
     recipe_template = read_json(workflow_config.recipe_template_path)
 

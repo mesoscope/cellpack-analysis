@@ -56,8 +56,7 @@
             "random",
             "nucleus_gradient",
             "membrane_gradient",
-            "apical_gradient",
-            "uniform"
+            "apical_gradient"
         ]
     }
 }

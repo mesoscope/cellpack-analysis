@@ -15,8 +15,8 @@ This module provides four modes of operation:
    login node.
 
 3. **Worker mode** (``--worker``): Executed inside each SLURM job. Receives a
-   batch manifest (JSON) and runs the packings sequentially or in parallel within
-   that job.
+   batch manifest (JSON) and runs the packings in parallel using
+   ``ProcessPoolExecutor``, with concurrency set by ``--slurm-cpus-per-task``.
 
 4. **Aggregate mode** (``--aggregate``): Re-collects results from a previous
    ``--no-wait`` submission.
@@ -82,6 +82,7 @@ Once jobs are submitted you can monitor them with standard SLURM commands:
 """
 
 import argparse
+import concurrent.futures
 import json
 import logging
 import os
@@ -116,8 +117,8 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 SLURM_DEFAULTS: dict[str, str] = {
     "partition": "",
-    "time": "1:00:00",
-    "mem": "16G",
+    "time": "00:30:00",
+    "mem": "8G",
     "cpus_per_task": "4",
     "job_name": "cellpack",
 }
@@ -149,6 +150,7 @@ def _write_batch_manifest(
     config_path: str,
     recipe_paths: list[str | Path],
     workflow_config_path: str | Path,
+    num_processes: int = 1,
 ) -> None:
     """Write a JSON manifest consumed by the worker."""
     data = {
@@ -156,6 +158,7 @@ def _write_batch_manifest(
         "config_path": str(config_path),
         "recipe_paths": [str(p) for p in recipe_paths],
         "workflow_config_path": str(workflow_config_path),
+        "num_processes": num_processes,
     }
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     with open(manifest_path, "w") as fh:
@@ -403,7 +406,9 @@ def _run_worker(manifest_path: Path, result_path: Path) -> None:
     Execute packings described in the batch manifest.
 
     This function is called inside each SLURM job. It reads the manifest,
-    runs each recipe packing, and writes a summary JSON.
+    pre-filters already-completed recipes, then runs the remaining packings
+    in parallel using ``ProcessPoolExecutor`` with ``num_processes`` workers
+    (sourced from the manifest, which is set to ``--slurm-cpus-per-task``).
     """
     with open(manifest_path) as fh:
         manifest = json.load(fh)
@@ -412,6 +417,9 @@ def _run_worker(manifest_path: Path, result_path: Path) -> None:
     config_path = manifest["config_path"]
     recipe_paths = manifest["recipe_paths"]
     workflow_config_path = manifest.get("workflow_config_path")
+    # Prefer the value embedded in the manifest; fall back to the SLURM env
+    # var set by the scheduler, then 1.
+    num_processes = int(manifest.get("num_processes", os.environ.get("SLURM_CPUS_PER_TASK", 1)))
 
     # Load the workflow config so we can check for completed recipes
     workflow_config: WorkflowConfig | None = None
@@ -421,15 +429,17 @@ def _run_worker(manifest_path: Path, result_path: Path) -> None:
     config_data = read_json(config_path)
 
     logger.info(
-        f"Worker starting: rule={rule}, {len(recipe_paths)} recipes, " f"config={config_path}"
+        f"Worker starting: rule={rule}, {len(recipe_paths)} recipes, "
+        f"config={config_path}, num_processes={num_processes}"
     )
 
     succeeded: list[str] = []
     failed: list[str] = []
     skipped: list[str] = []
 
+    # Pre-filter completed recipes sequentially before parallelising
+    recipes_to_pack: list[str] = []
     for recipe_path in recipe_paths:
-        # Skip completed recipes if applicable
         if (
             workflow_config is not None
             and workflow_config.skip_completed
@@ -437,15 +447,28 @@ def _run_worker(manifest_path: Path, result_path: Path) -> None:
         ):
             skipped.append(str(recipe_path))
             logger.info(f"Skipping completed recipe: {recipe_path}")
-            continue
-
-        ok = run_single_packing(recipe_path, config_path)
-        if ok:
-            succeeded.append(str(recipe_path))
-            logger.info(f"Packing succeeded: {recipe_path}")
         else:
-            failed.append(str(recipe_path))
-            logger.error(f"Packing failed: {recipe_path}")
+            recipes_to_pack.append(str(recipe_path))
+
+    # Run packings in parallel
+    with concurrent.futures.ProcessPoolExecutor(max_workers=num_processes) as executor:
+        future_to_recipe = {
+            executor.submit(run_single_packing, recipe_path, config_path): recipe_path
+            for recipe_path in recipes_to_pack
+        }
+        for future in concurrent.futures.as_completed(future_to_recipe):
+            recipe_path = future_to_recipe[future]
+            try:
+                ok = future.result()
+            except Exception as exc:
+                logger.error(f"Packing raised an exception for {recipe_path}: {exc}")
+                ok = False
+            if ok:
+                succeeded.append(str(recipe_path))
+                logger.info(f"Packing succeeded: {recipe_path}")
+            else:
+                failed.append(str(recipe_path))
+                logger.error(f"Packing failed: {recipe_path}")
 
     summary = {
         "rule": rule,
@@ -592,6 +615,7 @@ def _run_orchestrator(
                 config_path=config_path,
                 recipe_paths=batch,
                 workflow_config_path=str(workflow_config_path),
+                num_processes=int(slurm_opts.get("cpus_per_task", SLURM_DEFAULTS["cpus_per_task"])),
             )
 
             all_result_paths.append(result_path)

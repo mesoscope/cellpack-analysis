@@ -68,7 +68,7 @@ set -euo pipefail
 BATCH_SIZE=8
 PARTITION=""
 TIME="1:00:00"
-MEM="16G"
+MEM="8G"
 CPUS="4"
 JOB_NAME="cellpack"
 ORCH_TIME="1:00:00"
