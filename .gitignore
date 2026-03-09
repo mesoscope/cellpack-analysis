@@ -182,3 +182,7 @@ pyrightconfig.json
 
 # MacOS
 *.DS_Store
+
+# outputs and logs
+*.out
+*.err
