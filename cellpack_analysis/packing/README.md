@@ -82,6 +82,22 @@ Both entry-points accept a **workflow config JSON** (`-c`).  Key fields:
 | `num_processes` | `1` | Local parallelism (used by `run_packing_workflow.py`) |
 | `number_of_replicates` | `1` | Seeds / replicates per recipe |
 | `result_type` | `"simularium"` | Output format (`"simularium"` or `"image"`) |
+| `use_mean_cell` | `false` | Use mean cell instead of individual cells |
+| `use_cells_in_8d_sphere` | `false` | Restrict to cells within 8D PCA sphere |
+| `num_cells` | *all* | Limit total number of cells to process |
+| `use_additional_struct` | `false` | Include additional structure (e.g. ER, Golgi) |
+| `gradient_structure_name` | *none* | Structure to apply gradient packing to |
+| `get_counts_from_data` | `false` | Derive molecule counts from experimental data |
+| `get_size_from_data` | `false` | Derive molecule sizes from experimental data |
+| `get_bounding_box_from_mesh` | `false` | Derive bounding box from mesh file |
+| `datadir` | `data/` | Root data directory (absolute or project-relative) |
+| `output_path` | *derived* | Override packing output directory |
+| `recipe_template_path` | *derived* | Path to recipe template JSON |
+| `config_template_path` | *derived* | Path to cellPACK config template JSON |
+| `generated_recipe_path` | *derived* | Output directory for generated recipe JSONs |
+| `generated_config_path` | *derived* | Output directory for generated config JSONs |
+| `grid_path` | *derived* | Path or URL to grid files |
+| `mesh_path` | *derived* | Path or URL to mesh files |
 | `packings_to_run.rules` | `[]` | List of rule names to pack |
 | `packings_to_run.cell_ids` | *all* | Subset of cell IDs (omit to use all) |
 | `packings_to_run.number_of_packings` | *all* | Cap on number of packings |
@@ -141,9 +157,9 @@ Both entry-points accept a **workflow config JSON** (`-c`).  Key fields:
    then submits with `sbatch`.
 3. Each SLURM job runs the same module in **worker mode** (`--worker`),
    reads its manifest, and calls `run_single_packing()` for each recipe.
-4. Workers write per-batch result JSONs to `<output_path>/slurm_staging/results/`.
+4. Workers write per-batch result JSONs to `<output_path>/slurm_staging/<packing_id>/results/`.
 5. The orchestrator polls `squeue` until all jobs finish (or use `--no-wait`),
-   then aggregates all result JSONs into `slurm_staging/aggregated_results.json`.
+   then aggregates all result JSONs into `slurm_staging/<packing_id>/aggregated_results.json`.
 
 ### Bash launcher flags (`submit_packing_slurm.sh`)
 
@@ -151,14 +167,15 @@ Both entry-points accept a **workflow config JSON** (`-c`).  Key fields:
   -c, --config         Path to the workflow config JSON (required)
   -b, --batch-size     Recipes per worker SLURM job (default: 8)
   -v, --venv           Path to virtualenv activate script (auto-detected)
-  -p, --partition      SLURM partition (default: aics_gpu)
-  -t, --time           Wall-clock limit for worker jobs (default: 1:00:00)
+  -p, --partition      SLURM partition (default: cluster default)
+  -t, --time           Wall-clock limit for worker jobs (default: 00:30:00)
   -m, --mem            Memory per worker job (default: 16G)
   --cpus               CPUs per worker task (default: 4)
   --job-name           Job name prefix (default: cellpack)
   --max-jobs N         Max concurrent worker jobs (uses SLURM job arrays)
-  --orch-time          Wall-clock limit for orchestrator job (default: 1:00:00)
+  --orch-time          Wall-clock limit for orchestrator job (default: 1-00:00:00)
   --orch-mem           Memory for orchestrator job (default: 16G)
+  --orch-cpus          CPUs for orchestrator job (default: same as --cpus)
   --orch-partition     Partition for orchestrator job (defaults to --partition)
   --dry-run            Write scripts but don't submit workers
 ```
@@ -172,12 +189,13 @@ Orchestrator options:
   --orchestrate                Run orchestrator inside a SLURM job
   --dry-run                    Write sbatch scripts without submitting
   --no-wait                    Submit and exit; aggregate later with --aggregate
+  --aggregate TRACKING_FILE    Re-aggregate results from a previous --no-wait run
   --venv-path                  Path to virtualenv activate script
   -v, --verbose                Debug logging on the console
 
 SLURM resource options:
-  --slurm-partition            Partition name (default: aics_gpu)
-  --slurm-time                 Wall-clock limit (default: 1:00:00)
+  --slurm-partition            Partition name (default: cluster default)
+  --slurm-time                 Wall-clock limit (default: 00:30:00)
   --slurm-mem                  Memory per job (default: 16G)
   --slurm-cpus-per-task        CPUs per job (default: 4)
   --slurm-job-name             Job name prefix (default: cellpack)
@@ -395,12 +413,12 @@ grep -i "error\|failed\|exception" <output_path>/logs/slurm/*.err
 ### Aggregated results
 
 After all jobs complete, the orchestrator writes
-`<output_path>/slurm_staging/aggregated_results.json` with per-rule
+`<output_path>/slurm_staging/<packing_id>/aggregated_results.json` with per-rule
 success/failure/skip counts and the list of failed recipe paths.
 
 ```bash
 # Pretty-print the summary
-python -m json.tool <output_path>/slurm_staging/aggregated_results.json
+python -m json.tool <output_path>/slurm_staging/<packing_id>/aggregated_results.json
 ```
 
 ---
@@ -427,9 +445,10 @@ a `slurm_staging/` directory for its own bookkeeping:
 │       ├── cellpack_batch0000_<JOBID>.out
 │       └── cellpack_batch0000_<JOBID>.err
 └── slurm_staging/
-    ├── manifests/             # per-batch recipe lists
-    ├── scripts/               # generated sbatch scripts
-    ├── results/               # per-batch worker result JSONs
-    ├── job_tracking.json      # (only with --no-wait)
-    └── aggregated_results.json
+    └── <packing_id>/            # per-packing-id staging area
+        ├── manifests/             # per-batch recipe lists
+        ├── scripts/               # generated sbatch scripts
+        ├── results/               # per-batch worker result JSONs
+        ├── job_tracking.json      # (only with --no-wait)
+        └── aggregated_results.json
 ```

@@ -41,7 +41,7 @@ Direct usage (runs Python on the login node)
         --batch-size 8
 
 The ``--batch-size`` flag controls how many recipes are packed per SLURM job
-(default: 8, valid range: 1-64).
+(default: 8).
 
 SLURM resource defaults can be overridden with ``--slurm-*`` flags (see
 ``--help``).
@@ -78,6 +78,21 @@ Once jobs are submitted you can monitor them with standard SLURM commands:
 
 **Tail live SLURM log output** (paths are printed at submission time)::
 
+    tail -f <output_path>/logs/slurm/cellpack_batch0000_<JOBID>.out
+
+Diagnosing failures
+-------------------
+After a run completes, ``slurm_staging/aggregated_results.json`` records each
+failed recipe alongside the SLURM job ID that ran it.  Use that ID to
+investigate what went wrong::
+
+    # Full details for a running or recently-finished job
+    scontrol show job <JOBID>
+
+    # Accounting info (exit code, elapsed time, peak memory) for completed jobs
+    sacct -j <JOBID> --format=JobID,JobName,State,Elapsed,MaxRSS,ExitCode
+
+    # Tail the log that corresponds to the failed batch
     tail -f <output_path>/logs/slurm/cellpack_batch0000_<JOBID>.out
 """
 
@@ -118,7 +133,7 @@ logger = logging.getLogger(__name__)
 SLURM_DEFAULTS: dict[str, str] = {
     "partition": "",
     "time": "00:30:00",
-    "mem": "8G",
+    "mem": "16G",
     "cpus_per_task": "4",
     "job_name": "cellpack",
 }
@@ -365,14 +380,25 @@ def _submit_sbatch(script_content: str, script_path: Path) -> str | None:
 
 
 def _get_running_job_ids(job_ids: list[str]) -> list[str]:
-    """Return the subset of *job_ids* that are still in the SLURM queue."""
+    """Return the subset of *job_ids* that are still in the SLURM queue.
+
+    For SLURM job arrays, ``squeue -o %i`` reports individual task IDs as
+    ``JOBID_TASKID`` rather than the plain ``JOBID`` that was returned by
+    ``sbatch``.  We strip the ``_<taskid>`` suffix so that array jobs are
+    matched correctly against the submitted job ID.
+    """
     try:
         result = subprocess.run(
             ["squeue", "--noheader", "-o", "%i", "--jobs", ",".join(job_ids)],
             capture_output=True,
             text=True,
         )
-        active = {line.strip() for line in result.stdout.strip().splitlines() if line.strip()}
+        # Normalise array-task IDs ("12345_7") to bare job IDs ("12345").
+        active = {
+            line.strip().split("_")[0]
+            for line in result.stdout.strip().splitlines()
+            if line.strip()
+        }
         return [jid for jid in job_ids if jid in active]
     except Exception:
         # If squeue fails (e.g. all jobs already finished), treat as empty
@@ -470,8 +496,11 @@ def _run_worker(manifest_path: Path, result_path: Path) -> None:
                 failed.append(str(recipe_path))
                 logger.error(f"Packing failed: {recipe_path}")
 
+    slurm_job_id = os.environ.get("SLURM_JOB_ID", "unknown")
+
     summary = {
         "rule": rule,
+        "slurm_job_id": slurm_job_id,
         "succeeded": succeeded,
         "failed": failed,
         "skipped": skipped,
@@ -502,7 +531,7 @@ def _run_orchestrator(
     venv_path: str | None = None,
     no_wait: bool = False,
     dry_run: bool = False,
-    max_jobs: int = 0,
+    max_jobs: int = 8,
 ) -> int:
     """
     Prepare recipes and submit batched SLURM jobs.
@@ -563,7 +592,7 @@ def _run_orchestrator(
     input_file_dict = get_input_file_dictionary(workflow_config)
 
     # Directories for batch manifests, sbatch scripts, and worker results
-    staging_dir = workflow_config.output_path / "slurm_staging"
+    staging_dir = workflow_config.output_path / "slurm_staging" / workflow_config.packing_id
     manifest_dir = staging_dir / "manifests"
     script_dir = staging_dir / "scripts"
     result_dir = staging_dir / "results"
@@ -761,7 +790,7 @@ def _aggregate_results(
     :
         Total number of failed packings across all batches.
     """
-    aggregated: dict[str, dict[str, list[str]]] = {}
+    aggregated: dict[str, dict[str, Any]] = {}
     total_succeeded = total_failed = total_skipped = 0
     missing_results: list[str] = []
 
@@ -773,10 +802,13 @@ def _aggregate_results(
             continue
 
         rule = data.get("rule", "unknown")
+        job_id = data.get("slurm_job_id", "unknown")
         if rule not in aggregated:
-            aggregated[rule] = {"succeeded": [], "failed": [], "skipped": []}
+            aggregated[rule] = {"succeeded": [], "failed": [], "skipped": [], "failed_job_ids": {}}
         aggregated[rule]["succeeded"].extend(data.get("succeeded", []))
-        aggregated[rule]["failed"].extend(data.get("failed", []))
+        for recipe in data.get("failed", []):
+            aggregated[rule]["failed"].append(recipe)
+            aggregated[rule]["failed_job_ids"][recipe] = job_id
         aggregated[rule]["skipped"].extend(data.get("skipped", []))
 
         total_succeeded += len(data.get("succeeded", []))
@@ -793,7 +825,12 @@ def _aggregate_results(
                 "succeeded": len(info["succeeded"]),
                 "failed": len(info["failed"]),
                 "skipped": len(info["skipped"]),
-                "failed_recipes": info["failed"],
+                "failed_recipes": {
+                    jid: [
+                        r for r in info["failed"] if info["failed_job_ids"].get(r, "unknown") == jid
+                    ]
+                    for jid in {info["failed_job_ids"].get(r, "unknown") for r in info["failed"]}
+                },
             }
             for rule, info in aggregated.items()
         },

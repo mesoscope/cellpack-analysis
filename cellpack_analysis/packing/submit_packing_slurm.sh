@@ -21,13 +21,14 @@
 #   -b, --batch-size   Recipes per worker SLURM job (default: 8)
 #   -v, --venv         Path to virtualenv activate script (auto-detected
 #                      from VIRTUAL_ENV if omitted)
-#   -p, --partition    SLURM partition (default: aics_gpu)
-#   -t, --time         Wall-clock limit for worker jobs (default: 1:00:00)
+#   -p, --partition    SLURM partition (default: cluster default)
+#   -t, --time         Wall-clock limit for worker jobs (default: 00:30:00)
 #   -m, --mem          Memory per worker job (default: 16G)
 #   --cpus             CPUs per worker task (default: 4)
 #   --job-name         SLURM job name prefix (default: cellpack)
-#   --orch-time        Wall-clock limit for orchestrator job (default: 1:00:00)
+#   --orch-time        Wall-clock limit for orchestrator job (default: 1-00:00:00)
 #   --orch-mem         Memory for orchestrator job (default: 16G)
+#   --orch-cpus        CPUs for orchestrator job (default: same as --cpus)
 #   --orch-partition   Partition for orchestrator job (defaults to --partition)
 #   --max-jobs         Max concurrent worker jobs (uses SLURM job arrays)
 #   --dry-run          Pass --dry-run to orchestrator (no workers submitted)
@@ -67,11 +68,11 @@ set -euo pipefail
 # ----------------------------  defaults  ------------------------------------
 BATCH_SIZE=8
 PARTITION=""
-TIME="1:00:00"
-MEM="8G"
+TIME="00:30:00"
+MEM="16G"
 CPUS="4"
 JOB_NAME="cellpack"
-ORCH_TIME="1:00:00"
+ORCH_TIME="1-00:00:00"
 ORCH_CPUS="4"
 ORCH_MEM="16G"
 ORCH_PARTITION=""
@@ -172,7 +173,6 @@ ORCHESTRATOR_CMD="${PYTHON_EXEC} -m cellpack_analysis.packing.run_packing_workfl
     -c ${CONFIG} \
     -b ${BATCH_SIZE} \
     --max-jobs ${MAX_JOBS} \
-    --no-wait \
     ${DRY_RUN} \
     $(printf '%s ' "${SLURM_ARGS[@]}")"
 
@@ -189,6 +189,12 @@ if [[ -n "$ORCH_PARTITION" ]]; then
     ORCH_PARTITION_LINE="#SBATCH --partition=${ORCH_PARTITION}"
 fi
 
+# Save orchestrator SLURM logs next to the config file so they are easy to find.
+# The Python-level log ends up in <output_path>/logs/ once the workflow config
+# is parsed, but that path is not known at bash submission time.
+ORCH_LOG_DIR="$(dirname "$CONFIG")/slurm_logs"
+mkdir -p "$ORCH_LOG_DIR"
+
 cat > "$ORCH_SCRIPT" <<SBATCH_EOF
 #!/usr/bin/env bash
 #SBATCH --job-name=${JOB_NAME}_orch
@@ -196,8 +202,8 @@ ${ORCH_PARTITION_LINE}
 #SBATCH --time=${ORCH_TIME}
 #SBATCH --mem=${ORCH_MEM}
 #SBATCH --cpus-per-task=${ORCH_CPUS}
-#SBATCH --output=/dev/null
-#SBATCH --error=/dev/null
+#SBATCH --output=${ORCH_LOG_DIR}/${JOB_NAME}_orch_%j.out
+#SBATCH --error=${ORCH_LOG_DIR}/${JOB_NAME}_orch_%j.err
 
 set -euo pipefail
 
@@ -244,6 +250,8 @@ fi
 
 echo "Submitted orchestrator job: $ORCH_JOB_ID"
 echo "  Script: $ORCH_SCRIPT"
+echo "  Stdout: ${ORCH_LOG_DIR}/${JOB_NAME}_orch_${ORCH_JOB_ID}.out"
+echo "  Stderr: ${ORCH_LOG_DIR}/${JOB_NAME}_orch_${ORCH_JOB_ID}.err"
 echo ""
 echo "The orchestrator will generate recipes/configs on the compute node"
 echo "and then submit worker batch jobs automatically."
