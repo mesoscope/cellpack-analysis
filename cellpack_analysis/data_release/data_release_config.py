@@ -140,7 +140,7 @@ class DataReleaseConfig:
         return {**self.base_channel_colors, "structure": structure_color}
 
     def __repr__(self) -> str:
-        """String representation of the config."""
+        """Represent config as string."""
         return (
             f"DataReleaseConfig(dataset={self.dataset}, "
             f"experiment={self.experiment}, "

@@ -26,7 +26,7 @@ def update_simularium_mesh_urls(file_path: Path, s3_mesh_url: str, cell_id: str)
     cell_id
         Cell ID to construct the full mesh filename (e.g. "nuc_mesh_{cell_id}.obj")
     """
-    with open(file_path, "r") as f:
+    with open(file_path) as f:
         sim_data = json.load(f)
 
     # Ensure s3_mesh_url ends with /
@@ -64,7 +64,7 @@ def update_simularium_colors(
     structure_name
         Name of the structure being packed
     """
-    with open(file_path, "r") as f:
+    with open(file_path) as f:
         sim_data = json.load(f)
 
     for mapping in sim_data["trajectoryInfo"]["typeMapping"].values():

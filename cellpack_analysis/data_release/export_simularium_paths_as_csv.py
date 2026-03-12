@@ -22,10 +22,10 @@ import matplotlib.colors as mcolors
 import pandas as pd
 from tqdm import tqdm
 
+from cellpack_analysis.data_release.csv_metadata_config import get_metadata_dict
 from cellpack_analysis.lib.file_io import get_datadir_path, get_results_path
 from cellpack_analysis.lib.get_structure_stats_dataframe import get_structure_stats_dataframe
 from cellpack_analysis.lib.img_io import generate_composite_thumbnail
-from cellpack_analysis.notebooks.data_release.csv_metadata_config import get_metadata_dict
 
 # %%
 # Constants
@@ -66,7 +66,7 @@ def update_simularium_mesh_urls(file_path: Path, s3_mesh_url: str, cell_id: str)
     cell_id
         Cell ID to construct the full mesh filename (e.g. "nuc_mesh_{cell_id}.obj")
     """
-    with open(file_path, "r") as f:
+    with open(file_path) as f:
         sim_data = json.load(f)
 
     # Ensure s3_mesh_url ends with /
@@ -92,7 +92,7 @@ def update_simularium_colors(
     file_path: Path, color_mapping: dict[str, tuple[float, float, float]], structure_name: str
 ) -> None:
     """Update colors in simularium file based on provided color mapping."""
-    with open(file_path, "r") as f:
+    with open(file_path) as f:
         sim_data = json.load(f)
 
     for mapping in sim_data["trajectoryInfo"]["typeMapping"].values():
@@ -169,7 +169,48 @@ def process_simularium_file(
     reupload_thumbnails: bool,
 ) -> dict:
     """
-    Process a single simularium file: update mesh URLs, colors, upload to S3, generate thumbnail.
+    Process a single simularium file.
+     
+    1. update mesh URLs
+    2. update colors
+    3. upload to S3
+    4. generate thumbnail and upload to S3
+    5. return record dict for CSV
+
+    Parameters
+    ----------
+    file_path
+        Path to the simularium file to process
+    structure_id
+        ID of the structure being visualized (e.g. "SLC25A17")
+    structure_name
+        Name of the structure being visualized (e.g. "peroxisome")
+    packing_id
+        ID of the packing configuration (e.g. "peroxisome")
+    rule
+        Packing rule used (e.g. "random", "nucleus_gradient", etc.)
+    dataset
+        Name of the dataset (e.g. "8d_sphere_data")
+    condition
+        Experimental condition (e.g. "rules_shape")
+    experiment
+        Name of the experiment (e.g. "norm_weights")
+    base_datadir
+        Base data directory path to construct relative paths for S3 keys
+    base_s3_mesh_url
+        Base URL for the meshes on S3 (should end with /)
+    figure_path
+        Path to the directory containing figure outputs for generating thumbnails
+    thumbnail_dir
+        Path to the directory to save generated thumbnails before uploading to S3
+    channel_colors
+        Dictionary mapping channel names to RGB color tuples for updating simularium colors and generating thumbnails
+    s3_client
+        Boto3 S3 client for checking and uploading files to S3
+    reupload_simularium
+        Whether to force re-upload simularium files to S3 even if they already exist
+    reupload_thumbnails
+        Whether to force re-upload thumbnails to S3 even if they already exist
     """
     cell_id = file_path.stem.split("_seed")[0].split("_")[-1]
 
