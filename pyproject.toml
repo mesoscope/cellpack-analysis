@@ -88,7 +88,7 @@ source-exclude = [
     ".env",
     ".git",
     ".github",
-    ".ipynb_checkments",
+    ".ipynb_checkpoints",
     ".mypy_cache",
     "__pycache__",
     ".cache",
@@ -119,6 +119,9 @@ line_length = 100
 profile = "black"
 skip_glob = [
     "**/archive/**",
+    "**/data/**",
+    "**/results/**",
+    "**/docs/**",
 ]
 
 [tool.ruff]
@@ -126,6 +129,9 @@ line-length = 100
 target-version = "py311"
 extend-exclude = [
     "**/archive/**",
+    "**/data/**",
+    "**/results/**",
+    "**/docs/**",
 ]
 
 [tool.ruff.lint]
@@ -171,7 +177,9 @@ check_untyped_defs = true
 show_error_codes = true
 exclude = [
     ".*/archive/.*",
-    ".*/test_notebooks/.*",
+    ".*/data/.*",
+    ".*/results/.*",
+    ".*/docs/.*",
 ]
 
 [[tool.mypy.overrides]]
