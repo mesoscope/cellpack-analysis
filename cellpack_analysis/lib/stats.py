@@ -7,6 +7,8 @@ import pandas as pd
 from scipy import integrate
 from scipy.stats import false_discovery_control
 
+EnvelopeType = Literal["pointwise", "rank"]
+
 
 def cohens_d(x: np.ndarray, y: np.ndarray) -> float:
     """
@@ -334,18 +336,112 @@ def pointwise_envelope(
     return lo, hi, mu, sd
 
 
+def compute_rank_envelope(
+    obs_curve: np.ndarray,
+    sim_curves: np.ndarray,
+    alpha: float = 0.05,
+) -> tuple[np.ndarray, np.ndarray, float, int, int]:
+    """
+    Compute a simultaneous rank envelope test (Myllymäki et al. 2017).
+
+    Pools the observed curve with M simulation curves (pool size s = M+1) and
+    assigns 1-indexed ranks at each grid point. Two tail statistics are computed:
+
+    - ``u_i = min_j rank_{ij}``        — how extreme from *below* (1 = most extreme)
+    - ``v_i = min_j (s+1 - rank_{ij})``— how extreme from *above* (1 = most extreme)
+
+    The signed direction of the observed curve determines which tail produces the
+    exact Monte Carlo p-value::
+
+        p = (1 + #{v_sim <= v_obs}) / (M + 1)   if obs tends above simulations
+        p = (1 + #{u_sim <= u_obs}) / (M + 1)   if obs tends below simulations
+
+    This gives the minimum achievable p-value of ``1/(M+1)`` when the observed
+    curve is the most extreme in its direction at every grid point.
+
+    The envelope bounds are the ``k``-th smallest and largest order statistics
+    where ``k = min(u_obs, v_obs)`` gives the tightest band consistent with the
+    observed depth.
+
+    Parameters
+    ----------
+    obs_curve
+        Observed ECDF curve of shape (L,)
+    sim_curves
+        Simulation ECDF curves of shape (M, L)
+    alpha
+        Significance level; used only for display (lo/hi) — the p-value is exact
+        regardless of alpha
+
+    Returns
+    -------
+    :
+        Tuple of (lo, hi, p_val, sign, rank_stat_obs) where:
+
+        - ``lo``, ``hi``: simultaneous envelope bounds of shape (L,)
+        - ``p_val``: exact Monte Carlo p-value
+        - ``sign``: +1 if observed curve tends above mean, -1 if below
+        - ``rank_stat_obs``: the relevant tail statistic (u_obs or v_obs)
+    """
+    num_sims = sim_curves.shape[0]
+    num_total = num_sims + 1  # total pool size
+
+    # Pool observed curve with simulations: shape (s, L)
+    all_curves = np.vstack([obs_curve[np.newaxis, :], sim_curves])
+
+    # 1-indexed ranks at each grid point across the pool of s curves
+    ranks = np.argsort(np.argsort(all_curves, axis=0), axis=0) + 1  # shape (s, L)
+
+    # Tail statistics per curve (shape s,):
+    #   u_i = min_j rank_{ij}          small → extreme from below
+    #   v_i = min_j (s+1 - rank_{ij}) small → extreme from above
+    u = np.min(ranks, axis=1)
+    v = np.min(num_total + 1 - ranks, axis=1)
+
+    u_obs, v_obs = int(u[0]), int(v[0])
+    u_sims, v_sims = u[1:], v[1:]
+
+    # Direction of obs relative to simulations
+    sign = int(np.sign(np.mean(obs_curve - sim_curves.mean(axis=0))))
+    if sign == 0:
+        sign = 1
+
+    # Exact p-value from the relevant tail
+    if sign > 0:
+        # obs tends above sims → test upper tail via v
+        r_obs = v_obs
+        p_val = float((np.sum(v_sims <= v_obs) + 1) / (num_sims + 1))
+    else:
+        # obs tends below sims → test lower tail via u
+        r_obs = u_obs
+        p_val = float((np.sum(u_sims <= u_obs) + 1) / (num_sims + 1))
+
+    # Envelope bounds at depth k = min(u_obs, v_obs)
+    k = max(min(u_obs, v_obs), 1)
+    sorted_all = np.sort(all_curves, axis=0)  # shape (s, L)
+    lo = sorted_all[k - 1]       # k-th smallest at each grid point
+    hi = sorted_all[num_total - k]       # k-th largest at each grid point
+
+    return lo, hi, p_val, sign, r_obs
+
+
 def get_test_statistic_and_pvalue(
     obs_curve: np.ndarray,
     sim_curves: np.ndarray,
-    statistic: Literal["supremum", "intdev"] = "supremum",
+    statistic: Literal["supremum", "intdev", "rank"] = "supremum",
+    alpha: float = 0.05,
 ) -> tuple[float, float, np.ndarray, int]:
     """
-    Calculate global test statistic and p-value using supremum deviation.
+    Calculate global test statistic and p-value.
 
-    Computes test statistic
-        T = max_j |(obs - mu_j)/sd_j| for "supremum" or
-        T = integrate |(obs - mu)/sd| for "intdev"
-    Monte Carlo p-value is (1 + #{T_sim >= T_obs}) / (M + 1).
+    Computes test statistic:
+
+    - ``"supremum"``: T = max_j |(obs - mu_j)/sd_j|
+    - ``"intdev"``: T = integrate |(obs - mu)/sd|
+    - ``"rank"``: T = extreme rank statistic (see :func:`compute_rank_envelope`)
+
+    Monte Carlo p-value is ``(1 + #{T_sim >= T_obs}) / (M + 1)`` for supremum/intdev,
+    or the exact rank envelope p-value for ``"rank"``.
 
     Parameters
     ----------
@@ -354,7 +450,9 @@ def get_test_statistic_and_pvalue(
     sim_curves
         Array of shape (M, L) containing M simulation ECDF curves
     statistic
-        Test statistic to compute: "supremum" or "intdev"
+        Test statistic to compute: ``"supremum"``, ``"intdev"``, or ``"rank"``
+    alpha
+        Significance level; only used when ``statistic="rank"``
 
     Returns
     -------
@@ -387,6 +485,20 @@ def get_test_statistic_and_pvalue(
         supremum_sign = int(np.sign(standardized_dev_integral))
         if supremum_sign == 0:
             supremum_sign = 1  # Default to positive if exactly zero
+    elif statistic == "rank":
+        _, _, p_val, supremum_sign, r_obs = compute_rank_envelope(obs_curve, sim_curves, alpha)
+        num_sims = sim_curves.shape[0]
+        num_total = num_sims + 1
+        # Reconstruct the relevant directional tail statistic for each sim curve
+        all_curves = np.vstack([obs_curve[np.newaxis, :], sim_curves])
+        ranks = np.argsort(np.argsort(all_curves, axis=0), axis=0) + 1
+        if supremum_sign > 0:
+            # upper tail: v_i = min_j (s+1 - rank_{ij})
+            t_sim = np.min(num_total + 1 - ranks, axis=1)[1:].astype(float)
+        else:
+            # lower tail: u_i = min_j rank_{ij}
+            t_sim = np.min(ranks, axis=1)[1:].astype(float)
+        return float(p_val), float(r_obs), t_sim, supremum_sign
     else:
         raise ValueError(f"Invalid statistic: {statistic}")
     p = (np.sum(t_sim >= t_obs) + 1) / (t_sim.size + 1)
@@ -401,6 +513,8 @@ def monte_carlo_per_cell(
     r_grid_size: int = 150,
     bin_width: float | None = None,
     statistic: Literal["supremum", "intdev"] = "supremum",
+    envelope_type: EnvelopeType = "pointwise",
+    joint_r_grid_size: int | None = None,
 ) -> dict[str, dict]:
     """
     Analyze single cell by comparing observed distances against simulated null models.
@@ -427,17 +541,27 @@ def monte_carlo_per_cell(
         Overrides r_grid_size if provided, ensuring grid points are spaced by bin_width up to the
         extended max
     statistic
-        Test statistic to use for joint test.
-        "supremum": use maximum standardized deviation across r-grid points
-        "intdev": use integrated standardized deviation across r-grid points
+        Test statistic to use; ignored when ``envelope_type="rank"``.
+        ``"supremum"``: use maximum standardized deviation across r-grid points
+        ``"intdev"``: use integrated standardized deviation across r-grid points
+    envelope_type
+        ``"pointwise"``: pointwise quantile envelope (original behaviour).
+        ``"rank"``: simultaneous rank envelope test (Myllymäki et al. 2017), which
+        provides exact simultaneous coverage and a valid global p-value.
+    joint_r_grid_size
+        Number of points per distance measure when resampling each ECDF onto a
+        uniform [0, 1] quantile grid before concatenating for the joint test.
+        Defaults to ``r_grid_size``, giving each measure equal representation
+        regardless of physical range (e.g. pairwise distances span 0-25 µm
+        while scaled_nucleus spans 0-1).
 
     Returns
     -------
     :
         Nested dictionary with structure: packing_mode -> {
             'per_distance_measure': {distance_measure ->
-                {'r', 'obs_curve', 'lo', 'hi', 'mu', 'sd', 'pval', 'T_obs'}},
-            'joint': {'pval', 'T_obs', 'distance_measures'}
+                {'r', 'obs_curve', 'lo', 'hi', 'mu', 'sd', 'pval', 'T_obs', 'supremum_sign'}},
+            'joint': {'pval', 'T_obs', 'distance_measures', 'supremum_sign'}
         }
     """
     packing_modes = list(simulated_distances_by_mode.keys())
@@ -473,10 +597,19 @@ def monte_carlo_per_cell(
             sim_mat = np.vstack(
                 [ecdf(rep.get(distance_measure, np.array([])), r) for rep in reps]
             )  # (R, L)
-            lo, hi, mu, sd = pointwise_envelope(sim_mat, alpha=alpha)
-            pval, tobs, _, supremum_sign = get_test_statistic_and_pvalue(
-                obs_curve, sim_mat, statistic=statistic
-            )
+
+            if envelope_type == "rank":
+                lo, hi, pval, supremum_sign, tobs = compute_rank_envelope(
+                    obs_curve, sim_mat, alpha=alpha
+                )
+                mu = sim_mat.mean(axis=0)
+                sd = sim_mat.std(axis=0, ddof=1)
+                sd[sd == 0] = 1e-9
+            else:
+                lo, hi, mu, sd = pointwise_envelope(sim_mat, alpha=alpha)
+                pval, tobs, _, supremum_sign = get_test_statistic_and_pvalue(
+                    obs_curve, sim_mat, statistic=statistic
+                )
 
             per_distance_measure[distance_measure] = {
                 "r": r,
@@ -492,31 +625,48 @@ def monte_carlo_per_cell(
             sim_curves_by_distance_measure[distance_measure] = sim_mat
             obs_curves_by_distance_measure[distance_measure] = obs_curve
 
-        # Joint test: concatenate curves
+        # Joint test: resample each measure's curves to a uniform joint_r_grid_size-point
+        # grid on [0, 1] so every distance measure contributes equally regardless of range.
+        _joint_r_grid_size = r_grid_size if joint_r_grid_size is None else joint_r_grid_size
+        joint_u = np.linspace(0.0, 1.0, _joint_r_grid_size)
+
+        def _resample(curve: np.ndarray, r: np.ndarray, joint_u: np.ndarray) -> np.ndarray:
+            r_norm = r - r.min()
+            r_max = r_norm.max()
+            if r_max == 0:
+                return np.interp(joint_u, np.array([0.0, 1.0]), np.array([curve[0], curve[-1]]))
+            return np.interp(joint_u, r_norm / r_max, curve)
+
         sim_concat = np.vstack(
             [
                 np.concatenate(
                     [
-                        sim_curves_by_distance_measure[distance_measure][i]
-                        for distance_measure in distance_measures
+                        _resample(
+                            sim_curves_by_distance_measure[dm][i], r_grids[dm], joint_u
+                        )
+                        for dm in distance_measures
                     ],
                     axis=0,
                 )
                 for i in range(num_replicates)
             ]
-        )  # (R, sum L_m)
+        )  # (num_replicates, joint_r_grid_size * len(distance_measures))
         obs_concat = np.concatenate(
             [
-                obs_curves_by_distance_measure[distance_measure]
-                for distance_measure in distance_measures
+                _resample(obs_curves_by_distance_measure[dm], r_grids[dm], joint_u)
+                for dm in distance_measures
             ],
             axis=0,
         )
 
-        # Now compute joint p-value in standardized sup-deviation sense
-        p_joint, tobs_joint, _, supremum_sign_joint = get_test_statistic_and_pvalue(
-            obs_concat, sim_concat
-        )
+        if envelope_type == "rank":
+            _, _, p_joint, supremum_sign_joint, tobs_joint = compute_rank_envelope(
+                obs_concat, sim_concat, alpha=alpha
+            )
+        else:
+            p_joint, tobs_joint, _, supremum_sign_joint = get_test_statistic_and_pvalue(
+                obs_concat, sim_concat, statistic=statistic
+            )
 
         results[packing_mode] = {
             "per_distance_measure": per_distance_measure,
@@ -654,6 +804,187 @@ def summarize_across_cells(
     }
 
 
+def _pairwise_test_on_curves(
+    mode_curves: dict[str, dict[str, np.ndarray]],
+    mode_xvals: dict[str, dict[str, np.ndarray]],
+    packing_modes: list[str],
+    distance_measures: list[str],
+    alpha: float = 0.05,
+    statistic: Literal["supremum", "intdev"] = "intdev",
+    envelope_type: EnvelopeType = "pointwise",
+    joint_r_grid_size: int | None = None,
+) -> tuple[dict[str, dict[tuple[str, str], dict[str, Any]]], dict[tuple[str, str], dict[str, Any]]]:
+    """
+    Run pairwise Monte Carlo envelope tests on pre-computed per-cell curve arrays.
+
+    Shared inner loop used by both :func:`pairwise_envelope_test` (after ECDF
+    construction) and
+    :func:`~cellpack_analysis.lib.occupancy.pairwise_envelope_test_occupancy`
+    (with occupancy ratio curves).
+
+    Parameters
+    ----------
+    mode_curves
+        ``{mode: {dm: ndarray of shape (n_cells, n_bins)}}`` — one curve per
+        cell (e.g. ECDF or occupancy ratio curve), pre-computed.
+    mode_xvals
+        ``{mode: {dm: ndarray of shape (n_bins,)}}`` — x-axis values for each
+        curve; used only for equal-weight resampling in the joint test.
+    packing_modes
+        Ordered list of modes forming the pairwise comparison matrix.
+    distance_measures
+        Ordered list of distance measures.
+    alpha
+        Significance level for BH correction.
+    statistic
+        Test statistic; ignored when ``envelope_type="rank"``.
+    envelope_type
+        ``"pointwise"`` or ``"rank"``.
+    joint_r_grid_size
+        Points per distance measure after resampling onto a uniform [0, 1]
+        grid for the joint test.  Defaults to the bin count of the first
+        available curve.
+
+    Returns
+    -------
+    :
+        ``(per_dm_results, joint_results)`` where each is a dict keyed by
+        ``(mode_a, mode_b)`` pairs containing ``"pvals"``, ``"qvals"``,
+        ``"signs"``, ``"rejection_fraction"``,
+        ``"rejection_fraction_positive"``, and
+        ``"rejection_fraction_negative"``.
+    """
+    logger = logging.getLogger(__name__)
+
+    if joint_r_grid_size is None:
+        joint_r_grid_size = next(
+            (
+                mode_curves[m][d].shape[1]
+                for m in packing_modes
+                for d in distance_measures
+                if mode_curves[m][d].shape[0] > 0
+            ),
+            50,
+        )
+    joint_u = np.linspace(0.0, 1.0, joint_r_grid_size)
+
+    def _resample(curve: np.ndarray, xvals: np.ndarray) -> np.ndarray:
+        """Interpolate ``curve`` to a uniform [0, 1] grid of ``joint_r_grid_size`` points."""
+        x_norm = xvals - xvals.min()
+        x_max = x_norm.max()
+        if x_max == 0:
+            return np.interp(joint_u, np.array([0.0, 1.0]), np.array([curve[0], curve[-1]]))
+        return np.interp(joint_u, x_norm / x_max, curve)
+
+    def _run_test(obs: np.ndarray, sim: np.ndarray) -> tuple[float, int]:
+        """Return ``(p_value, sign)`` for one observed curve against the simulation envelope."""
+        if envelope_type == "rank":
+            _, _, pval, sign, _ = compute_rank_envelope(obs, sim, alpha=alpha)
+        else:
+            pval, _, _, sign = get_test_statistic_and_pvalue(obs, sim, statistic=statistic)
+        return pval, sign
+
+    per_dm_results: dict[str, dict[tuple[str, str], dict[str, Any]]] = {
+        dm: {} for dm in distance_measures
+    }
+    joint_results: dict[tuple[str, str], dict[str, Any]] = {}
+
+    for mode_a in packing_modes:
+        for mode_b in packing_modes:
+            if mode_a == mode_b:
+                continue
+
+            logger.info("Testing %s against %s envelope", mode_a, mode_b)
+
+            # Per-dm tests
+            for dm in distance_measures:
+                sim_curves = mode_curves[mode_b][dm]
+                obs_curves = mode_curves[mode_a][dm]
+                if sim_curves.shape[0] < 2 or obs_curves.shape[0] == 0:
+                    continue
+
+                pvals: list[float] = []
+                signs_list: list[int] = []
+                for obs_curve in obs_curves:
+                    pval, sign = _run_test(obs_curve, sim_curves)
+                    pvals.append(pval)
+                    signs_list.append(sign)
+
+                pvals_arr = np.array(pvals)
+                signs_arr = np.array(signs_list)
+                qvals_arr = false_discovery_control(pvals_arr, method="bh")
+                rejected = qvals_arr < alpha
+                per_dm_results[dm][(mode_a, mode_b)] = {
+                    "pvals": pvals_arr,
+                    "qvals": qvals_arr,
+                    "signs": signs_arr,
+                    "rejection_fraction": float(rejected.mean()),
+                    "rejection_fraction_positive": float(
+                        (rejected & (signs_arr == 1)).mean()
+                    ),
+                    "rejection_fraction_negative": float(
+                        (rejected & (signs_arr == -1)).mean()
+                    ),
+                }
+
+            # Joint test: resample each dm to equal-length grid for equal weight in hstack
+            valid_dms = [
+                dm
+                for dm in distance_measures
+                if mode_curves[mode_b][dm].shape[0] >= 2
+                and mode_curves[mode_a][dm].shape[0] >= 1
+            ]
+            if not valid_dms:
+                logger.warning(
+                    "Skipping joint test for %s vs %s: no valid distance measures",
+                    mode_a,
+                    mode_b,
+                )
+                continue
+
+            num_ref = min(mode_curves[mode_b][dm].shape[0] for dm in valid_dms)
+            num_test = min(mode_curves[mode_a][dm].shape[0] for dm in valid_dms)
+            sim_concat = np.hstack(
+                [
+                    np.vstack(
+                        [
+                            _resample(mode_curves[mode_b][dm][i], mode_xvals[mode_b][dm])
+                            for i in range(num_ref)
+                        ]
+                    )
+                    for dm in valid_dms
+                ]
+            )
+
+            joint_pvals: list[float] = []
+            joint_signs: list[int] = []
+            for obs_idx in range(num_test):
+                obs_concat = np.concatenate(
+                    [
+                        _resample(mode_curves[mode_a][dm][obs_idx], mode_xvals[mode_a][dm])
+                        for dm in valid_dms
+                    ]
+                )
+                pval, sign = _run_test(obs_concat, sim_concat)
+                joint_pvals.append(pval)
+                joint_signs.append(sign)
+
+            jp = np.array(joint_pvals)
+            js = np.array(joint_signs)
+            jq = false_discovery_control(jp, method="bh")
+            rej = jq < alpha
+            joint_results[(mode_a, mode_b)] = {
+                "pvals": jp,
+                "qvals": jq,
+                "signs": js,
+                "rejection_fraction": float(rej.mean()),
+                "rejection_fraction_positive": float((rej & (js == 1)).mean()),
+                "rejection_fraction_negative": float((rej & (js == -1)).mean()),
+            }
+
+    return per_dm_results, joint_results
+
+
 def pairwise_envelope_test(
     all_distance_dict: dict[str, dict[str, dict[str, dict[str, np.ndarray]]]],
     packing_modes: list[str],
@@ -662,6 +993,8 @@ def pairwise_envelope_test(
     r_grid_size: int = 150,
     bin_width: float | None = None,
     statistic: Literal["supremum", "intdev"] = "intdev",
+    envelope_type: EnvelopeType = "pointwise",
+    joint_r_grid_size: int | None = None,
 ) -> dict[str, Any]:
     """
     Pairwise Monte Carlo envelope test between all ordered pairs of packing modes.
@@ -693,8 +1026,18 @@ def pairwise_envelope_test(
         Overrides r_grid_size if provided, ensuring grid points are spaced by bin_width up to the
         extended max
     statistic
-        Test statistic: "supremum" for max standardized deviation,
-        "intdev" for integrated standardized deviation
+        Test statistic; ignored when ``envelope_type="rank"``.
+        ``"supremum"``: max standardized deviation, ``"intdev"``: integrated standardized deviation
+    envelope_type
+        ``"pointwise"``: pointwise quantile envelope (original behaviour).
+        ``"rank"``: simultaneous rank envelope test (Myllymäki et al. 2017).
+        The diagonal display envelopes (``envelopes`` key in result) always use
+        the pointwise quantile method for visualization purposes.
+    joint_r_grid_size
+        Number of points per distance measure when resampling each ECDF onto a
+        uniform [0, 1] quantile grid before concatenating for the joint test.
+        Defaults to ``r_grid_size``, giving each measure equal representation
+        regardless of physical range.
 
     Returns
     -------
@@ -704,7 +1047,7 @@ def pairwise_envelope_test(
           rejection_fraction, rejection_fraction_positive, rejection_fraction_negative}}}
         - 'joint': {(mode_a, mode_b): {same keys as above}}
         - 'envelopes': {mode: {dm: {r, lo, hi, mu, sd}}}
-        - 'packing_modes', 'distance_measures', 'alpha', 'statistic': input params
+        - 'packing_modes', 'distance_measures', 'alpha', 'statistic', 'envelope_type': input params
     """
     logger = logging.getLogger(__name__)
 
@@ -725,7 +1068,7 @@ def pairwise_envelope_test(
         {k: len(v) for k, v in flat_arrays.items()},
     )
 
-    # Step 2: Build envelopes for each mode (for diagonal display)
+    # Step 2: Build pointwise envelopes for each mode (used for diagonal display)
     envelopes: dict[str, dict[str, dict[str, np.ndarray]]] = {}
     for mode in packing_modes:
         envelopes[mode] = {}
@@ -750,107 +1093,45 @@ def pairwise_envelope_test(
                 "sd": sd,
             }
 
-    # Step 3: Pairwise tests
-    per_dm_results: dict[str, dict[tuple[str, str], dict[str, Any]]] = {
-        dm: {} for dm in distance_measures
-    }
-    joint_results: dict[tuple[str, str], dict[str, Any]] = {}
+    # Step 3: Build ECDF curves on a shared per-dm r-grid, then run pairwise tests.
+    # The r-grid is pooled from all modes so the representation is consistent across
+    # the full pairwise matrix (rather than recomputing a different grid per pair).
+    r_grids_shared: dict[str, np.ndarray] = {}
+    for dm in distance_measures:
+        all_dm_arrays = [arr for mode in packing_modes for arr in flat_arrays[(mode, dm)]]
+        r_grids_shared[dm] = make_r_grid_from_pooled(
+            all_dm_arrays, n=r_grid_size, bin_width=bin_width
+        )
 
-    for mode_a in packing_modes:
-        for mode_b in packing_modes:
-            if mode_a == mode_b:
-                continue
+    mode_ecdf_curves: dict[str, dict[str, np.ndarray]] = {}
+    mode_ecdf_xvals: dict[str, dict[str, np.ndarray]] = {}
+    for mode in packing_modes:
+        mode_ecdf_curves[mode] = {}
+        mode_ecdf_xvals[mode] = {}
+        for dm in distance_measures:
+            r_grid = r_grids_shared[dm]
+            arrays = flat_arrays[(mode, dm)]
+            if arrays:
+                mode_ecdf_curves[mode][dm] = np.vstack([ecdf(arr, r_grid) for arr in arrays])
+            else:
+                mode_ecdf_curves[mode][dm] = np.empty((0, len(r_grid)))
+            mode_ecdf_xvals[mode][dm] = r_grid
 
-            logger.info("Testing %s against %s envelope", mode_a, mode_b)
+    # Default joint_r_grid_size to r_grid_size to preserve original behaviour
+    effective_joint_r_grid_size = (
+        joint_r_grid_size if joint_r_grid_size is not None else r_grid_size
+    )
 
-            # Pre-compute r_grids and reference ECDF curves per distance measure
-            r_grids: dict[str, np.ndarray] = {}
-            ref_ecdf_curves: dict[str, np.ndarray] = {}
-            for dm in distance_measures:
-                ref_arr = flat_arrays[(mode_b, dm)]
-                test_arr = flat_arrays[(mode_a, dm)]
-                r_grid = make_r_grid_from_pooled(
-                    ref_arr + test_arr, n=r_grid_size, bin_width=bin_width
-                )
-                r_grids[dm] = r_grid
-                if len(ref_arr) >= 2:
-                    ref_ecdf_curves[dm] = np.vstack([ecdf(a, r_grid) for a in ref_arr])
-
-            # Per distance measure tests
-            for dm in distance_measures:
-                test_arr = flat_arrays[(mode_a, dm)]
-                if dm not in ref_ecdf_curves or len(test_arr) == 0:
-                    continue
-
-                pvals: list[float] = []
-                signs: list[int] = []
-                for arr in test_arr:
-                    obs_curve = ecdf(arr, r_grids[dm])
-                    pval, _, _, sign = get_test_statistic_and_pvalue(
-                        obs_curve, ref_ecdf_curves[dm], statistic=statistic
-                    )
-                    pvals.append(pval)
-                    signs.append(sign)
-
-                pvals_arr = np.array(pvals)
-                signs_arr = np.array(signs)
-                qvals = false_discovery_control(pvals_arr, method="bh")
-                rejected = qvals < alpha
-
-                per_dm_results[dm][(mode_a, mode_b)] = {
-                    "pvals": pvals_arr,
-                    "qvals": qvals,
-                    "signs": signs_arr,
-                    "rejection_fraction": float(rejected.mean()),
-                    "rejection_fraction_positive": float((rejected & (signs_arr == 1)).mean()),
-                    "rejection_fraction_negative": float((rejected & (signs_arr == -1)).mean()),
-                }
-
-            # Joint test: concatenate ECDFs across distance measures
-            if not all(dm in ref_ecdf_curves for dm in distance_measures):
-                logger.warning(
-                    "Skipping joint test for %s vs %s: missing reference curves",
-                    mode_a,
-                    mode_b,
-                )
-                continue
-
-            num_test = min(len(flat_arrays[(mode_a, dm)]) for dm in distance_measures)
-            num_ref = min(ref_ecdf_curves[dm].shape[0] for dm in distance_measures)
-            if num_test == 0 or num_ref < 2:
-                continue
-
-            # Build concatenated reference curves
-            sim_concat = np.hstack([ref_ecdf_curves[dm][:num_ref] for dm in distance_measures])
-
-            joint_pvals: list[float] = []
-            joint_signs: list[int] = []
-            for obs_idx in range(num_test):
-                obs_concat = np.concatenate(
-                    [
-                        ecdf(flat_arrays[(mode_a, dm)][obs_idx], r_grids[dm])
-                        for dm in distance_measures
-                    ]
-                )
-                pval, _, _, sign = get_test_statistic_and_pvalue(
-                    obs_concat, sim_concat, statistic=statistic
-                )
-                joint_pvals.append(pval)
-                joint_signs.append(sign)
-
-            jp = np.array(joint_pvals)
-            js = np.array(joint_signs)
-            jq = false_discovery_control(jp, method="bh")
-            rej = jq < alpha
-
-            joint_results[(mode_a, mode_b)] = {
-                "pvals": jp,
-                "qvals": jq,
-                "signs": js,
-                "rejection_fraction": float(rej.mean()),
-                "rejection_fraction_positive": float((rej & (js == 1)).mean()),
-                "rejection_fraction_negative": float((rej & (js == -1)).mean()),
-            }
+    per_dm_results, joint_results = _pairwise_test_on_curves(
+        mode_curves=mode_ecdf_curves,
+        mode_xvals=mode_ecdf_xvals,
+        packing_modes=packing_modes,
+        distance_measures=distance_measures,
+        alpha=alpha,
+        statistic=statistic,
+        envelope_type=envelope_type,
+        joint_r_grid_size=effective_joint_r_grid_size,
+    )
 
     return {
         "per_distance_measure": per_dm_results,
@@ -860,4 +1141,5 @@ def pairwise_envelope_test(
         "distance_measures": distance_measures,
         "alpha": alpha,
         "statistic": statistic,
+        "envelope_type": envelope_type,
     }
