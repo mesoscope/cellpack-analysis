@@ -1,4 +1,4 @@
-"""
+r"""
 SLURM-based workflow to generate simulated packed structures using cellPACK.
 
 This module provides four modes of operation:
@@ -853,7 +853,7 @@ def _aggregate_results(
 
 
 def aggregate_from_tracking(tracking_file: Path) -> int:
-    """
+    r"""
     Re-aggregate results using a previously written job tracking file.
 
     Useful when the orchestrator was run with ``--no-wait`` and you want to
