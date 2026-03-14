@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 
 from cellpack_analysis.lib.file_io import get_project_root, read_json, write_json
-from cellpack_analysis.lib.label_tables import STATIC_SHAPE_MODES, STRUCTURE_NAME_DICT
+from cellpack_analysis.lib.label_tables import STRUCTURE_NAME_DICT
 
 logger = logging.getLogger(__name__)
 PROJECT_ROOT = get_project_root()

@@ -121,6 +121,9 @@ VARIABLE_SHAPE_MODES = [
     "struct_gradient_weak",
 ]
 
+# Distance measures that depend on cell shape
+SHAPE_DEPENDENT_MEASURES = frozenset({"nucleus", "scaled_nucleus", "membrane", "z", "scaled_z"})
+
 # Labels for distance measures
 DISTANCE_MEASURE_LABELS = {
     "nucleus": "Distance from nucleus (µm)",
@@ -129,6 +132,7 @@ DISTANCE_MEASURE_LABELS = {
     "nearest": "Nearest neighbor distance (µm)",
     "pairwise": "Pairwise distance (µm)",
     "scaled_nucleus": "Scaled distance from nucleus",
+    "scaled_z": "Scaled Z distance",
 }
 
 # Distance measure title strings

@@ -39,19 +39,17 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--use-struct-mesh",
         action="store_true",
-        default=True,
-        help="Use structure mesh in calculations (default: True)",
-    )
-    parser.add_argument(
-        "--no-struct-mesh",
-        action="store_false",
-        dest="use_struct_mesh",
-        help="Don't use structure mesh in calculations",
+        help="Use structure mesh to exclude structure volume from available space (default: False)",
     )
     parser.add_argument(
         "--use-mean-shape",
         action="store_true",
         help="Use mean shape instead of individual cell shapes",
+    )
+    parser.add_argument(
+        "--use-all-cells",
+        action="store_true",
+        help="Use all cells for the structure, including those outside the 8D sphere (default: False)",
     )
     parser.add_argument(
         "--num-cores",
@@ -65,11 +63,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--recalculate",
         action="store_true",
-        default=True,
-        help="Recalculate existing results (default: True)",
-    )
-    parser.add_argument(
-        "--no-recalculate", action="store_false", dest="recalculate", help="Skip existing results"
+        help="Recalculate distances even if output files already exist (default: False)",
     )
     return parser.parse_args()
 
@@ -84,6 +78,7 @@ def main() -> None:
     spacing = args.spacing
     use_struct_mesh = args.use_struct_mesh
     use_mean_shape = args.use_mean_shape
+    use_all_cells = args.use_all_cells
     num_cores = args.num_cores
     chunk_size = args.chunk_size
     recalculate = args.recalculate
@@ -99,7 +94,7 @@ def main() -> None:
     if use_mean_shape:
         cell_ids_to_use = ["mean"]
     else:
-        cell_ids_to_use = get_cell_id_list_for_structure(structure_id)
+        cell_ids_to_use = get_cell_id_list_for_structure(structure_id, dsphere=not use_all_cells)
 
     mesh_folder = base_datadir / f"structure_data/{structure_id}/meshes/"
     logger.info(f"Using {len(cell_ids_to_use)} cell_ids")
@@ -130,6 +125,7 @@ def main() -> None:
     calc_mem_distances = True
     calc_z_distances = True
     calc_scaled_nuc_distances = True
+    calc_scaled_z_distances = True
 
     # Run the workflow with parallel processing
     results = []
@@ -148,6 +144,7 @@ def main() -> None:
                     calc_mem_distances,
                     calc_z_distances,
                     calc_scaled_nuc_distances,
+                    calc_scaled_z_distances,
                     chunk_size,
                     struct_mesh_path,
                 )
