@@ -1,7 +1,7 @@
 import logging
 import pickle
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 import pandas as pd
@@ -9,12 +9,21 @@ from scipy.optimize import nnls
 from scipy.stats import gaussian_kde, ks_2samp, wasserstein_distance
 from tqdm import tqdm
 
+from cellpack_analysis.lib.default_values import PIXEL_SIZE_IN_UM
 from cellpack_analysis.lib.file_io import (
     add_file_handler_to_logger,
     remove_file_handler_from_logger,
 )
+from cellpack_analysis.lib.label_tables import GRID_DISTANCE_LABELS
 from cellpack_analysis.lib.load_data import PROJECT_ROOT
-from cellpack_analysis.lib.stats import normalize_pdf, pdf_ratio
+from cellpack_analysis.lib.stats import (
+    EnvelopeType,
+    _pairwise_test_on_curves,
+    make_r_grid_from_pooled,
+    normalize_pdf,
+    pdf_ratio,
+    pointwise_envelope,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -377,11 +386,16 @@ def get_occupancy_emd_df(
 
         for i in tqdm(range(len(all_pairs)), desc=f"EMD calculations for {distance_measure}"):
             mode_1, cell_id_1 = all_pairs[i]
-            occupancy_1 = occupancy_dict[mode_1]["individual"][cell_id_1]["occupancy"]
+            occ_1_raw = occupancy_dict[mode_1]["individual"][cell_id_1]["occupancy"]
+            occupancy_1 = occ_1_raw[np.isfinite(occ_1_raw)]
             for j in range(i + 1, len(all_pairs)):
                 mode_2, cell_id_2 = all_pairs[j]
-                occupancy_2 = occupancy_dict[mode_2]["individual"][cell_id_2]["occupancy"]
-                emd = wasserstein_distance(occupancy_1, occupancy_2)
+                occ_2_raw = occupancy_dict[mode_2]["individual"][cell_id_2]["occupancy"]
+                occupancy_2 = occ_2_raw[np.isfinite(occ_2_raw)]
+                if len(occupancy_1) == 0 or len(occupancy_2) == 0:
+                    emd = np.nan
+                else:
+                    emd = wasserstein_distance(occupancy_1, occupancy_2)
                 record_list.append(
                     {
                         "distance_measure": distance_measure,
@@ -919,3 +933,518 @@ def get_binned_occupancy_dict(
             pickle.dump(binned_occupancy_dict, f)
 
     return binned_occupancy_dict
+
+
+def _compute_single_cell_occupancy(
+    occupied: np.ndarray,
+    available: np.ndarray,
+    bin_width: float,
+    pseudocount: float = 1.0,
+    min_count: int = 5,
+) -> dict[str, np.ndarray]:
+    """
+    Compute the histogram-based occupancy ratio for a single cell.
+
+    Builds a cell-specific bin grid from the cell's own available-space
+    distances so that bins never extend beyond the range where the cell has
+    data.  This avoids the tail instability that arises when a shared pooled
+    grid creates near-empty bins for individual cells with shorter distance
+    ranges.
+
+    Parameters
+    ----------
+    occupied
+        1-D array of finite occupied distances (already in final units).
+    available
+        1-D array of finite available-space distances (already in final units).
+    bin_width
+        Histogram bin width (µm or unitless, matching the distance arrays).
+    pseudocount
+        Laplace smoothing constant added to raw histogram counts before
+        normalization.
+    min_count
+        Minimum raw count in the available-space histogram for a bin to be
+        retained.  Bins below this threshold have their ratio set to ``NaN``.
+
+    Returns
+    -------
+    :
+        ``{"xvals": r_grid, "occupancy": ratio, "pdf_occupied": pdf_occ,
+        "pdf_available": pdf_avail, "raw_occupied": raw_occ,
+        "raw_available": raw_avail}``
+    """
+    # Build per-cell grid from the cell's own available-space distances
+    r_grid = make_r_grid_from_pooled([available], bin_width=bin_width)
+    bin_edges = np.concatenate([r_grid - bin_width / 2, [r_grid[-1] + bin_width / 2]])
+
+    raw_occ, _ = np.histogram(occupied, bins=bin_edges)
+    raw_avail, _ = np.histogram(available, bins=bin_edges)
+
+    smoothed_occ = raw_occ.astype(float) + pseudocount
+    smoothed_avail = raw_avail.astype(float) + pseudocount
+
+    pdf_occ = normalize_pdf(r_grid, smoothed_occ)
+    pdf_avail = normalize_pdf(r_grid, smoothed_avail)
+
+    # Log-space ratio for numerical stability
+    reg = 1e-10
+    pdf_occ_reg = np.maximum(pdf_occ, reg)
+    pdf_avail_reg = np.maximum(pdf_avail, reg)
+    log_ratio = np.log(pdf_occ_reg) - np.log(pdf_avail_reg)
+    ratio = np.exp(log_ratio)
+    ratio = np.nan_to_num(ratio, nan=0.0, posinf=0.0, neginf=0.0)
+
+    if min_count > 0:
+        ratio[raw_avail < min_count] = np.nan
+
+    return {
+        "xvals": r_grid,
+        "occupancy": ratio,
+        "pdf_occupied": pdf_occ,
+        "pdf_available": pdf_avail,
+        "raw_occupied": raw_occ,
+        "raw_available": raw_avail,
+    }
+
+
+def get_binned_occupancy_dict_from_distance_dict(
+    all_distance_dict: dict[str, dict[str, dict[str, dict[str, np.ndarray]]]],
+    combined_mesh_information_dict: dict[str, dict[str, dict[str, Any]]],
+    channel_map: dict[str, str],
+    distance_measure: str = "nucleus",
+    bin_width: float = 0.2,
+    x_min: float = 0.0,
+    x_max: float | None = None,
+    num_cells: int | None = None,
+    pseudocount: float = 1.0,
+    min_count: int = 5,
+    results_dir: Path | None = None,
+    recalculate: bool = False,
+    suffix: str = "",
+) -> dict[str, dict[str, Any]]:
+    """
+    Calculate binned occupancy ratios directly from distance and mesh dictionaries.
+
+    Each cell's occupancy ratio is computed on a **per-cell bin grid** derived
+    solely from that cell's own available-space distances.  This eliminates the
+    tail instability that arises when a shared pooled grid creates near-empty
+    bins for individual cells whose distance range is shorter than the pooled
+    maximum.
+
+    The ``"combined"`` result is reported on a **common bin grid** (derived
+    from explicit ``x_max`` or from pooled available-space distances) and
+    contains two flavors of the combined occupancy:
+
+    * ``"occupancy"`` — mean of per-cell ratio curves interpolated onto the
+      common grid (preserves per-cell envelope structure).
+    * ``"occupancy_pooled"`` — single ratio computed from the pooled
+      occupied and available distances of all cells (the global view).
+
+    Parameters
+    ----------
+    all_distance_dict
+        ``{distance_measure: {mode: {cell_id: {seed: distances}}}}``
+    combined_mesh_information_dict
+        ``{structure_id: {cell_id: {nuc_grid_distances: ..., ...}}}``
+    channel_map
+        Mapping from packing modes to structure IDs.
+    distance_measure
+        Distance measure to analyze (must be a key in ``GRID_DISTANCE_LABELS``).
+    bin_width
+        Histogram bin width in µm.
+    x_min
+        Minimum x value for the common bin grid.
+    x_max
+        Maximum x value for the common bin grid.  When ``None`` it is inferred
+        from the data using ``make_r_grid_from_pooled``.
+    num_cells
+        Maximum number of cells to sample per structure.  When ``None`` all
+        cells are used.
+    pseudocount
+        Laplace smoothing constant added to raw histogram counts before
+        normalization.  Default 1.0.
+    min_count
+        Minimum raw count required in the *available-space* histogram for a bin
+        to be included.  Bins below this threshold have their ratio set to
+        ``NaN``.  Set to 0 to disable masking.  Default 5.
+    results_dir
+        Directory to save the cached result.  No caching when ``None``.
+    recalculate
+        If ``True``, bypass any cached result.
+    suffix
+        Suffix appended to the cache filename.
+
+    Returns
+    -------
+    :
+        ``{mode: {"individual": {cell_id: {"xvals", "occupancy",
+        "pdf_occupied", "pdf_available", "raw_occupied", "raw_available"}},
+        "combined": {"xvals", "occupancy", "occupancy_pooled",
+        "std_occupancy", "envelope_lo", "envelope_hi", "pdf_occupied",
+        "pdf_available", "all_occupancy"}}}``
+
+        Each cell in ``"individual"`` has its own ``"xvals"`` (per-cell grid).
+        ``"combined"`` reports everything on a shared common grid.
+
+    Notes
+    -----
+    **Alternative normalization / occupancy calculation approaches:**
+
+    The current implementation uses the *PDF ratio* method:
+    ``occupancy = normalize(hist_occ + α) / normalize(hist_avail + α)``
+    where normalization integrates the density to 1 via trapezoidal rule.
+    This is a well-defined density ratio, but can be sensitive at tails where
+    ``hist_avail`` is sparse.  Alternative approaches include:
+
+    * **Log₂ fold-change**: replace ``exp(log(pdf_occ) − log(pdf_avail))``
+      with ``(log(pdf_occ) − log(pdf_avail)) / log(2)``.  The result is
+      symmetric around 0 (+1 = 2× enriched, −1 = 2× depleted) and avoids
+      the large dynamic range of the raw ratio.  Numerically stable and
+      standard in enrichment analyses.
+
+    * **Raw count ratio**: ``(count_occ + α) / (count_avail + α)`` without
+      density normalization.  Simple and directly interpretable as relative
+      occupancy, but scale depends on total sample sizes.
+
+    * **Adaptive binning**: use quantile-based bins from available-space
+      so each bin contains ≥ ``min_count`` points.  Completely eliminates
+      the tail instability, but variable-width bins complicate cross-cell
+      comparison and visualization.
+
+    * **Bayesian posterior**: model each bin as Binomial with a
+      Beta/Dirichlet prior.  The posterior mean provides a principled
+      enrichment estimate with credible intervals, but adds complexity
+      in prior selection.
+    """
+    save_path = None
+    if results_dir is not None:
+        save_path = results_dir / f"{distance_measure}_binned_occupancy_from_dist{suffix}.dat"
+
+    if not recalculate and save_path is not None and save_path.exists():
+        try:
+            with open(save_path, "rb") as f:
+                result = pickle.load(f)
+            cached_modes = set(result.keys())
+            requested_modes = set(channel_map.keys())
+            if cached_modes == requested_modes:
+                logger.info(
+                    "Loaded cached binned occupancy (from distance dict) from %s", save_path
+                )
+                return result
+            logger.warning(
+                "Cached binned occupancy modes %s differ from requested %s — recalculating.",
+                cached_modes,
+                requested_modes,
+            )
+        except Exception as exc:
+            logger.warning("Could not load cached occupancy (%s) — recalculating.", exc)
+
+    grid_key = GRID_DISTANCE_LABELS.get(distance_measure)
+    if grid_key is None:
+        raise ValueError(
+            f"distance_measure '{distance_measure}' not found in GRID_DISTANCE_LABELS. "
+            f"Available: {list(GRID_DISTANCE_LABELS.keys())}"
+        )
+
+    distance_dict_dm = all_distance_dict[distance_measure]
+
+    # Build cell_id_map: {structure_id: [cell_ids present in distance_dict]}
+    cell_id_map: dict[str, list[str]] = {}
+    for mode, structure_id in channel_map.items():
+        if structure_id not in cell_id_map:
+            cell_id_map[structure_id] = []
+        for cell_id in distance_dict_dm.get(mode, {}):
+            if cell_id not in cell_id_map[structure_id]:
+                cell_id_map[structure_id].append(cell_id)
+
+    if num_cells is not None:
+        rng = np.random.default_rng(0)
+        for structure_id, cell_ids in cell_id_map.items():
+            if len(cell_ids) > num_cells:
+                cell_id_map[structure_id] = rng.choice(
+                    cell_ids, size=num_cells, replace=False
+                ).tolist()
+
+    # Scaled measures (e.g. scaled_nucleus) are unitless; others are in
+    # pixel units and must be converted to µm to match the occupied distances
+    # which have already been through ``normalize_distance_dictionary``.
+    is_scaled_measure = "scaled" in distance_measure
+
+    # ------------------------------------------------------------------
+    # Build a common bin grid (for combined results and interpolation)
+    # ------------------------------------------------------------------
+    if x_max is None:
+        all_available: list[np.ndarray] = []
+        for structure_id, cell_ids in cell_id_map.items():
+            mesh_info = combined_mesh_information_dict.get(structure_id, {})
+            for cell_id in cell_ids:
+                cell_info = mesh_info.get(cell_id, {})
+                avail = cell_info.get(grid_key)
+                if avail is not None:
+                    a = np.asarray(avail)
+                    if not is_scaled_measure:
+                        a = a * PIXEL_SIZE_IN_UM
+                    all_available.append(a)
+        common_r_grid = make_r_grid_from_pooled(all_available, bin_width=bin_width)
+    else:
+        n_bins = max(1, int(round((x_max - x_min) / bin_width)))
+        common_r_grid = np.linspace(x_min + bin_width / 2, x_max - bin_width / 2, n_bins)
+
+    common_bin_edges = np.concatenate(
+        [common_r_grid - bin_width / 2, [common_r_grid[-1] + bin_width / 2]]
+    )
+
+    occupancy_result: dict[str, dict[str, Any]] = {}
+
+    for mode, structure_id in channel_map.items():
+        occupancy_result[mode] = {"individual": {}, "combined": {}}
+
+        mesh_info = combined_mesh_information_dict.get(structure_id, {})
+        valid_cell_ids = cell_id_map.get(structure_id, [])
+
+        # Collectors for pooled combined occupancy
+        all_occupied_distances: list[np.ndarray] = []
+        all_available_distances: list[np.ndarray] = []
+
+        # Collectors for interpolated per-cell ratios on common grid
+        interp_ratios: list[np.ndarray] = []
+
+        for cell_id in tqdm(valid_cell_ids, desc=f"Binned occupancy ({mode})"):
+            if cell_id not in distance_dict_dm.get(mode, {}):
+                continue
+            cell_info = mesh_info.get(cell_id, {})
+            avail_raw = cell_info.get(grid_key)
+            if avail_raw is None:
+                logger.warning("No available-space grid for cell %s / %s", cell_id, structure_id)
+                continue
+
+            # Prepare occupied and available distance arrays
+            occupied_arrays = list(distance_dict_dm[mode][cell_id].values())
+            occupied_concat = np.concatenate(
+                [np.asarray(a) for a in occupied_arrays],
+            )
+            occupied_concat = occupied_concat[np.isfinite(occupied_concat)]
+            available_concat = np.asarray(avail_raw, dtype=float)
+            if not is_scaled_measure:
+                available_concat = available_concat * PIXEL_SIZE_IN_UM
+            available_concat = available_concat[np.isfinite(available_concat)]
+
+            # Per-cell occupancy on the cell's own grid
+            cell_result = _compute_single_cell_occupancy(
+                occupied=occupied_concat,
+                available=available_concat,
+                bin_width=bin_width,
+                pseudocount=pseudocount,
+                min_count=min_count,
+            )
+            occupancy_result[mode]["individual"][cell_id] = cell_result
+
+            # Collect raw distances for pooled computation
+            all_occupied_distances.append(occupied_concat)
+            all_available_distances.append(available_concat)
+
+            # Interpolate per-cell ratio onto common grid (NaN outside cell range)
+            interp_ratio = np.interp(
+                common_r_grid,
+                cell_result["xvals"],
+                cell_result["occupancy"],
+                left=np.nan,
+                right=np.nan,
+            )
+            interp_ratios.append(interp_ratio)
+
+        # ------------------------------------------------------------------
+        # Combined results on common grid
+        # ------------------------------------------------------------------
+        if interp_ratios:
+            ratio_arr = np.vstack(interp_ratios)
+            mean_ratio = np.nanmean(ratio_arr, axis=0)
+            std_ratio = np.nanstd(ratio_arr, axis=0)
+            env_lo, env_hi, _, _ = pointwise_envelope(
+                np.where(np.isnan(ratio_arr), 0.0, ratio_arr), alpha=0.05
+            )
+
+            # Pooled occupancy: single ratio from all cells' distances combined
+            pooled_occupied = np.concatenate(all_occupied_distances)
+            pooled_available = np.concatenate(all_available_distances)
+            raw_occ_pooled, _ = np.histogram(pooled_occupied, bins=common_bin_edges)
+            raw_avail_pooled, _ = np.histogram(pooled_available, bins=common_bin_edges)
+            smoothed_occ_p = raw_occ_pooled.astype(float) + pseudocount
+            smoothed_avail_p = raw_avail_pooled.astype(float) + pseudocount
+            pdf_occ_pooled = normalize_pdf(common_r_grid, smoothed_occ_p)
+            pdf_avail_pooled = normalize_pdf(common_r_grid, smoothed_avail_p)
+
+            reg = 1e-10
+            log_ratio_pooled = np.log(np.maximum(pdf_occ_pooled, reg)) - np.log(
+                np.maximum(pdf_avail_pooled, reg)
+            )
+            ratio_pooled = np.exp(log_ratio_pooled)
+            ratio_pooled = np.nan_to_num(ratio_pooled, nan=0.0, posinf=0.0, neginf=0.0)
+            if min_count > 0:
+                ratio_pooled[raw_avail_pooled < min_count] = np.nan
+
+            occupancy_result[mode]["combined"] = {
+                "xvals": common_r_grid,
+                "occupancy": mean_ratio,
+                "occupancy_pooled": ratio_pooled,
+                "std_occupancy": std_ratio,
+                "envelope_lo": env_lo,
+                "envelope_hi": env_hi,
+                "pdf_occupied": pdf_occ_pooled,
+                "pdf_available": pdf_avail_pooled,
+                "all_occupancy": ratio_arr,
+            }
+        else:
+            occupancy_result[mode]["combined"] = {
+                "xvals": common_r_grid,
+                "occupancy": np.zeros_like(common_r_grid),
+                "occupancy_pooled": np.zeros_like(common_r_grid),
+                "std_occupancy": np.zeros_like(common_r_grid),
+                "envelope_lo": np.zeros_like(common_r_grid),
+                "envelope_hi": np.zeros_like(common_r_grid),
+                "pdf_occupied": np.zeros_like(common_r_grid),
+                "pdf_available": np.zeros_like(common_r_grid),
+                "all_occupancy": np.empty((0, len(common_r_grid))),
+            }
+
+    if save_path is not None:
+        with open(save_path, "wb") as f:
+            pickle.dump(occupancy_result, f)
+        logger.info("Saved binned occupancy (from distance dict) to %s", save_path)
+
+    return occupancy_result
+
+
+def pairwise_envelope_test_occupancy(
+    combined_binned_occupancy_dict: dict[str, dict[str, dict[str, Any]]],
+    packing_modes: list[str],
+    alpha: float = 0.05,
+    statistic: Literal["supremum", "intdev"] = "intdev",
+    envelope_type: EnvelopeType = "pointwise",
+    joint_r_grid_size: int | None = None,
+) -> dict[str, Any]:
+    """
+    Run a pairwise Monte Carlo envelope test on per-cell occupancy ratio curves.
+
+    For each ordered pair ``(mode_a, mode_b)`` the per-cell occupancy *ratio
+    curves* from ``mode_b`` are used as the simulation envelope; each per-cell
+    curve from ``mode_a`` is then tested against that envelope.  BH FDR
+    correction is applied within each pair.
+
+    Unlike :func:`~cellpack_analysis.lib.stats.pairwise_envelope_test`, the
+    occupancy ratio curves are compared *directly* as spatial functions — each
+    curve encodes how the occupancy ratio varies across distance bins, and the
+    test detects differences in that spatial pattern.  No ECDF construction is
+    performed.
+
+    Parameters
+    ----------
+    combined_binned_occupancy_dict
+        ``{distance_measure: {mode: {"individual": {cell_id: {"occupancy":
+        np.ndarray, "xvals": np.ndarray}}, "combined": {...}}}}`` — the output
+        of :func:`get_binned_occupancy_dict_from_distance_dict` wrapped in a
+        distance-measure outer key.
+    packing_modes
+        Ordered list of modes forming the pairwise matrix.
+    alpha
+        Significance level for BH-corrected rejection.
+    statistic
+        Test statistic: ``"intdev"`` or ``"supremum"``.
+        Ignored when ``envelope_type="rank"``.
+    envelope_type
+        ``"pointwise"``: pointwise quantile envelope (default).
+        ``"rank"``: simultaneous rank envelope test (Myllymäki et al. 2017).
+        The visualization envelopes (``envelopes`` key) always use pointwise
+        quantiles regardless of this setting.
+    joint_r_grid_size
+        Points per distance measure when resampling curves to an equal-length
+        grid before the joint test.  Defaults to the bin count of the first
+        available occupancy curve, giving each distance measure equal weight.
+
+    Returns
+    -------
+    :
+        Dictionary with the same structure as
+        :func:`~cellpack_analysis.lib.stats.pairwise_envelope_test`:
+
+        .. code-block:: python
+
+            {
+                "per_distance_measure": {
+                    dm: {
+                        (mode_a, mode_b): {
+                            "pvals", "qvals", "signs",
+                            "rejection_fraction",
+                            "rejection_fraction_positive",
+                            "rejection_fraction_negative",
+                        }
+                    }
+                },
+                "joint": { (mode_a, mode_b): {...} },
+                "envelopes": {
+                    mode: {
+                        dm: {"xvals", "lo", "hi", "mu"}
+                    }
+                },
+                "packing_modes": list[str],
+                "distance_measures": list[str],
+                "alpha": float,
+                "statistic": str,
+                "envelope_type": str,
+            }
+    """
+    distance_measures = list(combined_binned_occupancy_dict.keys())
+
+    envelopes: dict[str, dict[str, Any]] = {}
+    mode_curves: dict[str, dict[str, np.ndarray]] = {mode: {} for mode in packing_modes}
+    mode_xvals: dict[str, dict[str, np.ndarray]] = {mode: {} for mode in packing_modes}
+
+    for dm in distance_measures:
+        occ_dm = combined_binned_occupancy_dict[dm]
+        for mode in packing_modes:
+            combined = occ_dm.get(mode, {}).get("combined", {})
+            xvals = combined.get("xvals", np.array([]))
+            mode_xvals[mode][dm] = xvals
+
+            # Use the pre-interpolated per-cell ratios on the common grid
+            arr = combined.get("all_occupancy", np.empty((0, max(1, len(xvals)))))
+            # Replace NaN with 0 for stacking/envelope operations
+            arr = np.where(np.isnan(arr), 0.0, arr)
+            mode_curves[mode][dm] = arr
+
+            # Build pointwise envelope for visualization (always pointwise regardless of
+            # envelope_type, matching the behaviour of pairwise_envelope_test's envelopes key)
+            if arr.shape[0] > 1:
+                lo, hi, mu, _ = pointwise_envelope(arr, alpha=alpha)
+            else:
+                mu = combined.get("occupancy", np.zeros_like(xvals))
+                lo = mu.copy()
+                hi = mu.copy()
+            envelopes.setdefault(mode, {})[dm] = {
+                "xvals": xvals,
+                "lo": lo,
+                "hi": hi,
+                "mu": mu,
+            }
+
+    per_dm_results, joint_results = _pairwise_test_on_curves(
+        mode_curves=mode_curves,
+        mode_xvals=mode_xvals,
+        packing_modes=packing_modes,
+        distance_measures=distance_measures,
+        alpha=alpha,
+        statistic=statistic,
+        envelope_type=envelope_type,
+        joint_r_grid_size=joint_r_grid_size,
+    )
+
+    return {
+        "per_distance_measure": per_dm_results,
+        "joint": joint_results,
+        "envelopes": envelopes,
+        "packing_modes": packing_modes,
+        "distance_measures": distance_measures,
+        "alpha": alpha,
+        "statistic": statistic,
+        "envelope_type": envelope_type,
+    }

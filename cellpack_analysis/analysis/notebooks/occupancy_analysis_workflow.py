@@ -1,7 +1,19 @@
 # %% [markdown]
-# # Occupancy workflow for punctate structures
+# # Occupancy workflow for punctate structures (discrete / histogram-based)
 #
 # Calculate and plot the occupancy ratio for different observed and simulated data
+# using *discrete KDE* methods
+#
+# Pipeline overview:
+# 1. Load positions and mesh information
+# 2. Compute distance dictionaries and normalize → ``all_distance_dict``
+# 3. Compute binned occupancy ratios directly from distance arrays
+#    → ``combined_binned_occupancy_dict``
+# 4. Plot occupancy illustration (histogram overlay + ratio curve for one cell)
+# 5. Plot occupancy ratio: mean (thick line) + 95 % pointwise envelope
+# 6. Occupancy EMD: bar/violin comparisons + pairwise EMD matrix
+# 7. Pairwise envelope test on occupancy ratio curves
+# 8. Pairwise KS test on occupancy distributions
 import logging
 import time
 
@@ -18,50 +30,50 @@ start_time = time.time()
 # %% [markdown]
 # ## Set up parameters
 # %% [markdown]
-# ### Set simulation parameters
+# ### Set structure IDs and packing configuration
 # SLC25A17: peroxisomes
 # RAB5A: early endosomes
 # SEC61B: ER
 # ST6GAL1: Golgi
-STRUCTURE_ID = "SLC25A17"  # structure ID to analyze, this is the gene name
-PACKING_ID = "peroxisome"  # packing ID to analyze, e.g., "peroxisome", "ER_peroxisome"
-STRUCTURE_NAME = "peroxisome"  # this is the name of the packed punctate structure
-CONDITION = (
-    "norm_weights"  # this is the condition name in the packing outputs, e.g., "norm_weights",
-)
-RESULT_SUBFOLDER = "occupancy_test"  # subfolder within results/ to save outputs for this workflow
+STRUCTURE_ID = "SLC25A17"
+"""ID for the packed punctate structure; used as packing mode for observed data."""
+
+CELL_STRUCTURE_ID = "SLC25A17"
+"""ID of the cell shapes used for packing (used for mesh lookup for simulated modes)."""
+
+PACKING_ID = "peroxisome"
+"""Packing configuration ID — used for naming outputs and folders."""
+
+STRUCTURE_NAME = "peroxisome"
+"""Name of the packed punctate structure in cellPACK output files."""
+
+CONDITION = "rules_shape_with_seed"
+"""Experimental condition / packing output subfolder."""
+
+RESULT_SUBFOLDER = "occupancy_test_discrete"
+"""Subfolder within results/ to save outputs for this workflow."""
 # %% [markdown]
 # ### Set packing modes and channel map
 save_format = "pdf"
-packing_modes = [
-    STRUCTURE_ID,
-    "random",
-    "nucleus_gradient",
-    "membrane_gradient",
-    "apical_gradient",
-    # "struct_gradient",
-    # "interpolated",
-]
+
 baseline_mode = STRUCTURE_ID
 
 channel_map = {
-    "SLC25A17": "SLC25A17",
-    "random": "SLC25A17",
-    "nucleus_gradient": "SLC25A17",
-    "membrane_gradient": "SLC25A17",
-    "apical_gradient": "SLC25A17",
-    # "interpolated": "SLC25A17",
-    # "struct_gradient_weak": "ST6GAL1",
-    # "struct_gradient_weak": "ST6GAL1",
-    # "struct_gradient": "ST6GAL1",
+    STRUCTURE_ID: STRUCTURE_ID,
+    "random": CELL_STRUCTURE_ID,
+    "nucleus_gradient": CELL_STRUCTURE_ID,
+    "membrane_gradient": CELL_STRUCTURE_ID,
+    "apical_gradient": CELL_STRUCTURE_ID,
+    # "struct_gradient": CELL_STRUCTURE_ID,
 }
 
 # relative path to packing outputs
 packing_output_folder = f"packing_outputs/8d_sphere_data/{CONDITION}/"
 
+packing_modes = list(channel_map.keys())
 all_structures = list(set(channel_map.values()))
 # %% [markdown]
-# ### Set file paths and setup parameters
+# ### Set file paths
 project_root = get_project_root()
 base_datadir = project_root / "data"
 base_results_dir = project_root / "results"
@@ -73,7 +85,7 @@ figures_dir = results_dir / "figures/"
 figures_dir.mkdir(exist_ok=True, parents=True)
 # %% [markdown]
 # ### Distance measures to use
-# Options are "nucleus", "z", "scaled_nucleus", "membrane"
+# Options: "nucleus", "z", "scaled_nucleus", "membrane"
 occupancy_distance_measures = [
     "nucleus",
     "z",
@@ -109,6 +121,8 @@ for structure_id in all_structures:
         recalculate=False,
     )
     combined_mesh_information_dict[structure_id] = mesh_information_dict
+# %% [markdown]
+# ## Distance analysis
 # %% [markdown]
 # ### Calculate distance measures and normalize
 all_distance_dict = distance.get_distance_dictionary(
