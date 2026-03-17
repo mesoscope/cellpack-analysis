@@ -52,6 +52,7 @@ sys.modules["vtkmodules"].util = sys.modules["vtkmodules.util"]
 sys.modules["vtkmodules.util"].numpy_support = sys.modules["vtkmodules.util.numpy_support"]
 
 from cellpack_analysis.lib.mesh_tools import (  # noqa: E402
+    _compute_distances_for_points,
     calc_scaled_distance_to_nucleus_surface,
     calc_scaled_distance_to_nucleus_surface_serial,
 )
@@ -408,4 +409,185 @@ class TestVectorizedFallback:
             nuc_exp,
             atol=ATOL_DIST,
             err_msg="Fallback to serial produced wrong nuc distances",
+        )
+
+
+# ---------------------------------------------------------------------------
+# 9. _compute_distances_for_points — analytical correctness
+# ---------------------------------------------------------------------------
+
+_ALL_INTERIOR_MEASURES = {"membrane", "nucleus", "scaled_nucleus", "z", "scaled_z"}
+
+
+class TestComputeDistancesForPoints:
+    """Verify the shared primitive against analytical values for concentric spheres."""
+
+    @pytest.fixture(scope="class")
+    def batch_pts(self):
+        """Cytoplasmic points along the x-axis at known radii."""
+        return _points_at_radii(_RADII, axis=0)
+
+    def test_returns_requested_keys_only(self, sphere_meshes, batch_pts):
+        for measure in _ALL_INTERIOR_MEASURES:
+            result = _compute_distances_for_points(
+                batch_pts,
+                sphere_meshes["nuc_mesh"],
+                sphere_meshes["mem_mesh"],
+                {measure},
+            )
+            assert set(result.keys()) == {measure}, (
+                f"Expected only key '{measure}', got {set(result.keys())}"
+            )
+
+    def test_nucleus_distances_analytical(self, sphere_meshes, batch_pts):
+        result = _compute_distances_for_points(
+            batch_pts,
+            sphere_meshes["nuc_mesh"],
+            sphere_meshes["mem_mesh"],
+            {"nucleus"},
+        )
+        expected = np.array(_RADII) - R_NUC
+        np.testing.assert_allclose(result["nucleus"], expected, atol=ATOL_DIST)
+
+    def test_scaled_nucleus_distances_analytical(self, sphere_meshes, batch_pts):
+        result = _compute_distances_for_points(
+            batch_pts,
+            sphere_meshes["nuc_mesh"],
+            sphere_meshes["mem_mesh"],
+            {"scaled_nucleus"},
+        )
+        expected = np.array(_FRACS)
+        valid = ~np.isnan(result["scaled_nucleus"])
+        np.testing.assert_allclose(result["scaled_nucleus"][valid], expected[valid], atol=ATOL_SCALED)
+
+    def test_membrane_distances_positive_interior(self, sphere_meshes, batch_pts):
+        result = _compute_distances_for_points(
+            batch_pts,
+            sphere_meshes["nuc_mesh"],
+            sphere_meshes["mem_mesh"],
+            {"membrane"},
+        )
+        # All points are inside the membrane → signed distance > 0
+        assert np.all(result["membrane"] > 0), "Interior points must have positive mem distance"
+
+    def test_z_distances_from_mesh_bounds(self, sphere_meshes, batch_pts):
+        """Verify z_min is derived from mem_mesh.bounds (single source of truth)."""
+        mem_mesh = sphere_meshes["mem_mesh"]
+        z_min = float(mem_mesh.bounds[0, 2])
+        expected = np.abs(batch_pts[:, 2] - z_min)
+        result = _compute_distances_for_points(
+            batch_pts,
+            sphere_meshes["nuc_mesh"],
+            mem_mesh,
+            {"z"},
+        )
+        np.testing.assert_allclose(result["z"], expected, atol=1e-10)
+
+    def test_scaled_z_in_unit_interval(self, sphere_meshes):
+        """Cytoplasmic points along all axes should have scaled_z in [0, 1]."""
+        pts = np.vstack([_points_at_radii(_RADII, axis=ax) for ax in range(3)])
+        result = _compute_distances_for_points(
+            pts,
+            sphere_meshes["nuc_mesh"],
+            sphere_meshes["mem_mesh"],
+            {"scaled_z"},
+        )
+        valid = ~np.isnan(result["scaled_z"])
+        assert np.all((result["scaled_z"][valid] >= 0) & (result["scaled_z"][valid] <= 1))
+
+    def test_precomputed_mem_distances_reused(self, sphere_meshes, batch_pts):
+        """Supplying pre-computed mem_distances must give the same result."""
+        from trimesh import proximity as _prox
+
+        pre_mem = np.array(_prox.signed_distance(sphere_meshes["mem_mesh"], batch_pts))
+        result_auto = _compute_distances_for_points(
+            batch_pts,
+            sphere_meshes["nuc_mesh"],
+            sphere_meshes["mem_mesh"],
+            {"nucleus", "scaled_nucleus", "membrane"},
+        )
+        result_pre = _compute_distances_for_points(
+            batch_pts,
+            sphere_meshes["nuc_mesh"],
+            sphere_meshes["mem_mesh"],
+            {"nucleus", "scaled_nucleus", "membrane"},
+            mem_distances=pre_mem,
+        )
+        for dm in ("nucleus", "scaled_nucleus", "membrane"):
+            np.testing.assert_allclose(
+                result_pre[dm], result_auto[dm], equal_nan=True, atol=1e-10,
+                err_msg=f"Pre-computed mem_distances changed result for '{dm}'",
+            )
+
+
+# ---------------------------------------------------------------------------
+# 10. Single-source-of-truth regression gate
+#     _calculate_distances_for_cell_id must agree with _compute_distances_for_points
+#     on all shared measures (nucleus, scaled_nucleus, membrane, z, scaled_z).
+# ---------------------------------------------------------------------------
+
+
+class TestSingleSourceOfTruth:
+    """Regression gate: particle pipeline and grid primitive must agree."""
+
+    @pytest.fixture(scope="class")
+    def cytoplasmic_pts(self):
+        """Mix of cytoplasmic points along all three axes."""
+        return np.vstack([_points_at_radii(_RADII, axis=ax) for ax in range(3)])
+
+    @pytest.fixture(scope="class")
+    def mesh_dict(self, sphere_meshes):
+        mem_mesh = sphere_meshes["mem_mesh"]
+        return {
+            "test_cell": {
+                "nuc_mesh": sphere_meshes["nuc_mesh"],
+                "mem_mesh": mem_mesh,
+                "mem_bounds": mem_mesh.bounds,
+            }
+        }
+
+    @pytest.mark.parametrize(
+        "measure",
+        ["nucleus", "scaled_nucleus", "membrane", "z", "scaled_z"],
+    )
+    def test_particle_pipeline_matches_primitive(self, sphere_meshes, mesh_dict, cytoplasmic_pts, measure):
+        """The particle distance pipeline must produce values identical to the primitive."""
+        # Defer this import so the VTK stub is already installed.
+        from cellpack_analysis.lib.distance import _calculate_distances_for_cell_id
+
+        cell_id = "test_cell"
+        _, particle_result = _calculate_distances_for_cell_id(
+            cell_id,
+            cytoplasmic_pts,
+            mesh_dict,
+            distance_measures=[measure],
+        )
+        prim_result = _compute_distances_for_points(
+            cytoplasmic_pts,
+            sphere_meshes["nuc_mesh"],
+            sphere_meshes["mem_mesh"],
+            {measure},
+        )
+
+        # The particle pipeline applies filter_invalid_distances; the primitive does not.
+        # Compare only valid (non-NaN, non-inf) entries from the primitive.
+        prim_arr = prim_result[measure]
+        valid = ~np.isnan(prim_arr) & ~np.isinf(prim_arr)
+        prim_valid = prim_arr[valid]
+
+        particle_arr = particle_result.get(measure, np.array([]))
+
+        assert len(particle_arr) == len(prim_valid), (
+            f"Length mismatch for '{measure}': "
+            f"particle pipeline={len(particle_arr)}, primitive={len(prim_valid)}"
+        )
+        np.testing.assert_allclose(
+            particle_arr,
+            prim_valid,
+            atol=ATOL_DIST if measure in ("nucleus", "membrane", "z") else ATOL_SCALED,
+            equal_nan=True,
+            err_msg=(
+                f"Particle pipeline disagrees with primitive for '{measure}' – "
+                "single source of truth invariant violated"
+            ),
         )
