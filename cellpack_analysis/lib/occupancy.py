@@ -1085,36 +1085,6 @@ def get_binned_occupancy_dict_from_distance_dict(
 
         Each cell in ``"individual"`` has its own ``"xvals"`` (per-cell grid).
         ``"combined"`` reports everything on a shared common grid.
-
-    Notes
-    -----
-    **Alternative normalization / occupancy calculation approaches:**
-
-    The current implementation uses the *PDF ratio* method:
-    ``occupancy = normalize(hist_occ + α) / normalize(hist_avail + α)``
-    where normalization integrates the density to 1 via trapezoidal rule.
-    This is a well-defined density ratio, but can be sensitive at tails where
-    ``hist_avail`` is sparse.  Alternative approaches include:
-
-    * **Log₂ fold-change**: replace ``exp(log(pdf_occ) − log(pdf_avail))``
-      with ``(log(pdf_occ) − log(pdf_avail)) / log(2)``.  The result is
-      symmetric around 0 (+1 = 2× enriched, −1 = 2× depleted) and avoids
-      the large dynamic range of the raw ratio.  Numerically stable and
-      standard in enrichment analyses.
-
-    * **Raw count ratio**: ``(count_occ + α) / (count_avail + α)`` without
-      density normalization.  Simple and directly interpretable as relative
-      occupancy, but scale depends on total sample sizes.
-
-    * **Adaptive binning**: use quantile-based bins from available-space
-      so each bin contains ≥ ``min_count`` points.  Completely eliminates
-      the tail instability, but variable-width bins complicate cross-cell
-      comparison and visualization.
-
-    * **Bayesian posterior**: model each bin as Binomial with a
-      Beta/Dirichlet prior.  The posterior mean provides a principled
-      enrichment estimate with credible intervals, but adds complexity
-      in prior selection.
     """
     save_path = None
     if results_dir is not None:
