@@ -142,7 +142,7 @@ SLURM_DEFAULTS: dict[str, str] = {
 Partition defaults to empty string, which omits the ``--partition``
 directive so SLURM uses the cluster's default partition."""
 
-POLL_INTERVAL_SECONDS = 30
+POLL_INTERVAL_SECONDS = 120
 """How often the orchestrator checks ``squeue`` for running jobs."""
 
 MAX_ARRAY_SIZE = 10000
@@ -379,13 +379,17 @@ def _submit_sbatch(script_content: str, script_path: Path) -> str | None:
         return None
 
 
-def _get_running_job_ids(job_ids: list[str]) -> list[str]:
+def _get_running_job_ids(job_ids: list[str]) -> tuple[list[str], int]:
     """Return the subset of *job_ids* that are still in the SLURM queue.
 
     For SLURM job arrays, ``squeue -o %i`` reports individual task IDs as
     ``JOBID_TASKID`` rather than the plain ``JOBID`` that was returned by
     ``sbatch``.  We strip the ``_<taskid>`` suffix so that array jobs are
     matched correctly against the submitted job ID.
+
+    Returns a tuple of:
+    - still-running base job IDs
+    - total number of active array tasks (one squeue output line per task)
     """
     try:
         result = subprocess.run(
@@ -393,33 +397,65 @@ def _get_running_job_ids(job_ids: list[str]) -> list[str]:
             capture_output=True,
             text=True,
         )
+        lines = [line.strip() for line in result.stdout.strip().splitlines() if line.strip()]
         # Normalise array-task IDs ("12345_7") to bare job IDs ("12345").
-        active = {
-            line.strip().split("_")[0]
-            for line in result.stdout.strip().splitlines()
-            if line.strip()
-        }
-        return [jid for jid in job_ids if jid in active]
+        active_base_ids = {line.split("_")[0] for line in lines}
+        return [jid for jid in job_ids if jid in active_base_ids], len(lines)
     except Exception:
         # If squeue fails (e.g. all jobs already finished), treat as empty
-        return []
+        return [], 0
+
+
+def _log_batch_status(result_paths: list[Path], total_batches: int) -> None:
+    """Log how many batches have completed and their succeeded/failed/skipped counts."""
+    done_ok = 0
+    done_failed = 0
+    total_recipes_succeeded = 0
+    total_recipes_failed = 0
+    total_recipes_skipped = 0
+    for rp in result_paths:
+        data = _read_worker_result(rp)
+        if not data:
+            continue
+        if data.get("failed"):
+            done_failed += 1
+        else:
+            done_ok += 1
+        total_recipes_succeeded += len(data.get("succeeded", []))
+        total_recipes_failed += len(data.get("failed", []))
+        total_recipes_skipped += len(data.get("skipped", []))
+    done_total = done_ok + done_failed
+    pending = total_batches - done_total
+    logger.info(
+        f"Batch progress: {done_total}/{total_batches} finished "
+        f"({done_ok} ok, {done_failed} with failures, {pending} pending) — "
+        f"recipes succeeded={total_recipes_succeeded}, failed={total_recipes_failed}, "
+        f"skipped={total_recipes_skipped}"
+    )
 
 
 def _wait_for_jobs(
     job_ids: list[str],
     poll_interval: int = POLL_INTERVAL_SECONDS,
+    result_paths: list[Path] | None = None,
 ) -> None:
     """Block until none of *job_ids* appear in ``squeue``."""
     remaining = list(job_ids)
+    total_batches = len(result_paths) if result_paths else 0
     while remaining:
         time.sleep(poll_interval)
-        remaining = _get_running_job_ids(remaining)
+        remaining, active_tasks = _get_running_job_ids(remaining)
         if remaining:
             logger.info(
                 f"Waiting for {len(remaining)}/{len(job_ids)} SLURM jobs "
+                f"({active_tasks} array tasks still active) "
                 f"({', '.join(remaining[:5])}{'…' if len(remaining) > 5 else ''})"
             )
+        if result_paths:
+            _log_batch_status(result_paths, total_batches)
     logger.info("All SLURM jobs have finished.")
+    if result_paths:
+        _log_batch_status(result_paths, total_batches)
 
 
 # ===================================================================
@@ -566,9 +602,10 @@ def _run_orchestrator(
         slurm_opts = dict(SLURM_DEFAULTS)
 
     workflow_config = WorkflowConfig(workflow_config_path=workflow_config_path)
+    timestamp = time.strftime("%Y%m%d")
 
     # Set up logging
-    slurm_log_dir = workflow_config.output_path / "logs" / "slurm"
+    slurm_log_dir = workflow_config.output_path / "logs" / "slurm" / timestamp
     slurm_log_dir.mkdir(parents=True, exist_ok=True)
 
     workflow_log_file = setup_workflow_logging(
@@ -592,7 +629,9 @@ def _run_orchestrator(
     input_file_dict = get_input_file_dictionary(workflow_config)
 
     # Directories for batch manifests, sbatch scripts, and worker results
-    staging_dir = workflow_config.output_path / "slurm_staging" / workflow_config.packing_id
+    staging_dir = (
+        workflow_config.output_path / "slurm_staging" / workflow_config.packing_id / timestamp
+    )
     manifest_dir = staging_dir / "manifests"
     script_dir = staging_dir / "scripts"
     result_dir = staging_dir / "results"
@@ -602,6 +641,7 @@ def _run_orchestrator(
     # Pre-filter completed recipes and build batches
     all_job_ids: list[str] = []
     all_result_paths: list[Path] = []
+    all_manifest_paths: list[Path] = []
     batch_counter = 0
     total_submitted = 0
     total_skipped = 0
@@ -648,6 +688,7 @@ def _run_orchestrator(
             )
 
             all_result_paths.append(result_path)
+            all_manifest_paths.append(manifest_path)
             total_submitted += len(batch)
             batch_counter += 1
 
@@ -741,31 +782,34 @@ def _run_orchestrator(
         logger.info("[DRY RUN] No jobs were actually submitted.")
         return 0
 
+    # Always write the tracking file so users can look up the array job ID and
+    # per-batch manifests regardless of whether --no-wait was used.
+    tracking_file = staging_dir / "job_tracking.json"
+    with open(tracking_file, "w") as fh:
+        json.dump(
+            {
+                "job_ids": all_job_ids,
+                "result_paths": [str(p) for p in all_result_paths],
+                "manifest_paths": [str(p) for p in all_manifest_paths],
+                "workflow_config_path": str(workflow_config_path),
+                "is_job_array": use_job_array,
+            },
+            fh,
+            indent=2,
+        )
+    logger.info(f"Job tracking written to {tracking_file}")
+
     if no_wait:
         logger.info(
             "Not waiting for jobs to complete (--no-wait). "
             "Run the aggregation step manually later."
         )
-        # Write a job-tracking file for later aggregation
-        tracking_file = staging_dir / "job_tracking.json"
-        with open(tracking_file, "w") as fh:
-            json.dump(
-                {
-                    "job_ids": all_job_ids,
-                    "result_paths": [str(p) for p in all_result_paths],
-                    "workflow_config_path": str(workflow_config_path),
-                    "is_job_array": use_job_array,
-                },
-                fh,
-                indent=2,
-            )
-        logger.info(f"Job tracking info written to {tracking_file}")
         return 0
 
     # Wait for all SLURM jobs to finish
     if all_job_ids:
         logger.info(f"Waiting for {len(all_job_ids)} SLURM jobs to complete …")
-        _wait_for_jobs(all_job_ids)
+        _wait_for_jobs(all_job_ids, result_paths=all_result_paths)
 
     # Aggregate results
     return _aggregate_results(all_result_paths, staging_dir)

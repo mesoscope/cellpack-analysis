@@ -30,8 +30,9 @@
 #   --orch-mem         Memory for orchestrator job (default: 16G)
 #   --orch-cpus        CPUs for orchestrator job (default: same as --cpus)
 #   --orch-partition   Partition for orchestrator job (defaults to --partition)
-#   --max-jobs         Max concurrent worker jobs (uses SLURM job arrays)
+#   --max-jobs         Max concurrent worker jobs (default: 16; 0 for unlimited)
 #   --dry-run          Pass --dry-run to orchestrator (no workers submitted)
+#   --no-wait          Submit orchestrator and return immediately without waiting
 #   -h, --help         Show this help message
 #
 # Examples:
@@ -79,7 +80,8 @@ ORCH_PARTITION=""
 CONFIG=""
 VENV=""
 DRY_RUN=""
-MAX_JOBS=0
+NO_WAIT=""
+MAX_JOBS=16
 
 # ----------------------------  parse args  ----------------------------------
 usage() {
@@ -103,6 +105,7 @@ while [[ $# -gt 0 ]]; do
         --orch-cpus)       ORCH_CPUS="$2";     shift 2 ;;
         --max-jobs)        MAX_JOBS="$2";       shift 2 ;;
         --dry-run)         DRY_RUN="--dry-run"; shift ;;
+        --no-wait)         NO_WAIT="--no-wait"; shift ;;
         -h|--help)         usage 0 ;;
         *)                 echo "Unknown option: $1" >&2; usage 1 ;;
     esac
@@ -126,7 +129,8 @@ if [[ -z "$VENV" ]]; then
         VENV="${VIRTUAL_ENV}/bin/activate"
     else
         echo "Warning: No --venv given and VIRTUAL_ENV not set." >&2
-        echo "         Workers will inherit the submitter's bare environment." >&2
+        echo "Stopping execution." >&2
+        exit 1
     fi
 fi
 
@@ -174,6 +178,7 @@ ORCHESTRATOR_CMD="${PYTHON_EXEC} -m cellpack_analysis.packing.run_packing_workfl
     -b ${BATCH_SIZE} \
     --max-jobs ${MAX_JOBS} \
     ${DRY_RUN} \
+    ${NO_WAIT} \
     $(printf '%s ' "${SLURM_ARGS[@]}")"
 
 # Trim trailing whitespace the venv arg if needed
@@ -192,7 +197,8 @@ fi
 # Save orchestrator SLURM logs next to the config file so they are easy to find.
 # The Python-level log ends up in <output_path>/logs/ once the workflow config
 # is parsed, but that path is not known at bash submission time.
-ORCH_LOG_DIR="$(dirname "$CONFIG")/slurm_logs"
+TS=$(date +"%Y%m%d")
+ORCH_LOG_DIR="$(dirname "$CONFIG")/slurm_logs/${TS}"
 mkdir -p "$ORCH_LOG_DIR"
 
 cat > "$ORCH_SCRIPT" <<SBATCH_EOF
@@ -236,6 +242,7 @@ echo "Orch cpus:       $ORCH_CPUS"
 echo "Max jobs:        ${MAX_JOBS:-0 (unlimited)}"
 echo "Job name:        $JOB_NAME"
 echo "Venv:            ${VENV:-<none>}"
+echo "Wait:            ${NO_WAIT:+no-wait}${NO_WAIT:-wait for completion}"
 echo ""
 
 ORCH_SUBMIT=$(sbatch "$ORCH_SCRIPT" 2>&1)
@@ -259,9 +266,11 @@ echo ""
 echo "Monitor with:"
 echo "  squeue -u \$USER --name=${JOB_NAME}"
 echo "  scontrol show job $ORCH_JOB_ID"
+echo "  # Once the orchestrator has submitted the worker array:"
+echo "  grep 'Submitted job array' ${ORCH_LOG_DIR}/${JOB_NAME}_orch_${ORCH_JOB_ID}.out"
 echo ""
 echo "After all jobs finish, aggregate results with:"
 echo "  ${PYTHON_EXEC} -m cellpack_analysis.packing.run_packing_workflow_slurm \\"
-echo "      --aggregate <output_path>/slurm_staging/job_tracking.json"
+echo "      --aggregate <output_path>/slurm_staging/<packing_id>/${TS}/job_tracking.json"
 echo ""
 echo "Done. No further compute on this node."
