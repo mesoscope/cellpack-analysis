@@ -74,6 +74,7 @@ ORCH_MEM="16G"
 ORCH_PARTITION=""
 VENV=""
 DRY_RUN=""
+NO_WAIT=""
 
 # ----------------------------  parse args  ----------------------------------
 usage() {
@@ -102,6 +103,7 @@ while [[ $# -gt 0 ]]; do
         --orch-mem)         ORCH_MEM="$2";         shift 2 ;;
         --orch-partition)   ORCH_PARTITION="$2";   shift 2 ;;
         --dry-run)          DRY_RUN="--dry-run";   shift ;;
+        --no-wait)          NO_WAIT="--no-wait";   shift ;;
         -h|--help)          usage 0 ;;
         *)                  echo "Unknown option: $1" >&2; usage 1 ;;
     esac
@@ -117,8 +119,10 @@ if [[ -z "$VENV" ]]; then
     if [[ -n "${VIRTUAL_ENV:-}" ]]; then
         VENV="${VIRTUAL_ENV}/bin/activate"
     else
+        # exit if venv is not set
         echo "Warning: No --venv given and VIRTUAL_ENV not set." >&2
-        echo "         Workers will inherit the submitter's bare environment." >&2
+        echo "Stopping execution." >&2
+        exit 1
     fi
 fi
 
@@ -143,9 +147,10 @@ fi
 
 # ----------------------------  determine log dir  ---------------------------
 # Resolve project root relative to this script's location.
+TS=$(date +"%Y%m%d")
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-LOG_DIR="${PROJECT_ROOT}/data/structure_data/${STRUCTURE_ID}/slurm_logs"
+LOG_DIR="${PROJECT_ROOT}/data/structure_data/${STRUCTURE_ID}/slurm_logs/${TS}"
 mkdir -p "$LOG_DIR"
 
 # ----------------------------  build orchestrator cmd  ----------------------
@@ -185,7 +190,8 @@ ORCHESTRATOR_CMD="${PYTHON_EXEC} -m cellpack_analysis.preprocessing.run_availabl
     ${RECALCULATE} \
     ${CHUNK_SIZE} \
     ${DRY_RUN} \
-    ${VENV_ARG}"
+    ${VENV_ARG} \
+    ${NO_WAIT}"
 
 if [[ -n "$PARTITION" ]]; then
     ORCHESTRATOR_CMD="${ORCHESTRATOR_CMD} --slurm-partition ${PARTITION}"
@@ -234,6 +240,7 @@ echo "CPUs/task:       $CPUS"
 echo "Max concurrent:  $MAX_JOBS"
 echo "Job name:        $JOB_NAME"
 echo "Venv:            ${VENV:-<none>}"
+echo "Wait:            ${NO_WAIT:+no-wait}${NO_WAIT:-wait for completion}"
 echo ""
 
 ORCH_SUBMIT=$(sbatch "$ORCH_SCRIPT" 2>&1)
@@ -246,9 +253,12 @@ if [[ -z "$ORCH_JOB_ID" || "$ORCH_JOB_ID" == "$ORCH_SUBMIT" ]]; then
     exit 1
 fi
 
+TRACKING_FILE="${PROJECT_ROOT}/data/structure_data/${STRUCTURE_ID}/slurm_staging/${TS}/job_tracking.json"
+ORCH_LOG="${LOG_DIR}/${JOB_NAME}_orch_${ORCH_JOB_ID}.out"
+
 echo "Submitted orchestrator job: $ORCH_JOB_ID"
 echo "  Script: $ORCH_SCRIPT"
-echo "  Stdout: ${LOG_DIR}/${JOB_NAME}_orch_${ORCH_JOB_ID}.out"
+echo "  Stdout: ${ORCH_LOG}"
 echo "  Stderr: ${LOG_DIR}/${JOB_NAME}_orch_${ORCH_JOB_ID}.err"
 echo ""
 echo "The orchestrator will discover meshes on the compute node and submit"
@@ -257,7 +267,11 @@ echo ""
 echo "Monitor with:"
 echo "  squeue -u \$USER --name=${JOB_NAME}"
 echo "  scontrol show job $ORCH_JOB_ID"
+echo "  # Once the array is submitted:"
+echo "  grep 'Submitted job array' ${ORCH_LOG}"
+echo "  # or:"
+echo "  cat ${TRACKING_FILE}"
 echo ""
 echo "After all array tasks finish, aggregate results with:"
 echo "  ${PYTHON_EXEC} -m cellpack_analysis.preprocessing.run_available_space_slurm \\"
-echo "      --aggregate data/structure_data/${STRUCTURE_ID}/slurm_staging/job_tracking.json"
+echo "      --aggregate ${TRACKING_FILE}"
