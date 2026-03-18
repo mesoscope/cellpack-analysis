@@ -1,0 +1,90 @@
+{
+    "version": "random_743920",
+    "format_version": "2.1",
+    "name": "peroxisome",
+    "bounding_box": [
+        [
+            34.349999999999994,
+            35.2,
+            7.174999999999997
+        ],
+        [
+            250.65,
+            215.8,
+            104.825
+        ]
+    ],
+    "objects": {
+        "membrane_mesh": {
+            "type": "mesh",
+            "color": [
+                1,
+                0,
+                1
+            ],
+            "representations": {
+                "mesh": {
+                    "path": "/allen/aics/animated-cell/Saurabh/dev/cellpack-analysis/data/structure_data/SLC25A17/meshes",
+                    "name": "mem_mesh_743920.obj",
+                    "format": "obj"
+                }
+            }
+        },
+        "nucleus_mesh": {
+            "type": "mesh",
+            "color": [
+                0,
+                1,
+                1
+            ],
+            "representations": {
+                "mesh": {
+                    "path": "/allen/aics/animated-cell/Saurabh/dev/cellpack-analysis/data/structure_data/SLC25A17/meshes",
+                    "name": "nuc_mesh_743920.obj",
+                    "format": "obj"
+                }
+            }
+        },
+        "peroxisome": {
+            "jitter_attempts": 300,
+            "type": "single_sphere",
+            "color": [
+                0.2,
+                0.7,
+                0.1
+            ],
+            "radius": 1.9272385041647926
+        }
+    },
+    "composition": {
+        "bounding_area": {
+            "regions": {
+                "interior": [
+                    "membrane"
+                ]
+            }
+        },
+        "membrane": {
+            "object": "membrane_mesh",
+            "count": 1,
+            "regions": {
+                "interior": [
+                    "nucleus",
+                    {
+                        "object": "peroxisome",
+                        "count": 64
+                    }
+                ]
+            }
+        },
+        "nucleus": {
+            "object": "nucleus_mesh",
+            "count": 1,
+            "regions": {
+                "interior": []
+            }
+        }
+    },
+    "randomness_seed": 743920,
+    "grid_file_path": "/allen/aics/animated-cell/Saurabh/dev/cellpack-analysis/data/structure_data/SLC25A17/grids/743920_grid.dat"
+}

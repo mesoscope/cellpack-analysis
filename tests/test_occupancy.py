@@ -1,8 +1,9 @@
 """Tests for the refactored histogram-based occupancy functions."""
 
+from unittest.mock import MagicMock
+
 import numpy as np
 import pytest
-from unittest.mock import MagicMock
 
 from cellpack_analysis.lib.occupancy import (
     _compute_single_cell_occupancy,
@@ -45,8 +46,8 @@ class TestComputeSingleCellOccupancy:
         occupied = occupied[occupied > 0]
         available = available[available > 0]
         result = _compute_single_cell_occupancy(occupied, available, bin_width=0.3)
-        integral_occ = np.trapz(result["pdf_occupied"], result["xvals"])
-        integral_avail = np.trapz(result["pdf_available"], result["xvals"])
+        integral_occ = np.trapezoid(result["pdf_occupied"], result["xvals"])
+        integral_avail = np.trapezoid(result["pdf_available"], result["xvals"])
         np.testing.assert_allclose(integral_occ, 1.0, atol=0.05)
         np.testing.assert_allclose(integral_avail, 1.0, atol=0.05)
 
@@ -54,9 +55,7 @@ class TestComputeSingleCellOccupancy:
         rng = np.random.default_rng(1)
         available = rng.uniform(0, 2, size=50)
         occupied = rng.uniform(0, 2, size=50)
-        result = _compute_single_cell_occupancy(
-            occupied, available, bin_width=0.2, min_count=10
-        )
+        result = _compute_single_cell_occupancy(occupied, available, bin_width=0.2, min_count=10)
         # Some bins should be NaN where available count < 10
         assert np.any(np.isnan(result["occupancy"]))
 
@@ -64,9 +63,7 @@ class TestComputeSingleCellOccupancy:
         rng = np.random.default_rng(2)
         available = rng.uniform(0, 2, size=100)
         occupied = rng.uniform(0, 2, size=100)
-        result = _compute_single_cell_occupancy(
-            occupied, available, bin_width=0.5, min_count=0
-        )
+        result = _compute_single_cell_occupancy(occupied, available, bin_width=0.5, min_count=0)
         assert not np.any(np.isnan(result["occupancy"]))
 
     def test_occupancy_near_one_for_identical_distributions(self):

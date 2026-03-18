@@ -7,10 +7,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from cellpack_analysis.lib.file_io import get_project_root
 from cellpack_analysis.packing.run_packing_workflow import _run_packing_workflow
 from cellpack_analysis.packing.workflow_config import WorkflowConfig
 
-PROJECT_ROOT = Path(__file__).parent.parent
+PROJECT_ROOT = get_project_root()
 
 
 @pytest.fixture
@@ -391,11 +392,8 @@ class TestRunPackingWorkflowSimulariumOutput:
     """Integration test: run the packing workflow on real data and verify .simularium output."""
 
     # Paths to existing recipe and config files used as test inputs.
-    RECIPE_DIR = PROJECT_ROOT / "data/recipes/peroxisome/rules_shape_with_seed/random"
-    CONFIG_PATH = (
-        PROJECT_ROOT
-        / "data/configs/peroxisome/rules_shape_with_seed/random/peroxisome_random_config.json"
-    )
+    RECIPE_DIR = PROJECT_ROOT / "tests/test_data/recipes/"
+    CONFIG_PATH = PROJECT_ROOT / "tests/test_data/configs/peroxisome_random_config.json"
 
     def _build_workflow(
         self,

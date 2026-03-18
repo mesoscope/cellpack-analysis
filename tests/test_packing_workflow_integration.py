@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 import pytest
 
+from cellpack_analysis.lib.file_io import get_project_root
 from cellpack_analysis.packing.run_packing_workflow import _run_packing_workflow
 from cellpack_analysis.packing.workflow_config import WorkflowConfig
 
@@ -16,7 +17,7 @@ from cellpack_analysis.packing.workflow_config import WorkflowConfig
 @pytest.fixture
 def test_data_dir():
     """Get the test data directory."""
-    return Path(__file__).parent.parent / "data" / "test_data"
+    return get_project_root() / "tests/test_data"
 
 
 @pytest.fixture
