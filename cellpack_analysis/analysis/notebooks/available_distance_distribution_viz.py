@@ -1,7 +1,11 @@
 # %% [markdown]
-# # Plot distribution of available distances
-#
-# See `cell_metrics_viz.py` for cell-level metric logging and distribution plots.
+"""
+# Visualize Available Distance Distribution
+
+This notebook visualizes the distribution of available distances (grid distances) for different distance measures (e.g., nucleus, z) across different structures. It also calculates and logs the radius of gyration for each distance measure.
+ 
+See `cell_metrics_viz.py` for cell-level metric logging and distribution plots.
+"""
 import logging
 
 import matplotlib.pyplot as plt

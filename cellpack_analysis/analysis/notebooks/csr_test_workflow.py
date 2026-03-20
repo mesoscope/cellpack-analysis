@@ -1,12 +1,12 @@
 # %% [markdown]
 """
-Complete Spatial Randomness (CSR) Test Workflow.
+# Complete Spatial Randomness (CSR) Test Workflow.
 
 Compares observed cellular structure positions against simulation-based null models
 using ECDF-based envelope tests with Monte Carlo p-values and Benjamini-Hochberg
 multi-testing correction across cells.
 
-Key steps:
+Workflow steps:
 1. Compute ECDFs for multiple distance metrics per cell
 2. Build pointwise MC envelopes from simulation replicates
 3. Global test via supremum of standardized deviations

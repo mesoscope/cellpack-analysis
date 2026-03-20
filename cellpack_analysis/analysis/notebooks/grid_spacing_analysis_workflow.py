@@ -1,12 +1,21 @@
 # %% [markdown]
-# # Grid spacing analysis workflow
-# Compare distributions of various measures of distance using:
-# 1. Pairwise EMD
-# 2. KS test
-# 3. Pairwise Monte Carlo Envelope Test
-#
-# Distributions are compared across randomly packed peroxisomes in the same cell shape
-# but with different grid spacings to evaluate the effect of grid spacing on distance distributions
+"""
+# Grid spacing analysis workflow
+
+This notebook analyzes the effect of grid spacing on distance distributions by comparing multiple distance measures across different grid spacings for the same structure (peroxisomes). It calculates distance distributions, compares them using EMD and KS tests, and visualizes the results.
+
+Distributions are compared across randomly packed peroxisomes in the same cell shape but with different grid spacings to evaluate the effect of grid spacing on distance distributions
+
+Workflow steps:
+1. Calculate distance distributions for multiple distance measures across different grid spacings.
+2. Visualize distance distribution histograms for each distance measure and grid spacing.
+3. Calculate and visualize Earth Mover's Distance (EMD) between distance distributions of different grid spacings.
+4. Perform pairwise Monte Carlo Envelope Tests to compare distance distributions between grid spacings.
+5. Plot pairwise envelope test results in a matrix format to identify significant differences between grid spacings for each distance measure.
+6. Perform pairwise KS tests to compare distance distributions between grid spacings.
+7. Plot pairwise KS test results in a matrix format to identify significant differences between grid spacings for each distance measure.
+"""
+
 import logging
 import time
 

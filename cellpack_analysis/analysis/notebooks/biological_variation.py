@@ -1,11 +1,20 @@
 # %% [markdown]
-# # Biological variation workflow
-# Compare variation in spatial organization due to biological factors
+"""
+# Biological variation workflow
+This notebook compares variation in spatial organization due to biological factors.
 
-# Factors affecting spatial organization:
-# 1. Size variation
-# 2. Count variation
-# 3. Variation in cell and nucleus shape
+Factors affecting spatial organization:
+1. Size variation
+2. Count variation
+3. Variation in cell and nucleus shape
+
+## Workflow steps:
+1. Calculate distance distributions for each mode (size, count, shape) and a baseline mode.
+2. Visualize distance distribution histograms for each distance measure and mode.
+3. Calculate and visualize Earth Mover's Distance (EMD) between distance distributions of different modes.
+4. Perform pairwise Monte Carlo Envelope Tests to compare distance distributions between modes.
+5. Plot pairwise envelope test results in a matrix format to identify significant differences between modes for each distance measure.
+"""
 
 import logging
 import time

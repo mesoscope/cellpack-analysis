@@ -1,16 +1,24 @@
 # %% [markdown]
-# # Distance analysis workflow
-# Compare distributions of various measures of distance using:
-# 1. Pairwise EMD
-# 2. KS test
-# 3. Pairwise Monte Carlo Envelope Test
+"""
+# Distance analysis workflow
 
-#
-# Can be used to compare distirbutions in the presence or absence
-# of other influencing structures
-# Current structure pairs include:
-# * Peroxisomes (SLC25A17) and Endoplasmic Reticulum (SEC61B)
-# * Endosomes (RAB5A) and Golgi (ST6GAL1)
+Compare distributions of various measures of distance:
+1. Nearest neighbor distance
+2. Pairwise distance
+3. Distance to nucleus
+4. Distance to membrane
+5. Distance from basal surface (z-distance)
+
+Can be used to compare distirbutions in the presence or absence of other influencing structures.
+
+Workflow steps:
+1. Calculate distance distributions for each distance measure and packing mode.
+2. Visualize distance distribution histograms for each distance measure and mode.
+3. Calculate and visualize Earth Mover's Distance (EMD) between distance distributions of different modes.
+4. Perform pairwise Monte Carlo Envelope Tests to compare distance distributions between modes.
+5. Plot pairwise envelope test results in a matrix format to identify significant differences between modes for each distance measure.
+6. Perform pairwise KS tests to compare distance distributions between modes, and bootstrap results to get confidence intervals.
+"""
 import logging
 import time
 
@@ -37,10 +45,10 @@ start_time = time.time()
 PUNCTATE_STRUCTURE_ID = "SLC25A17"
 """This is the ID for the packed structure, it is used as the packing mode for observed data"""
 
-CELL_STRUCTURE_ID = "SEC61B"
+CELL_STRUCTURE_ID = "SLC25A17"
 """This is the ID for the cell shapes used for packing"""
 
-PACKING_ID = "ER_peroxisome"
+PACKING_ID = "peroxisome"
 """This is the ID for the overall packing configuration,
 it is used for naming outputs and folders"""
 
@@ -60,7 +68,7 @@ channel_map = {
     "nucleus_gradient": CELL_STRUCTURE_ID,
     "membrane_gradient": CELL_STRUCTURE_ID,
     "apical_gradient": CELL_STRUCTURE_ID,
-    "struct_gradient": CELL_STRUCTURE_ID,
+    # "struct_gradient": CELL_STRUCTURE_ID,
 }
 
 # relative path to packing outputs
@@ -87,6 +95,7 @@ distance_measures = [
     # "pairwise",
     "nucleus",
     # "scaled_nucleus",
+    # "scaled_z",
     "z",
     # "membrane",
 ]
