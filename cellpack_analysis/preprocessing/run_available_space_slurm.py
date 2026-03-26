@@ -403,7 +403,7 @@ def _run_orchestrator(
     manifest_dir = staging_dir / "manifests"
     script_dir = staging_dir / "scripts"
     result_dir = staging_dir / "results"
-    log_dir = base_datadir / f"structure_data/{structure_id}/slurm_logs/{timestamp}"
+    log_dir = base_datadir / f"structure_data/{structure_id}/slurm_logs/{timestamp}/workers"
     for d in [manifest_dir, script_dir, result_dir, log_dir]:
         d.mkdir(parents=True, exist_ok=True)
 
