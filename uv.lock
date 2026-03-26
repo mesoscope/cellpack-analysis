@@ -256,7 +256,7 @@ wheels = [
 [[package]]
 name = "cellpack"
 version = "1.1.1"
-source = { git = "https://github.com/mesoscope/cellpack?rev=3f03edb904a2cd69b69e8319048f6c89e1934d3f#3f03edb904a2cd69b69e8319048f6c89e1934d3f" }
+source = { git = "https://github.com/mesoscope/cellpack?rev=39b8e44c7a7cca1bd58f9fc42447e01f5bbbf9f1#39b8e44c7a7cca1bd58f9fc42447e01f5bbbf9f1" }
 dependencies = [
     { name = "bioio" },
     { name = "bioio-ome-tiff" },
@@ -338,7 +338,7 @@ test = [
 requires-dist = [
     { name = "bioio", specifier = ">=3.0.0" },
     { name = "bioio-ome-tiff", specifier = ">=1.1.0" },
-    { name = "cellpack", git = "https://github.com/mesoscope/cellpack?rev=3f03edb904a2cd69b69e8319048f6c89e1934d3f" },
+    { name = "cellpack", git = "https://github.com/mesoscope/cellpack?rev=39b8e44c7a7cca1bd58f9fc42447e01f5bbbf9f1" },
     { name = "fire" },
     { name = "ipykernel" },
     { name = "ipywidgets" },
