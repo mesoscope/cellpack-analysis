@@ -105,7 +105,7 @@ for row, distance_measure in enumerate(distance_measures):
         cut=0,
         bw_method=bandwidth,
     )
-    ax.set_xlabel(f"{DISTANCE_MEASURE_LABELS[distance_measure]} (\u03bcm)")
+    ax.set_xlabel(f"{DISTANCE_MEASURE_LABELS[distance_measure]}")
     sns.despine(ax=ax)
     ax.set_ylim(DISTANCE_YLIMS[distance_measure])
     ax.set_xlim(DISTANCE_LIMITS[distance_measure])

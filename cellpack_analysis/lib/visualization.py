@@ -1886,9 +1886,9 @@ def plot_binned_occupancy_ratio(
 def plot_grid_points_slice(
     grid_points_slice: np.ndarray,
     inside_mem_outside_nuc: np.ndarray,
-    inside_nuc: np.ndarray,
     color_var: np.ndarray,
     cbar_label: str,
+    inside_nuc: np.ndarray | None = None,
     dot_size: float = 2,
     projection_axis: str = "z",
     cmap: Colormap | str | None = None,
@@ -1982,14 +1982,15 @@ def plot_grid_points_slice(
     )
 
     # Plot nucleus points
-    ax.scatter(
-        x=grid_points_um[inside_nuc, x_index] - centroid[x_index],
-        y=grid_points_um[inside_nuc, y_index] - centroid[y_index],
-        c="green",
-        s=dot_size,
-        marker=".",
-        edgecolor="none",
-    )
+    if inside_nuc is not None:
+        ax.scatter(
+            x=grid_points_um[inside_nuc, x_index] - centroid[x_index],
+            y=grid_points_um[inside_nuc, y_index] - centroid[y_index],
+            c="green",
+            s=dot_size,
+            marker=".",
+            edgecolor="none",
+        )
 
     ax.set_xlabel(f"{x_label} (\u03bcm)")
     ax.set_ylabel(f"{y_label} (\u03bcm)")

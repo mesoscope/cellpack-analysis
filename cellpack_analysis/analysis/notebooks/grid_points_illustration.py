@@ -162,9 +162,7 @@ distance_configs = {
     },
     "z": {
         "labels": {"distance": "Z Distance (µm)", "weight": "Z Weight"},
-        "calc_func": lambda axis_data, nuc_mesh, mem_mesh: np.abs(
-            axis_data["grid_points_slice"][axis_data["inside_mem_outside_nuc"], 2]
-        ),
+        "calc_func": lambda axis_data, nuc_mesh, mem_mesh: mem_mesh.bounds[1][2] - axis_data["grid_points_slice"][axis_data["inside_mem_outside_nuc"], 2],
     },
     "rnd": {
         "labels": {"distance": "Uniform Distance", "weight": "Uniform Weight"},
@@ -240,7 +238,7 @@ for measure in ["weights", "distances"]:
                 continue
 
             grid_points_slice = grid_map[projection_axis]["grid_points_slice"]
-            inside_nuc = grid_map[projection_axis]["inside_nuc"]
+            # inside_nuc = grid_map[projection_axis]["inside_nuc"]
             inside_mem_outside_nuc = grid_map[projection_axis]["inside_mem_outside_nuc"]
             color_var = grid_map[projection_axis][measure][distance_type]
             cbar_label = grid_map[projection_axis]["labels"][measure][distance_type]
@@ -249,10 +247,10 @@ for measure in ["weights", "distances"]:
             fig, ax = plot_grid_points_slice(
                 grid_points_slice=grid_points_slice,
                 inside_mem_outside_nuc=inside_mem_outside_nuc,
-                inside_nuc=inside_nuc,
                 color_var=color_var,
                 cbar_label=cbar_label,
                 dot_size=dot_size,
+                # inside_nuc=inside_nuc,
                 projection_axis=projection_axis,
                 clim=(0, 1) if measure == "weights" else None,
             )
