@@ -80,7 +80,7 @@ def get_kde_occupancy_dict(
     ----------
     distance_kde_dict
         Dictionary with cell IDs as keys and mode-specific KDEs as values
-        Structure: {cell_id: {mode: gaussian_kde, "available_distance": gaussian_kde}}
+        Structure: {cell_id: {mode: gaussian_kde, "available": gaussian_kde}}
     channel_map
         Mapping from packing modes to structure IDs
     results_dir
@@ -174,7 +174,7 @@ def get_kde_occupancy_dict(
         combined_available_distances = []
         for cell_id in cell_ids:
             combined_available_distances.extend(
-                distance_kde_dict[cell_id]["available_distance"].dataset
+                distance_kde_dict[cell_id]["available"].dataset
             )
             for mode in channel_map.keys():
                 if mode in distance_kde_dict[cell_id]:
@@ -207,7 +207,7 @@ def get_kde_occupancy_dict(
                 np.min(occupied_distances), np.max(occupied_distances), num_points
             )
 
-            available_kde = distance_kde_dict[cell_id]["available_distance"]
+            available_kde = distance_kde_dict[cell_id]["available"]
             if bandwidth is not None:
                 occupied_kde.set_bandwidth(bandwidth)
                 available_kde.set_bandwidth(bandwidth)
@@ -465,7 +465,7 @@ def get_occupancy_emd(
         emd_occupancy_dict[mode] = {}
         for _k, (seed, _distances) in tqdm(enumerate(mode_dict.items()), total=len(mode_dict)):
             occupied_distance = kde_dict[seed][mode]["distances"]
-            available_distance = kde_dict[seed]["available_distance"]["distances"]
+            available_distance = kde_dict[seed]["available"]["distances"]
             emd_occupancy_dict[mode][seed] = wasserstein_distance(
                 occupied_distance, available_distance
             )
@@ -528,7 +528,7 @@ def get_occupancy_ks_test_dict(
         ks_occupancy_dict[mode] = {}
         for _k, (seed, _distances) in tqdm(enumerate(mode_dict.items()), total=len(mode_dict)):
             occupied_distance = kde_dict[seed][mode]["distances"]
-            available_distance = kde_dict[seed]["available_distance"]["distances"]
+            available_distance = kde_dict[seed]["available"]["distances"]
             _, p_val = ks_2samp(occupied_distance, available_distance)
             ks_occupancy_dict[mode][seed] = p_val
 
@@ -873,7 +873,7 @@ def get_binned_occupancy_dict(
         combined_available_distances = []
         for cell_id in cell_ids:
             combined_available_distances.extend(
-                distance_kde_dict[cell_id]["available_distance"].dataset
+                distance_kde_dict[cell_id]["available"].dataset
             )
         combined_available_distance_dict[structure_id] = np.concatenate(
             combined_available_distances
@@ -898,7 +898,7 @@ def get_binned_occupancy_dict(
 
             # Get occupied and available distances for cell_id
             occupied_distances = distance_kde_dict[cell_id][mode].dataset
-            available_distances = distance_kde_dict[cell_id]["available_distance"].dataset
+            available_distances = distance_kde_dict[cell_id]["available"].dataset
 
             available_space_counts[cell_id] = (
                 np.histogram(available_distances, bins=bins, density=True)[0] + 1e-16
@@ -1198,6 +1198,16 @@ def get_binned_occupancy_dict_from_distance_dict(
             if not is_scaled_measure:
                 available_concat = available_concat * PIXEL_SIZE_IN_UM
             available_concat = available_concat[np.isfinite(available_concat)]
+
+            if np.max(available_concat) < np.max(occupied_concat):
+                logger.warning(
+                    "Cell %s / %s has max occupied distance %.2f greater than max available "
+                    "distance %.2f — check data consistency.",
+                    cell_id,
+                    structure_id,
+                    np.max(occupied_concat),
+                    np.max(available_concat),
+                )
 
             # Per-cell occupancy on the cell's own grid
             cell_result = _compute_single_cell_occupancy(
