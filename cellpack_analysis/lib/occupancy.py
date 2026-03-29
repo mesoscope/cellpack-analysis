@@ -1201,13 +1201,14 @@ def get_binned_occupancy_dict_from_distance_dict(
 
             if np.max(available_concat) < np.max(occupied_concat):
                 logger.warning(
-                    "Cell %s / %s has max occupied distance %.2f greater than max available "
-                    "distance %.2f — check data consistency.",
+                    "Cell %s, mode %s has max occupied distance %.2f greater than max available "
+                    "distance %.2f — discarding invalid points.",
                     cell_id,
-                    structure_id,
+                    mode,
                     np.max(occupied_concat),
                     np.max(available_concat),
                 )
+                occupied_concat = occupied_concat[occupied_concat <= np.max(available_concat)]
 
             # Per-cell occupancy on the cell's own grid
             cell_result = _compute_single_cell_occupancy(
