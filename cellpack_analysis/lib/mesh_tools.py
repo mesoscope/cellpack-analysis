@@ -20,6 +20,7 @@ from vtkmodules.vtkFiltersCore import vtkContourFilter
 from vtkmodules.vtkIOGeometry import vtkOBJReader
 
 from cellpack_analysis.lib.default_values import PIXEL_SIZE_IN_UM
+from cellpack_analysis.lib.file_io import get_datadir_path
 from cellpack_analysis.lib.get_cell_id_list import get_cell_id_list_for_structure
 from cellpack_analysis.lib.io import format_time
 from cellpack_analysis.lib.label_tables import AXIS_TO_INDEX_MAP
@@ -488,7 +489,7 @@ def get_mesh_from_image(
 
 def get_mesh_information_dict_for_structure(
     structure_id: str,
-    base_datadir: Path,
+    base_datadir: Path | None = None,
     recalculate: bool = False,
 ) -> dict[str, dict[str, Any]]:
     """
@@ -499,7 +500,7 @@ def get_mesh_information_dict_for_structure(
     structure_id
         ID of the structure
     base_datadir
-        Base directory path
+        Base data directory path. If None, the default data directory is used.
     recalculate
         If True, recalculate mesh information. Default is False
 
@@ -508,6 +509,9 @@ def get_mesh_information_dict_for_structure(
     :
         Dictionary mapping cell IDs to mesh information
     """
+    if base_datadir is None:
+        base_datadir = get_datadir_path()
+
     file_path = base_datadir / f"structure_data/{structure_id}/mesh_information.dat"
     if not recalculate and file_path.exists():
         logger.info(f"Loading mesh information for {structure_id} from {file_path}")
