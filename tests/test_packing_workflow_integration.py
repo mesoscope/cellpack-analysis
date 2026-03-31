@@ -4,7 +4,6 @@ These tests verify end-to-end functionality with real file I/O and dependencies.
 """
 
 import json
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
