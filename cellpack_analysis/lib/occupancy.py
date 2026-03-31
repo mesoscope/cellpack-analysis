@@ -19,6 +19,7 @@ from cellpack_analysis.lib.load_data import PROJECT_ROOT
 from cellpack_analysis.lib.stats import (
     EnvelopeType,
     _pairwise_test_on_curves,
+    ecdf,
     make_r_grid_from_pooled,
     normalize_pdf,
     pdf_ratio,
@@ -1299,6 +1300,7 @@ def pairwise_envelope_test_occupancy(
     statistic: Literal["supremum", "intdev"] = "intdev",
     envelope_type: EnvelopeType = "pointwise",
     joint_r_grid_size: int | None = None,
+    comparison_type: Literal["ratio", "ecdf"] = "ratio",
 ) -> dict[str, Any]:
     """
     Run a pairwise Monte Carlo envelope test on per-cell occupancy ratio curves.
@@ -1337,6 +1339,13 @@ def pairwise_envelope_test_occupancy(
         Points per distance measure when resampling curves to an equal-length
         grid before the joint test.  Defaults to the bin count of the first
         available occupancy curve, giving each distance measure equal weight.
+    comparison_type
+        ``"ratio"`` (default): compare per-cell occupancy ratio curves directly
+        as spatial functions over distance.
+        ``"ecdf"``: convert each per-cell ratio curve to its ECDF over ratio
+        space before comparison.  The ECDF treats the bin-wise ratio values as
+        a 1-D sample and evaluates the cumulative distribution on a shared grid
+        spanning the range of all ratio values for that distance measure.
 
     Returns
     -------
@@ -1368,6 +1377,7 @@ def pairwise_envelope_test_occupancy(
                 "alpha": float,
                 "statistic": str,
                 "envelope_type": str,
+                "comparison_type": str,
             }
     """
     distance_measures = list(combined_binned_occupancy_dict.keys())
@@ -1404,6 +1414,47 @@ def pairwise_envelope_test_occupancy(
                 "mu": mu,
             }
 
+    # Optionally convert ratio curves to their ECDFs over ratio space
+    if comparison_type == "ecdf":
+        for dm in distance_measures:
+            all_ratio_vals = np.concatenate(
+                [
+                    mode_curves[mode][dm].ravel()
+                    for mode in packing_modes
+                    if mode_curves[mode][dm].size > 0
+                ]
+            )
+            if all_ratio_vals.size == 0:
+                continue
+            # Use the same number of grid points as the distance bins
+            n_grid = len(mode_xvals[packing_modes[0]][dm])
+            ratio_grid = np.linspace(
+                np.nanmin(all_ratio_vals), np.nanmax(all_ratio_vals), max(n_grid, 2)
+            )
+            for mode in packing_modes:
+                arr = mode_curves[mode][dm]
+                if arr.shape[0] > 0:
+                    mode_curves[mode][dm] = np.vstack([ecdf(row, ratio_grid) for row in arr])
+                mode_xvals[mode][dm] = ratio_grid
+                # Rebuild envelopes from the ECDF-transformed curves
+                ecdf_arr = mode_curves[mode][dm]
+                if ecdf_arr.shape[0] > 1:
+                    lo, hi, mu, _ = pointwise_envelope(ecdf_arr, alpha=alpha)
+                else:
+                    mu = (
+                        np.mean(ecdf_arr, axis=0)
+                        if ecdf_arr.shape[0] == 1
+                        else np.zeros_like(ratio_grid)
+                    )
+                    lo = mu.copy()
+                    hi = mu.copy()
+                envelopes.setdefault(mode, {})[dm] = {
+                    "xvals": ratio_grid,
+                    "lo": lo,
+                    "hi": hi,
+                    "mu": mu,
+                }
+
     per_dm_results, joint_results = _pairwise_test_on_curves(
         mode_curves=mode_curves,
         mode_xvals=mode_xvals,
@@ -1424,4 +1475,5 @@ def pairwise_envelope_test_occupancy(
         "alpha": alpha,
         "statistic": statistic,
         "envelope_type": envelope_type,
+        "comparison_type": comparison_type,
     }
