@@ -12,6 +12,7 @@ from matplotlib.cm import ScalarMappable
 from matplotlib.colors import Colormap, LinearSegmentedColormap, Normalize
 from matplotlib.figure import Figure
 from matplotlib.ticker import MaxNLocator
+from scipy.ndimage import uniform_filter1d
 from scipy.stats import gaussian_kde
 from statannotations.Annotator import Annotator
 from tqdm import tqdm
@@ -105,11 +106,12 @@ def plot_distance_distributions_kde(
     figures_dir: Path | None = None,
     suffix: str = "",
     normalization: str | None = None,
+    minimum_distance: float | None = 0,
     distance_limits: dict[str, tuple[float, float]] | None = None,
     bandwidth: Literal["scott", "silverman"] | float = "scott",
     save_format: Literal["svg", "png", "pdf"] = "png",
-    minimum_distance: float | None = 0,
-) -> tuple[Figure, dict[str, dict[str, Axes]]]:
+    overlay_mean_and_std: bool = False,
+) -> tuple[Figure, dict[str, dict[int, Axes]]]:
     """
     Plot distance distributions using kernel density estimation (KDE).
 
@@ -128,16 +130,16 @@ def plot_distance_distributions_kde(
         Suffix to append to figure filenames
     normalization
         Normalization method to apply to distance measures
-    overlay
-        If True, overlay the pooled KDE. Default is True
+    minimum_distance
+        Minimum distance threshold for filtering
     distance_limits
         Dictionary containing limits for each distance measure
     bandwidth
         Bandwidth method for KDE
     save_format
         Format to save figures in
-    minimum_distance
-        Minimum distance threshold for filtering
+    overlay_mean_and_std
+        If True, overlay mean and standard deviation on the KDE plot
 
     Returns
     -------
@@ -147,7 +149,7 @@ def plot_distance_distributions_kde(
     logger.info("Starting distance distribution kde plot")
     plt.rcParams.update({"font.size": 5})
 
-    all_ax_dict = {}
+    all_ax_dict: dict[str, dict[int, Axes]] = {}
     num_rows = len(packing_modes)
     num_cols = len(distance_measures)
     fig, axs = plt.subplots(
@@ -159,6 +161,7 @@ def plot_distance_distributions_kde(
         sharex="col",
         sharey="col",
     )
+
     for col, distance_measure in enumerate(distance_measures):
         distance_dict = all_distance_dict[distance_measure]
         if distance_measure not in all_ax_dict:
@@ -177,7 +180,7 @@ def plot_distance_distributions_kde(
 
             # kde plots of individual distance distributions
             for _, seed_distance_dict in tqdm(mode_dict.items(), total=len(mode_dict)):
-                for _, distances in seed_distance_dict.items():
+                for distances in seed_distance_dict.values():
                     sns.kdeplot(
                         distances,
                         ax=ax,
@@ -225,16 +228,17 @@ def plot_distance_distributions_kde(
             sns.despine(fig=fig)
 
             # plot mean distance and add annotation
-            mean_distance = np.nanmean(combined_mode_distances).item()
-            std_distance = np.nanstd(combined_mode_distances).item()
-            ax.axvline(mean_distance, color="gray", linestyle="--", linewidth=0.3)
-            ax.axvspan(
-                mean_distance - std_distance,
-                mean_distance + std_distance,
-                edgecolor="none",
-                facecolor="gray",
-                alpha=0.1,
-            )
+            if overlay_mean_and_std:
+                mean_distance = np.nanmean(combined_mode_distances).item()
+                ax.axvline(mean_distance, color=mode_color, linestyle="--", linewidth=0.7)
+                ax.text(
+                    mean_distance,
+                    ax.get_ylim()[1] * 0.9,
+                    f"{mean_distance:.2f}",
+                    color=mode_color,
+                    fontsize=4,
+                    ha="center",
+                )
 
             # set labels
             if col == 0:
@@ -660,7 +664,7 @@ def plot_emd_comparisons(
         # Build query and plot parameters based on comparison type
         if comparison_type == "intra_mode":
             query_str = (
-                f"distance_measure == '{distance_measure}' and " "packing_mode_1 == packing_mode_2"
+                f"distance_measure == '{distance_measure}' and packing_mode_1 == packing_mode_2"
             )
             x_column = "packing_mode_1"
         else:  # baseline comparison
@@ -881,7 +885,7 @@ def plot_occupancy_illustration(
 def plot_occupancy_illustration_discrete(
     binned_occupancy_dict: dict[str, dict[str, Any]],
     packing_mode: str = "random",
-    cell_id: str | None = None,
+    cell_id_or_index: str | int | None = None,
     figures_dir: Path | None = None,
     suffix: str = "",
     distance_measure: str = "nucleus",
@@ -912,8 +916,10 @@ def plot_occupancy_illustration_discrete(
         "pdf_occupied", "pdf_available"}}, "combined": {...}}}``
     packing_mode
         Packing mode to use for illustration.
-    cell_id
+    cell_id_or_index
         Specific cell to show.  When ``None`` the first available cell is used.
+        If an integer is provided, it is treated as an index into the list of available
+        cells for the selected mode.
     figures_dir
         Directory to save the figure.  Skipped when ``None``.
     suffix
@@ -938,12 +944,19 @@ def plot_occupancy_illustration_discrete(
     if not individual:
         raise ValueError(f"No individual cell data for packing_mode='{packing_mode}'")
 
-    if cell_id is None:
-        cell_id = next(iter(individual))
-    if cell_id not in individual:
-        raise KeyError(f"cell_id '{cell_id}' not found for mode '{packing_mode}'")
+    if cell_id_or_index is None:
+        cell_id_or_index = next(iter(individual))
+    if isinstance(cell_id_or_index, int):
+        cell_ids = list(individual.keys())
+        if cell_id_or_index < 0 or cell_id_or_index >= len(cell_ids):
+            raise IndexError(
+                f"cell_id_or_index {cell_id_or_index} out of range for mode '{packing_mode}'"
+            )
+        cell_id_or_index = cell_ids[cell_id_or_index]
+    if cell_id_or_index not in individual:
+        raise KeyError(f"cell_id '{cell_id_or_index}' not found for mode '{packing_mode}'")
 
-    cell_data = individual[cell_id]
+    cell_data = individual[cell_id_or_index]
     xvals = cell_data["xvals"]
     pdf_occupied = cell_data["pdf_occupied"]
     pdf_available = cell_data["pdf_available"]
@@ -958,8 +971,10 @@ def plot_occupancy_illustration_discrete(
         ["Occupied PDF", "Available PDF", "Occupancy Ratio"],
         [xvals, xvals, xvals],
         [pdf_occupied, pdf_available, occupancy],
+        strict=False,
     ):
-        sns.lineplot(x=x_vals, y=y_vals, ax=ax, color="k")
+        smooth_yvals = uniform_filter1d(np.nan_to_num(y_vals), size=3)
+        sns.lineplot(x=x_vals, y=smooth_yvals, ax=ax, color="k")
         ax.set_xlim(0, xlim if xlim is not None else x_vals.max())
         ax.set_ylabel(label)
         ax.xaxis.set_major_locator(MaxNLocator(4, integer=True))
@@ -968,12 +983,12 @@ def plot_occupancy_illustration_discrete(
 
     axs[-1].set_xlabel(distance_label)
     axs[-1].axhline(1, color="gray", linestyle="--")
-    
+
     if ylim_ratio is not None:
         axs[2].set_ylim(0, ylim_ratio)
 
     mode_label = label_tables.MODE_LABELS.get(packing_mode, packing_mode)
-    fig.suptitle(f"{mode_label} — cell {cell_id}", fontsize=8)
+    fig.suptitle(f"{mode_label} — cell {cell_id_or_index}", fontsize=8)
     fig.tight_layout()
 
     if figures_dir is not None:
@@ -1105,7 +1120,6 @@ def plot_occupancy_ratio(
             for _cell_id, cell_id_dict in tqdm(
                 occupancy_dict[mode]["individual"].items(), desc=f"Plotting {mode} occupancy"
             ):
-
                 xvals = cell_id_dict["xvals"]
                 occupancy = cell_id_dict["occupancy"]
 
@@ -1494,7 +1508,6 @@ def plot_mean_and_std_occupancy_ratio_kde(
     lines = []
     fig, ax = plt.subplots(dpi=300, figsize=(6, 6))
     for _ct, mode in enumerate(packing_modes):
-
         color = label_tables.COLOR_PALETTE.get(mode, "gray")
 
         logger.info(f"Calculating occupancy for {mode}")
@@ -1821,13 +1834,15 @@ def plot_binned_occupancy_ratio(
     for mode in channel_map.keys():
         combined = binned_occupancy_dict[mode]["combined"]
         xvals = combined["xvals"]
-        mean_occ = combined["occupancy"]
+        mean_occ = np.nan_to_num(combined["occupancy"])
         color = label_tables.COLOR_PALETTE.get(mode, "gray")
         label = label_tables.MODE_LABELS.get(mode, mode)
 
+        smooth_occ = uniform_filter1d(mean_occ, size=3)
+
         ax.plot(
             xvals,
-            mean_occ,
+            smooth_occ,
             color=color,
             linewidth=2.0,
             label=label,
@@ -1839,16 +1854,16 @@ def plot_binned_occupancy_ratio(
             lo = combined["envelope_lo"]
             hi = combined["envelope_hi"]
         elif "std_occupancy" in combined:
-            lo = mean_occ - combined["std_occupancy"]
-            hi = mean_occ + combined["std_occupancy"]
+            lo = smooth_occ - combined["std_occupancy"]
+            hi = smooth_occ + combined["std_occupancy"]
         else:
             lo = hi = None
 
         if lo is not None and hi is not None:
             ax.fill_between(
                 xvals,
-                lo,
-                hi,
+                uniform_filter1d(lo, size=3),
+                uniform_filter1d(hi, size=3),
                 alpha=0.15,
                 color=color,
                 linewidth=0,
@@ -2032,7 +2047,7 @@ def plot_envelope_for_cell(
         Optional Matplotlib Axes to plot on. If None, creates a new figure.
     """
     info = cell_results[packing_mode]["per_distance_measure"][distance_measure]
-    r = info["r"]
+    xvals = info["xvals"]
     if ax is None:
         fig, ax = plt.subplots(dpi=300, figsize=(4, 4))
     else:
@@ -2040,7 +2055,7 @@ def plot_envelope_for_cell(
         if fig is None:
             raise ValueError("The provided Axes object does not have an associated Figure")
     ax.fill_between(
-        r,
+        xvals,
         info["lo"],
         info["hi"],
         color="lightgray",
@@ -2048,8 +2063,8 @@ def plot_envelope_for_cell(
         label="MC envelope",
         edgecolor="none",
     )
-    ax.plot(r, info["mu"], "--", color="dimgray", label="Sim mean")
-    ax.plot(r, info["obs_curve"], color="crimson", lw=2, label="Observed")
+    ax.plot(xvals, info["mu"], "--", color="dimgray", label="Sim mean")
+    ax.plot(xvals, info["obs_curve"], color="crimson", lw=2, label="Observed")
     ttl = title or (
         f"Cell: {distance_measure} vs {label_tables.MODE_LABELS.get(packing_mode, packing_mode)} "
         f"(p={info['pval']:.3f})"
@@ -2428,13 +2443,13 @@ def plot_pairwise_envelope_matrix(
     for mode in modes:
         if distance_measure is not None:
             if distance_measure in envelopes.get(mode, {}):
-                r = envelopes[mode][distance_measure]["r"]
-                diag_xmax = max(diag_xmax, float(r.max()))
+                xvals = envelopes[mode][distance_measure]["xvals"]
+                diag_xmax = max(diag_xmax, float(xvals.max()))
         else:
             for dm in pairwise_results.get("distance_measures", []):
                 if dm in envelopes.get(mode, {}):
-                    r = envelopes[mode][dm]["r"]
-                    diag_xmax = max(diag_xmax, float(r.max()))
+                    xvals = envelopes[mode][dm]["xvals"]
+                    diag_xmax = max(diag_xmax, float(xvals.max()))
     diag_xlim = (0, diag_xmax) if diag_xmax > 0 else None
 
     diagonal_axes: list[Axes] = []
@@ -2453,7 +2468,7 @@ def plot_pairwise_envelope_matrix(
                 if distance_measure is not None and distance_measure in envelopes.get(mode, {}):
                     env = envelopes[mode][distance_measure]
                     ax.fill_between(
-                        env["r"],
+                        env["xvals"],
                         env["lo"],
                         env["hi"],
                         color=mode_color,
@@ -2461,7 +2476,7 @@ def plot_pairwise_envelope_matrix(
                         label="Envelope",
                         edgecolor="none",
                     )
-                    ax.plot(env["r"], env["mu"], "--", color="dimgray", lw=1, label="Mean")
+                    ax.plot(env["xvals"], env["mu"], "--", color="dimgray", lw=1, label="Mean")
                     ax.set_ylabel("ECDF" if j == 0 else "")
                     label_str = label_tables.DISTANCE_MEASURE_LABELS.get(
                         distance_measure, distance_measure
@@ -2476,10 +2491,10 @@ def plot_pairwise_envelope_matrix(
                             env = envelopes[mode][dm]
                             color = label_tables.COLOR_PALETTE.get(dm, "#808080")
                             dm_label = label_tables.DISTANCE_MEASURE_TITLES.get(dm, dm)
-                            ax.plot(env["r"], env["mu"], color=color, lw=1, label=dm_label)
+                            ax.plot(env["xvals"], env["mu"], color=color, lw=1, label=dm_label)
                             # also plot the envelope for the joint test if available
                             ax.fill_between(
-                                env["r"],
+                                env["xvals"],
                                 env["lo"],
                                 env["hi"],
                                 color=color,
@@ -2513,7 +2528,9 @@ def plot_pairwise_envelope_matrix(
                 pair = (mode_i, mode_j)
                 if pair in result_dict:
                     val = result_dict[pair]["rejection_fraction"]
-                    n_tested = len(result_dict[pair]["pvals"])
+                    positive_rejections = result_dict[pair].get("rejection_fraction_positive", 0)
+                    negative_rejections = result_dict[pair].get("rejection_fraction_negative", 0)
+                    # n_tested = len(result_dict[pair]["pvals"])
 
                     rgba = (*cmap(norm(val))[:3], 0.7)
                     ax.set_facecolor(rgba)
@@ -2534,16 +2551,27 @@ def plot_pairwise_envelope_matrix(
                         fontweight="bold",
                         color=text_color,
                     )
+                    # ax.text(
+                    #     0.5,
+                    #     0.25,
+                    #     f"n={n_tested}",
+                    #     ha="center",
+                    #     va="center",
+                    #     transform=ax.transAxes,
+                    #     fontsize=8,
+                    #     color=text_color,
+                    # )
                     ax.text(
                         0.5,
                         0.25,
-                        f"n={n_tested}",
+                        f"+:{positive_rejections:.2f}, -:{negative_rejections:.2f}",
                         ha="center",
                         va="center",
                         transform=ax.transAxes,
                         fontsize=8,
                         color=text_color,
                     )
+
                 else:
                     ax.text(
                         0.5,
@@ -2631,9 +2659,9 @@ def plot_pairwise_emd_matrix(
 
     * **Lower triangle** (row > col): distance-distribution overlay of the
       row mode and column mode (using discrete histogram curves).
-    * **Diagonal** (row == col): intra-mode EMD KDE (filled) coloured by the
+    * **Diagonal** (row == col): intra-mode EMD violinplot coloured by the
       mode colour.
-    * **Upper triangle** (row < col): cross-mode EMD KDE (filled) comparing
+    * **Upper triangle** (row < col): cross-mode EMD violinplot comparing
       the row mode versus the column mode, coloured by the column (reference)
       mode colour.
 
@@ -2677,7 +2705,7 @@ def plot_pairwise_emd_matrix(
     if figsize is None:
         figsize = (n * 1.8, n * 1.6)
 
-    plt.rcParams.update({"font.size": 6})
+    plt.rcParams.update({"font.size": 4})
     fig, axs = plt.subplots(n, n, figsize=figsize, dpi=300, squeeze=False)
 
     # ── Build shared r-grid for the distance distributions ──────────────
@@ -2748,7 +2776,7 @@ def plot_pairwise_emd_matrix(
                 # ── Diagonal: intra-mode EMD KDE ────────────────────────
                 sub = dm_emd.query(f"packing_mode_1 == '{mode_i}' and packing_mode_2 == '{mode_i}'")
                 if len(sub) > 0:
-                    sns.kdeplot(
+                    sns.violinplot(
                         data=sub,
                         x="emd",
                         ax=ax,
@@ -2757,8 +2785,9 @@ def plot_pairwise_emd_matrix(
                         alpha=0.4,
                         linewidth=0.8,
                         cut=0,
+                        orient="h",
                     )
-                ax.set_title(label_i, fontsize=8, fontweight="bold")
+                ax.set_title(label_i, fontweight="bold", fontsize=6)
                 ax.set_xlim(0, emd_xmax)
                 ax.set_ylabel("Density" if j == 0 else "")
                 ax.set_xlabel("EMD" if i == n - 1 else "")
@@ -2775,7 +2804,7 @@ def plot_pairwise_emd_matrix(
                     "(packing_mode_1 == @mode_j and packing_mode_2 == @mode_i)"
                 )
                 if len(sub) > 0:
-                    sns.kdeplot(
+                    sns.violinplot(
                         data=sub,
                         x="emd",
                         ax=ax,
@@ -2784,6 +2813,7 @@ def plot_pairwise_emd_matrix(
                         alpha=0.4,
                         linewidth=0.8,
                         cut=0,
+                        orient="h",
                     )
                 ax.set_xlim(0, emd_xmax)
                 ax.set_ylabel("")
@@ -2823,23 +2853,22 @@ def plot_pairwise_emd_matrix(
                 ax.set_xlabel(distance_label if i == n - 1 else "")
                 ax.xaxis.set_major_locator(MaxNLocator(3, integer=True))
                 ax.yaxis.set_major_locator(MaxNLocator(2))
-                ax.legend(fontsize=5, frameon=False, loc="upper right")
+                # ax.legend(fontsize=5, frameon=False, loc="upper right")
                 sns.despine(ax=ax)
 
             # Column header on the first row
             if i == 0 and j != 0:
-                ax.set_title(label_j, fontsize=8)
+                ax.set_title(label_j, fontsize=6)
 
             # Row labels on leftmost column (skip diagonal, it is already labelled)
             if j == 0 and i != 0:
                 ax.set_ylabel(
                     f"{label_i}\n{'PDF' if i > j else 'Density'}",
-                    fontsize=7,
                 )
 
     # ── Axis description labels ─────────────────────────────────────────
-    dm_title = label_tables.DISTANCE_MEASURE_TITLES.get(distance_measure, distance_measure)
-    fig.suptitle(f"Pairwise EMD — {dm_title}", fontsize=10, fontweight="bold", y=1.02)
+    # dm_title = label_tables.DISTANCE_MEASURE_TITLES.get(distance_measure, distance_measure)
+    # fig.suptitle(f"Pairwise EMD — {dm_title}", fontweight="bold", y=1.02)
     fig.tight_layout()
     plt.show()
 
