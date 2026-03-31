@@ -34,7 +34,8 @@ _TARGET_CHUNKS = 10
 
 def _adaptive_chunk_size(n: int) -> int:
     """Return a chunk size that targets ``_TARGET_CHUNKS`` chunks but never exceeds
-    ``_MAX_CHUNK_SIZE``, bounding per-chunk memory for proximity queries."""
+    ``_MAX_CHUNK_SIZE``, bounding per-chunk memory for proximity queries.
+    """
     return min(_MAX_CHUNK_SIZE, max(1, -(-n // _TARGET_CHUNKS)))  # ceiling division
 
 

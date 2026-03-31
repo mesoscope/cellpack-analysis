@@ -349,7 +349,7 @@ def _discover_mesh_data(
     mesh_data = []
     for cell_id in cell_ids:
         flags = (
-            {flag: True for flag in _DISTANCE_FLAG_TO_PREFIX}
+            dict.fromkeys(_DISTANCE_FLAG_TO_PREFIX, True)
             if recalculate
             else _get_missing_distance_flags(cell_id, grid_dir)
         )

@@ -419,8 +419,8 @@ def compute_rank_envelope(
     # Envelope bounds at depth k = min(u_obs, v_obs)
     k = max(min(u_obs, v_obs), 1)
     sorted_all = np.sort(all_curves, axis=0)  # shape (s, L)
-    lo = sorted_all[k - 1]       # k-th smallest at each grid point
-    hi = sorted_all[num_total - k]       # k-th largest at each grid point
+    lo = sorted_all[k - 1]  # k-th smallest at each grid point
+    hi = sorted_all[num_total - k]  # k-th largest at each grid point
 
     return lo, hi, p_val, sign, r_obs
 
@@ -641,9 +641,7 @@ def monte_carlo_per_cell(
             [
                 np.concatenate(
                     [
-                        _resample(
-                            sim_curves_by_distance_measure[dm][i], r_grids[dm], joint_u
-                        )
+                        _resample(sim_curves_by_distance_measure[dm][i], r_grids[dm], joint_u)
                         for dm in distance_measures
                     ],
                     axis=0,

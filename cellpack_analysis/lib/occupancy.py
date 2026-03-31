@@ -173,9 +173,7 @@ def get_kde_occupancy_dict(
     for structure_id, cell_ids in cell_id_map.items():
         combined_available_distances = []
         for cell_id in cell_ids:
-            combined_available_distances.extend(
-                distance_kde_dict[cell_id]["available"].dataset
-            )
+            combined_available_distances.extend(distance_kde_dict[cell_id]["available"].dataset)
             for mode in channel_map.keys():
                 if mode in distance_kde_dict[cell_id]:
                     x_min_calc = min(x_min_calc, np.min(distance_kde_dict[cell_id][mode].dataset))
@@ -872,9 +870,7 @@ def get_binned_occupancy_dict(
     for structure_id, cell_ids in cell_id_map.items():
         combined_available_distances = []
         for cell_id in cell_ids:
-            combined_available_distances.extend(
-                distance_kde_dict[cell_id]["available"].dataset
-            )
+            combined_available_distances.extend(distance_kde_dict[cell_id]["available"].dataset)
         combined_available_distance_dict[structure_id] = np.concatenate(
             combined_available_distances
         )
@@ -1157,7 +1153,7 @@ def get_binned_occupancy_dict_from_distance_dict(
                     all_available.append(a)
         common_r_grid = make_r_grid_from_pooled(all_available, bin_width=bin_width)
     else:
-        n_bins = max(1, int(round((x_max - x_min) / bin_width)))
+        n_bins = max(1, round((x_max - x_min) / bin_width))
         common_r_grid = np.linspace(x_min + bin_width / 2, x_max - bin_width / 2, n_bins)
 
     common_bin_edges = np.concatenate(
