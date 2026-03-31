@@ -16,6 +16,11 @@ SAVE_FORMAT = "pdf"
 BANDWIDTH = 0.2
 """Default bandwidth for KDE."""
 
+DISTRIBUTION_METHOD = "discrete"
+"""Default method for plotting distance distributions and occupancy.
+Options: "discrete" (histogram-based) or "kde" (kernel density estimate).
+Note: "discrete" is the default; set to "kde" in your config to use the old KDE behaviour."""
+
 DISTANCE_MEASURES = [
     "nearest",
     "pairwise",
@@ -43,7 +48,33 @@ OCCUPANCY_PARAMS = {
     "plot_individual": True,
     "show_legend": True,
 }
-"""Default occupancy analysis KDE parameters."""
+"""Default occupancy analysis parameters (used for both KDE and discrete methods)."""
+
+BIN_WIDTH_MAP = {
+    "nucleus": 0.2,
+    "z": 0.2,
+    "nearest": 0.2,
+    "pairwise": 0.2,
+    "membrane": 0.2,
+    "scaled_nucleus": 0.05,
+    "scaled_z": 0.05,
+}
+"""Default histogram bin width per distance measure (used in discrete mode)."""
+
+DISCRETE_OCCUPANCY_PARAMS = {
+    "pseudocount": 1e-10,
+    "min_count": 5,
+    "x_min": 0.0,
+}
+"""Extra parameters specific to discrete (histogram-based) occupancy."""
+
+ENVELOPE_TEST_PARAMS = {
+    "alpha": 0.05,
+    "r_grid_size": 150,
+    "bin_width": 0.2,
+    "statistic": "intdev",
+}
+"""Default parameters for pairwise Monte Carlo envelope tests."""
 
 RECALCULATE = {
     "load_common_data": False,
@@ -51,8 +82,10 @@ RECALCULATE = {
     "plot_distance_distributions": False,
     "run_emd_analysis": False,
     "run_ks_analysis": False,
+    "run_pairwise_envelope_test": False,
     "run_occupancy_analysis": False,
     "run_occupancy_emd_analysis": False,
+    "run_occupancy_pairwise_envelope_test": False,
     "run_occupancy_interpolation_analysis": False,
 }
 """Default recalculation flags for analysis workflow."""

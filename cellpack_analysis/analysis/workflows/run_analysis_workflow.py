@@ -3,36 +3,68 @@
 Workflow runner for cellpack analysis.
 
 This script runs configurable analysis workflows based on configuration files.
-The workflow is controlled by the 'analysis_steps' field in the config, which
+The workflow is controlled by the ``analysis_steps`` field in the config, which
 specifies which steps to execute in order.
 
-Example analyses:
-- biological_variation: Analysis of biological variation factors
-- distance_analysis: Distance analysis with EMD and KS tests
-- occupancy_analysis: Occupancy analysis with spatial statistics
+Available analysis steps
+------------------------
+Data loading / preparation
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+- ``load_common_data``       — Load position data and mesh information.
+- ``calculate_distances``    — Calculate distance measures and (optionally) normalize.
 
-Available analysis steps:
-- load_common_data: Load position data and mesh information
-- calculate_distances: Calculate distance measures and normalize
-- plot_distance_distributions: Plot distance distributions with KDE
-- run_emd_analysis: Run Earth Mover's Distance analysis
-- run_ks_analysis: Run Kolmogorov-Smirnov test analysis
-- run_occupancy_analysis: Run occupancy analysis with spatial statistics
-- run_occupancy_emd_analysis: Run EMD analysis on occupancy data
-- run_occupancy_interpolation_analysis: Run interpolation analysis for occupancy data
+Distance distribution analysis
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+- ``plot_distance_distributions`` — Plot per-cell distance distributions.
+  Uses discrete histograms when ``distribution_method`` is ``"discrete"`` (default)
+  or KDE curves when it is ``"kde"``.
+- ``run_emd_analysis``       — Earth Mover's Distance analysis across packing modes,
+  including pairwise EMD matrix plots.
+- ``run_ks_analysis``        — Pairwise Kolmogorov-Smirnov tests with bootstrap CIs
+  for every ordered pair of packing modes.
+- ``run_pairwise_envelope_test`` — Pairwise Monte Carlo rank-envelope tests comparing
+  every ordered pair of packing modes.
 
-Example workflows:
-- Biological variation: ["load_common_data", "calculate_distances",
-  "plot_distance_distributions", "run_emd_analysis"]
-- Distance analysis: ["load_common_data", "calculate_distances",
-  "plot_distance_distributions", "run_emd_analysis", "run_ks_analysis"]
-- Occupancy analysis: ["load_common_data", "calculate_distances", "run_occupancy_analysis"]
+Occupancy analysis
+~~~~~~~~~~~~~~~~~~
+- ``run_occupancy_analysis`` — Occupancy ratio analysis (discrete histogram or KDE,
+  controlled by ``distribution_method``).
+- ``run_occupancy_emd_analysis``  — EMD analysis on occupancy ratio curves, including
+  pairwise EMD matrix plots.
+- ``run_occupancy_pairwise_envelope_test`` — Pairwise Monte Carlo rank-envelope test
+  on per-cell occupancy ratio curves.
+- ``run_occupancy_interpolation_analysis`` — Interpolation analysis for KDE occupancy
+  data (KDE mode only).
 
-Usage:
+Config key: ``distribution_method``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+- ``"discrete"`` (default) — histogram-based plots and occupancy.
+- ``"kde"`` — kernel-density-estimate plots and occupancy (legacy behaviour).
+
+Example workflows
+-----------------
+Biological variation::
+
+    ["load_common_data", "calculate_distances",
+     "plot_distance_distributions", "run_emd_analysis",
+     "run_pairwise_envelope_test"]
+
+Distance analysis::
+
+    ["load_common_data", "calculate_distances",
+     "plot_distance_distributions", "run_emd_analysis",
+     "run_ks_analysis", "run_pairwise_envelope_test"]
+
+Occupancy analysis::
+
+    ["load_common_data", "calculate_distances",
+     "run_occupancy_analysis", "run_occupancy_emd_analysis",
+     "run_occupancy_pairwise_envelope_test"]
+
+Usage::
+
     python run_analysis_workflow.py --config_file path/to/config.json
-    python run_analysis_workflow.py --config_file configs/distance_analysis_config.json
-    python run_analysis_workflow.py --config_file configs/biological_variation_config.json
-    python run_analysis_workflow.py --config_file configs/occupancy_analysis_config.json
+    python run_analysis_workflow.py --config_file configs/distance_analysis_config.json --log_level DEBUG
 """
 
 import argparse
@@ -40,6 +72,8 @@ import json
 import logging
 import time
 from pathlib import Path
+
+import pandas as pd
 
 from cellpack_analysis import setup_logging
 from cellpack_analysis.analysis.workflows.configs import defaults
@@ -49,6 +83,7 @@ from cellpack_analysis.lib.io import format_time
 from cellpack_analysis.lib.label_tables import DISTANCE_LIMITS
 from cellpack_analysis.lib.load_data import get_position_data_from_outputs
 from cellpack_analysis.lib.mesh_tools import get_mesh_information_dict_for_structure
+from cellpack_analysis.lib.stats import pairwise_envelope_test
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +94,12 @@ class AnalysisConfig:
     def __init__(self, config_file: str):
         self.config_file = Path(config_file)
         self.config = self._load_config()
-        self._setup_parameters()
+        self._setup_packing_params()
+        self._setup_analysis_params()
+        self._setup_ks_params()
+        self._setup_occupancy_params()
+        self._setup_envelope_params()
+        self._setup_recalculate()
         self._setup_paths()
 
     def _load_config(self) -> dict:
@@ -70,80 +110,78 @@ class AnalysisConfig:
         with open(self.config_file) as f:
             return json.load(f)
 
-    def _setup_paths(self):
-        """Set directory paths."""
-        self.project_root = get_project_root()
-        self.base_datadir = self.project_root / "data"
-        self.base_results_dir = self.project_root / "results"
-
-        # Setup results directory
-        self.results_dir = self.base_results_dir / self.name / self.packing_id
-        self.results_dir.mkdir(exist_ok=True, parents=True)
-
-        # Setup figures directory
-        self.figures_dir = self.results_dir / "figures"
-        self.figures_dir.mkdir(exist_ok=True, parents=True)
-
-    def _setup_parameters(self):
-        """Set analysis parameters from config."""
-        # Structure parameters
+    def _setup_packing_params(self) -> None:
+        """Set structure, packing, and data-loading parameters."""
         self.structure_id = self.config.get("structure_id", defaults.STRUCTURE_ID)
         self.packing_id = self.config.get("packing_id", defaults.PACKING_ID)
         self.structure_name = self.config.get("structure_name", defaults.STRUCTURE_NAME)
-
-        # Analysis parameters
-        self.name = self.config["name"]
         self.channel_map = self.config.get("channel_map", {self.structure_id: self.structure_id})
         self.packing_modes = list(self.channel_map.keys())
         self.packing_output_folder = self.config.get(
             "packing_output_folder", defaults.PACKING_OUTPUT_FOLDER
         )
         self.baseline_mode = self.config.get("baseline_mode", self.structure_id)
+        self.ingredient_key = self.config.get(
+            "ingredient_key", f"membrane_interior_{self.structure_name}"
+        )
+        self.num_workers = self.config.get("num_workers", defaults.NUM_WORKERS)
 
-        # Naming
+    def _setup_analysis_params(self) -> None:
+        """Set top-level analysis parameters."""
+        self.name = self.config["name"]
         self.suffix = self.config.get("suffix", "")
-
-        # Distance measures
-        self.distance_measures = self.config.get("distance_measures", defaults.DISTANCE_MEASURES)
-
-        # Normalization
         self.normalization = self.config.get("normalization")
         if self.normalization:
             self.suffix += f"_norm_{self.normalization}"
-
-        # Visualization
+        self.distance_measures = self.config.get("distance_measures", defaults.DISTANCE_MEASURES)
         self.save_format = self.config.get("save_format", defaults.SAVE_FORMAT)
+        self.distribution_method = self.config.get(
+            "distribution_method", defaults.DISTRIBUTION_METHOD
+        )
+        if self.distribution_method not in ("discrete", "kde"):
+            raise ValueError(
+                f"Invalid distribution_method '{self.distribution_method}'. "
+                "Must be 'discrete' or 'kde'."
+            )
+        # Merge user-provided bin_width_map over defaults
+        self.bin_width_map: dict[str, float] = defaults.BIN_WIDTH_MAP.copy()
+        self.bin_width_map.update(self.config.get("bin_width_map", {}))
+        # analysis_steps is the primary driver of execution
+        self.analysis_steps: list[str] = self.config["analysis_steps"]
 
-        # Analysis-specific parameters
+    def _setup_ks_params(self) -> None:
+        """Set Kolmogorov-Smirnov test parameters."""
         self.ks_significance_level = self.config.get(
             "ks_significance_level", defaults.KS_SIGNIFICANCE_LEVEL
         )
         self.n_bootstrap = self.config.get("n_bootstrap", defaults.N_BOOTSTRAP)
         self.bandwidth = self.config.get("bandwidth", defaults.BANDWIDTH)
 
-        # Occupancy analysis specific
+    def _setup_occupancy_params(self) -> None:
+        """Set occupancy analysis parameters."""
         self.occupancy_distance_measures = self.config.get(
             "occupancy_distance_measures", defaults.OCCUPANCY_DISTANCE_MEASURES
         )
-        self.occupancy_params = defaults.OCCUPANCY_PARAMS.copy()
+        self.occupancy_params: dict = defaults.OCCUPANCY_PARAMS.copy()
         self.occupancy_params.update(self.config.get("occupancy_params", {}))
+        self.discrete_occupancy_params: dict = defaults.DISCRETE_OCCUPANCY_PARAMS.copy()
+        self.discrete_occupancy_params.update(self.config.get("discrete_occupancy_params", {}))
 
-        # Ingredient key for position data
-        self.ingredient_key = self.config.get(
-            "ingredient_key", f"membrane_interior_{self.structure_name}"
-        )
+    def _setup_envelope_params(self) -> None:
+        """Set Monte Carlo envelope test parameters."""
+        self.envelope_test_params: dict = defaults.ENVELOPE_TEST_PARAMS.copy()
+        self.envelope_test_params.update(self.config.get("envelope_test_params", {}))
 
+    def _setup_recalculate(self) -> None:
+        """Parse and validate the recalculate config field."""
         recalculate_config = self.config.get("recalculate")
         if isinstance(recalculate_config, bool):
-            # If recalculate is a boolean, apply to all steps
             self.recalculate = dict.fromkeys(defaults.RECALCULATE.keys(), recalculate_config)
         elif isinstance(recalculate_config, dict):
-            # If recalculate is a dict, update defaults with provided values
             self.recalculate = defaults.RECALCULATE.copy()
             self.recalculate.update(recalculate_config)
         else:
-            # If recalculate is None or invalid type, use defaults
-            self.recalculate = defaults.RECALCULATE
+            self.recalculate = defaults.RECALCULATE.copy()
             if recalculate_config is not None:
                 logger.warning(
                     "Invalid 'recalculate' config."
@@ -151,29 +189,38 @@ class AnalysisConfig:
                 )
         logger.info(f"Recalculation settings: {self.recalculate}")
 
-        # Parallel processing
-        self.num_workers = self.config.get("num_workers", defaults.NUM_WORKERS)
-
-        # Analysis steps
-        self.analysis_steps = self.config["analysis_steps"]
+    def _setup_paths(self) -> None:
+        """Set directory paths and create output folders."""
+        self.project_root = get_project_root()
+        self.base_datadir = self.project_root / "data"
+        self.base_results_dir = self.project_root / "results"
+        output_path = self.config.get("output_path")
+        if output_path:
+            self.results_dir = self.base_results_dir / output_path
+        else:
+            self.results_dir = self.base_results_dir / self.name / self.packing_id
+        self.results_dir.mkdir(exist_ok=True, parents=True)
+        self.figures_dir = self.results_dir / "figures"
+        self.figures_dir.mkdir(exist_ok=True, parents=True)
 
 
 class AnalysisRunner:
     """Main class for running different types of analysis workflows."""
 
-    def __init__(self):
-        self.shared_data = {}
+    def __init__(self) -> None:
+        self.shared_data: dict = {}
 
-    def run_analysis(self, config_file: str):
+    def run_analysis(self, config_file: str) -> None:
         """Run analysis based on the configuration file."""
         config = AnalysisConfig(config_file)
 
-        logger.info(f"Starting {config.name} analysis")
-        # Execute each step in the analysis_steps list
+        logger.info(
+            f"Starting '{config.name}' analysis (distribution_method={config.distribution_method})"
+        )
         for step in config.analysis_steps:
             self._execute_step(step, config)
 
-    def _execute_step(self, step: str, config: AnalysisConfig):
+    def _execute_step(self, step: str, config: AnalysisConfig) -> None:
         """Execute a single analysis step."""
         logger.info(f"Executing step: {step}")
 
@@ -183,15 +230,17 @@ class AnalysisRunner:
             "plot_distance_distributions": self._plot_distance_distributions,
             "run_emd_analysis": self._run_emd_analysis,
             "run_ks_analysis": self._run_ks_analysis,
+            "run_pairwise_envelope_test": self._run_pairwise_envelope_test,
             "run_occupancy_analysis": self._run_occupancy_analysis,
             "run_occupancy_emd_analysis": self._run_occupancy_emd_analysis,
+            "run_occupancy_pairwise_envelope_test": self._run_occupancy_pairwise_envelope_test,
             "run_occupancy_interpolation_analysis": self._run_occupancy_interpolation_analysis,
         }
 
         if step in step_method_map:
             step_method_map[step](config)
         else:
-            logger.warning(f"Unknown step: {step}")
+            logger.warning(f"Unknown step: '{step}'. Available steps: {list(step_method_map)}")
 
     def _load_common_data(self, config: AnalysisConfig):
         """Load position data and mesh information common to all analyses."""
@@ -269,30 +318,43 @@ class AnalysisRunner:
 
         self.shared_data["all_distance_dict"] = all_distance_dict
 
-    def _plot_distance_distributions(self, config: AnalysisConfig):
-        """Plot distance distributions."""
+    def _plot_distance_distributions(self, config: AnalysisConfig) -> None:
+        """Plot distance distributions (discrete histograms or KDE curves)."""
         if "all_distance_dict" not in self.shared_data:
             logger.warning("Distance data not calculated. Calculating distances first.")
             self._calculate_distances(config)
 
-        logger.info("Plotting distance distributions")
+        logger.info(f"Plotting distance distributions ({config.distribution_method})")
         distance_figures_dir = config.figures_dir / "distance_distributions"
         distance_figures_dir.mkdir(exist_ok=True, parents=True)
 
-        # Plot KDE distributions
-        _ = visualization.plot_distance_distributions_kde(
-            distance_measures=config.distance_measures,
-            packing_modes=config.packing_modes,
-            all_distance_dict=self.shared_data["all_distance_dict"],
-            figures_dir=distance_figures_dir,
-            suffix=config.suffix,
-            normalization=config.normalization,
-            distance_limits=DISTANCE_LIMITS,
-            bandwidth=config.bandwidth,
-            save_format=config.save_format,
-        )
+        if config.distribution_method == "discrete":
+            _ = visualization.plot_distance_distributions_discrete(
+                distance_measures=config.distance_measures,
+                packing_modes=config.packing_modes,
+                all_distance_dict=self.shared_data["all_distance_dict"],
+                figures_dir=distance_figures_dir,
+                suffix=config.suffix,
+                normalization=config.normalization,
+                distance_limits=DISTANCE_LIMITS,
+                bin_width=config.bin_width_map.get(
+                    config.distance_measures[0] if config.distance_measures else "nucleus", 0.2
+                ),
+                save_format=config.save_format,
+            )
+        else:
+            _ = visualization.plot_distance_distributions_kde(
+                distance_measures=config.distance_measures,
+                packing_modes=config.packing_modes,
+                all_distance_dict=self.shared_data["all_distance_dict"],
+                figures_dir=distance_figures_dir,
+                suffix=config.suffix,
+                normalization=config.normalization,
+                distance_limits=DISTANCE_LIMITS,
+                bandwidth=config.bandwidth,
+                save_format=config.save_format,
+            )
 
-        # Log central tendencies
         log_file_path = (
             config.results_dir
             / f"{config.structure_name}_distance_distribution_central_tendencies{config.suffix}.log"
@@ -304,8 +366,8 @@ class AnalysisRunner:
             file_path=log_file_path,
         )
 
-    def _run_emd_analysis(self, config: AnalysisConfig):
-        """Run EMD analysis."""
+    def _run_emd_analysis(self, config: AnalysisConfig) -> None:
+        """Run EMD analysis including pairwise EMD matrix plots."""
         if "all_distance_dict" not in self.shared_data:
             logger.warning("Distance data not calculated. Calculating distances first.")
             self._calculate_distances(config)
@@ -314,7 +376,6 @@ class AnalysisRunner:
         emd_figures_dir = config.figures_dir / "emd"
         emd_figures_dir.mkdir(exist_ok=True, parents=True)
 
-        # Get EMD distances
         df_emd = distance.get_distance_distribution_emd_df(
             all_distance_dict=self.shared_data["all_distance_dict"],
             packing_modes=config.packing_modes,
@@ -324,7 +385,7 @@ class AnalysisRunner:
             suffix=config.suffix,
         )
 
-        # Plot EMD comparisons
+        # Per-comparison-type plots and logs
         emd_log_file_path = (
             config.results_dir / f"{config.packing_id}_emd_central_tendencies{config.suffix}.log"
         )
@@ -348,62 +409,136 @@ class AnalysisRunner:
                 comparison_type=comparison_type,
             )
 
+        # Pairwise EMD matrix per distance measure
+        for dm in config.distance_measures:
+            _ = visualization.plot_pairwise_emd_matrix(
+                df_emd=df_emd,
+                all_distance_dict=self.shared_data["all_distance_dict"],
+                packing_modes=config.packing_modes,
+                distance_measure=dm,
+                normalization=config.normalization,
+                distance_limits=DISTANCE_LIMITS,
+                bin_width=config.bin_width_map.get(dm, 0.2),
+                minimum_distance=0,
+                figures_dir=emd_figures_dir,
+                suffix=config.suffix,
+                save_format=config.save_format,
+            )
+
+        pairwise_emd_log_file_path = (
+            config.results_dir
+            / f"{config.packing_id}_emd_pairwise_central_tendencies{config.suffix}.log"
+        )
+        distance.log_pairwise_emd_central_tendencies(
+            df_emd=df_emd,
+            distance_measures=config.distance_measures,
+            packing_modes=config.packing_modes,
+            log_file_path=pairwise_emd_log_file_path,
+        )
+
         self.shared_data["df_emd"] = df_emd
 
-    def _run_ks_analysis(self, config: AnalysisConfig):
-        """Run KS test analysis."""
+    def _run_ks_analysis(self, config: AnalysisConfig) -> None:
+        """Run pairwise KS test analysis across all ordered pairs of packing modes."""
         if "all_distance_dict" not in self.shared_data:
             logger.warning("Distance data not calculated. Calculating distances first.")
             self._calculate_distances(config)
 
-        logger.info("Running KS test analysis")
-        ks_figures_dir = config.figures_dir / "ks_test"
+        logger.info("Running pairwise KS test analysis")
+        ks_figures_dir = config.figures_dir / "pairwise_ks_test"
         ks_figures_dir.mkdir(exist_ok=True, parents=True)
 
-        # Run KS tests
-        ks_test_df = distance.get_ks_test_df(
-            distance_measures=config.distance_measures,
-            packing_modes=config.packing_modes,
+        # Collect per-ref-mode KS results
+        pairwise_ks_dfs: list[pd.DataFrame] = []
+        for ref_mode in config.packing_modes:
+            ks_test_df = distance.get_ks_test_df(
+                distance_measures=config.distance_measures,
+                packing_modes=config.packing_modes,
+                all_distance_dict=self.shared_data["all_distance_dict"],
+                baseline_mode=ref_mode,
+                significance_level=config.ks_significance_level,
+                save_dir=None,
+                recalculate=config.recalculate["run_ks_analysis"],
+            )
+            ks_test_df["baseline_mode"] = ref_mode
+            pairwise_ks_dfs.append(ks_test_df)
+
+        pairwise_ks_test_df = pd.concat(pairwise_ks_dfs, ignore_index=True)
+
+        # Bootstrap per ref_mode and collect results
+        pairwise_ks_bootstrap_dfs: list[pd.DataFrame] = []
+        ks_log_file_path = (
+            config.results_dir
+            / f"{config.structure_name}_pairwise_ks_central_tendencies{config.suffix}.log"
+        )
+        for ref_mode in config.packing_modes:
+            other_modes = [m for m in config.packing_modes if m != ref_mode]
+            ref_ks_df = pairwise_ks_test_df.query("baseline_mode == @ref_mode")
+            df_boot = distance.bootstrap_ks_tests(
+                ks_test_df=ref_ks_df,
+                distance_measures=config.distance_measures,
+                packing_modes=other_modes,
+                n_bootstrap=config.n_bootstrap,
+            )
+            df_boot["baseline_mode"] = ref_mode
+            pairwise_ks_bootstrap_dfs.append(df_boot)
+
+            _ = visualization.plot_ks_test_results(
+                df_ks_bootstrap=df_boot,
+                distance_measures=config.distance_measures,
+                figures_dir=ks_figures_dir,
+                suffix=f"{config.suffix}_vs_{ref_mode}",
+                save_format=config.save_format,
+            )
+            distance.log_central_tendencies_for_ks(
+                df_ks_bootstrap=df_boot,
+                distance_measures=config.distance_measures,
+                file_path=ks_log_file_path,
+            )
+
+        self.shared_data["pairwise_ks_bootstrap_df"] = pd.concat(
+            pairwise_ks_bootstrap_dfs, ignore_index=True
+        )
+
+    def _run_pairwise_envelope_test(self, config: AnalysisConfig) -> None:
+        """Run pairwise Monte Carlo rank-envelope test across all ordered mode pairs."""
+        if "all_distance_dict" not in self.shared_data:
+            logger.warning("Distance data not calculated. Calculating distances first.")
+            self._calculate_distances(config)
+
+        logger.info("Running pairwise envelope test")
+        envelope_figures_dir = config.figures_dir / "pairwise_envelope"
+        envelope_figures_dir.mkdir(exist_ok=True, parents=True)
+
+        pairwise_results = pairwise_envelope_test(
             all_distance_dict=self.shared_data["all_distance_dict"],
-            baseline_mode=config.baseline_mode,
-            significance_level=config.ks_significance_level,
-            save_dir=config.results_dir,
-            recalculate=config.recalculate["run_ks_analysis"],
+            packing_modes=config.packing_modes,
+            distance_measures=config.distance_measures,
+            **config.envelope_test_params,
         )
 
-        # Bootstrap KS tests
-        df_ks_bootstrap = distance.bootstrap_ks_tests(
-            ks_test_df=ks_test_df,
-            distance_measures=config.distance_measures,
-            packing_modes=[pm for pm in config.packing_modes if pm != config.baseline_mode],
-            n_bootstrap=config.n_bootstrap,
-        )
+        for dm in config.distance_measures:
+            _ = visualization.plot_pairwise_envelope_matrix(
+                pairwise_results=pairwise_results,
+                distance_measure=dm,
+                figures_dir=envelope_figures_dir,
+                suffix=config.suffix,
+                save_format=config.save_format,
+            )
 
-        # Plot KS results
-        _ = visualization.plot_ks_test_results(
-            df_ks_bootstrap=df_ks_bootstrap,
-            distance_measures=config.distance_measures,
-            figures_dir=ks_figures_dir,
+        # Joint test across all distance measures
+        _ = visualization.plot_pairwise_envelope_matrix(
+            pairwise_results=pairwise_results,
+            distance_measure=None,
+            figures_dir=envelope_figures_dir,
             suffix=config.suffix,
             save_format=config.save_format,
         )
 
-        # Log KS statistics
-        ks_log_file_path = (
-            config.results_dir
-            / f"{config.structure_name}_ks_test_central_tendencies{config.suffix}.log"
-        )
-        distance.log_central_tendencies_for_ks(
-            df_ks_bootstrap=df_ks_bootstrap,
-            distance_measures=config.distance_measures,
-            file_path=ks_log_file_path,
-        )
+        self.shared_data["pairwise_envelope_results"] = pairwise_results
 
-        self.shared_data["ks_test_df"] = ks_test_df
-        self.shared_data["df_ks_bootstrap"] = df_ks_bootstrap
-
-    def _run_occupancy_analysis(self, config: AnalysisConfig):
-        """Run occupancy analysis workflow."""
+    def _run_occupancy_analysis(self, config: AnalysisConfig) -> None:
+        """Run occupancy analysis (discrete histogram or KDE, per distribution_method)."""
         if (
             "all_distance_dict" not in self.shared_data
             or "combined_mesh_information_dict" not in self.shared_data
@@ -414,22 +549,82 @@ class AnalysisRunner:
             self._load_common_data(config)
             self._calculate_distances(config)
 
-        logger.info("Running occupancy analysis")
+        logger.info(f"Running occupancy analysis ({config.distribution_method})")
 
-        # Run occupancy analysis for each specified distance measure
         self.shared_data["occupancy_dict"] = {}
         for occupancy_distance_measure in config.occupancy_distance_measures:
-            self._run_single_occupancy_analysis(
-                config,
-                occupancy_distance_measure,
-            )
+            if config.distribution_method == "discrete":
+                self._run_single_occupancy_analysis_discrete(config, occupancy_distance_measure)
+            else:
+                self._run_single_occupancy_analysis(config, occupancy_distance_measure)
+
+    def _run_single_occupancy_analysis_discrete(
+        self,
+        config: AnalysisConfig,
+        occupancy_distance_measure: str,
+    ) -> None:
+        """Run discrete histogram occupancy analysis for one distance measure."""
+        logger.info(
+            f"Discrete occupancy analysis for distance measure: {occupancy_distance_measure}"
+        )
+        occupancy_figures_dir = config.figures_dir / occupancy_distance_measure
+        occupancy_figures_dir.mkdir(exist_ok=True, parents=True)
+
+        bin_width = config.bin_width_map.get(occupancy_distance_measure, 0.2)
+        xlim = config.occupancy_params.get(occupancy_distance_measure, {}).get("xlim", 8)
+
+        binned_occupancy_dict = occupancy.get_binned_occupancy_dict_from_distance_dict(
+            all_distance_dict=self.shared_data["all_distance_dict"],
+            combined_mesh_information_dict=self.shared_data["combined_mesh_information_dict"],
+            channel_map=config.channel_map,
+            distance_measure=occupancy_distance_measure,
+            bin_width=bin_width,
+            x_max=xlim,
+            x_min=config.discrete_occupancy_params["x_min"],
+            results_dir=config.results_dir,
+            pseudocount=config.discrete_occupancy_params["pseudocount"],
+            min_count=config.discrete_occupancy_params["min_count"],
+            recalculate=config.recalculate["run_occupancy_analysis"],
+            suffix=config.suffix,
+        )
+
+        self.shared_data["occupancy_dict"][occupancy_distance_measure] = binned_occupancy_dict
+
+        # Illustration for one example cell
+        _ = visualization.plot_occupancy_illustration_discrete(
+            binned_occupancy_dict=binned_occupancy_dict,
+            packing_mode=config.baseline_mode,
+            figures_dir=occupancy_figures_dir,
+            suffix=config.suffix,
+            distance_measure=occupancy_distance_measure,
+            normalization=config.normalization,
+            save_format=config.save_format,
+        )
+
+        # Occupancy ratio: mean + 95% pointwise envelope
+        ylim = config.occupancy_params.get(occupancy_distance_measure, {}).get("ylim", 3)
+        _ = visualization.plot_binned_occupancy_ratio(
+            binned_occupancy_dict=binned_occupancy_dict,
+            channel_map=config.channel_map,
+            figures_dir=occupancy_figures_dir,
+            normalization=config.normalization,
+            suffix=config.suffix,
+            distance_measure=occupancy_distance_measure,
+            xlim=xlim,
+            ylim=ylim,
+            save_format=config.save_format,
+            envelope_alpha=config.envelope_test_params["alpha"],
+            fig_params=config.occupancy_params.get(
+                "fig_params", {"dpi": 300, "figsize": (3.5, 2.5)}
+            ),
+        )
 
     def _run_single_occupancy_analysis(
         self,
         config: AnalysisConfig,
         occupancy_distance_measure: str,
-    ):
-        """Run occupancy analysis for a single distance measure."""
+    ) -> None:
+        """Run KDE occupancy analysis for a single distance measure."""
         logger.info(
             f"Running occupancy analysis for distance measure: {occupancy_distance_measure}"
         )
@@ -498,19 +693,17 @@ class AnalysisRunner:
             show_legend=config.occupancy_params.get("show_legend", True),
         )
 
-    def _run_occupancy_emd_analysis(self, config: AnalysisConfig):
-        """Run occupancy EMD analysis."""
+    def _run_occupancy_emd_analysis(self, config: AnalysisConfig) -> None:
+        """Run occupancy EMD analysis including pairwise matrix plots."""
         if "occupancy_dict" not in self.shared_data:
             logger.warning("Occupancy data not available. Running occupancy analysis first.")
             self._run_occupancy_analysis(config)
 
+        logger.info("Running occupancy EMD analysis")
         occupancy_emd_figures_dir = config.figures_dir / "occupancy_emd"
         occupancy_emd_figures_dir.mkdir(exist_ok=True, parents=True)
 
-        logger.info("Running occupancy EMD analysis")
-
-        # Compute occupancy EMD
-        self.shared_data["occupancy_emd_df"] = occupancy.get_occupancy_emd_df(
+        occupancy_emd_df = occupancy.get_occupancy_emd_df(
             combined_occupancy_dict=self.shared_data["occupancy_dict"],
             packing_modes=config.packing_modes,
             distance_measures=config.occupancy_distance_measures,
@@ -519,9 +712,8 @@ class AnalysisRunner:
             suffix=config.suffix,
         )
 
-        # Plot occupancy EMD comparisons
         _ = visualization.plot_emd_comparisons(
-            df_emd=self.shared_data["occupancy_emd_df"],
+            df_emd=occupancy_emd_df,
             distance_measures=config.occupancy_distance_measures,
             comparison_type="baseline",
             baseline_mode=config.baseline_mode,
@@ -535,7 +727,7 @@ class AnalysisRunner:
             / f"{config.packing_id}_occupancy_emd_central_tendencies{config.suffix}.log"
         )
         distance.log_central_tendencies_for_emd(
-            df_emd=self.shared_data["occupancy_emd_df"],
+            df_emd=occupancy_emd_df,
             distance_measures=config.occupancy_distance_measures,
             packing_modes=config.packing_modes,
             baseline_mode=config.baseline_mode,
@@ -543,8 +735,73 @@ class AnalysisRunner:
             comparison_type="baseline",
         )
 
-    def _run_occupancy_interpolation_analysis(self, config: AnalysisConfig):
-        """Run interpolation analysis for occupancy data."""
+        # Pairwise occupancy EMD matrix per distance measure
+        for dm in config.occupancy_distance_measures:
+            dm_figures_dir = config.figures_dir / dm
+            dm_figures_dir.mkdir(exist_ok=True, parents=True)
+            xlim = config.occupancy_params.get(dm, {}).get("xlim", 8)
+            ylim = config.occupancy_params.get(dm, {}).get("ylim", 3)
+            _ = visualization.plot_pairwise_occupancy_emd_matrix(
+                df_emd=occupancy_emd_df,
+                binned_occupancy_dict=self.shared_data["occupancy_dict"][dm],
+                packing_modes=config.packing_modes,
+                distance_measure=dm,
+                normalization=config.normalization,
+                xlim=xlim,
+                ylim=ylim,
+                figures_dir=dm_figures_dir,
+                suffix=config.suffix,
+                save_format=config.save_format,
+            )
+
+        self.shared_data["occupancy_emd_df"] = occupancy_emd_df
+
+    def _run_occupancy_pairwise_envelope_test(self, config: AnalysisConfig) -> None:
+        """Run pairwise Monte Carlo rank-envelope test on per-cell occupancy ratio curves."""
+        if "occupancy_dict" not in self.shared_data:
+            logger.warning("Occupancy data not available. Running occupancy analysis first.")
+            self._run_occupancy_analysis(config)
+
+        logger.info("Running occupancy pairwise envelope test")
+        envelope_figures_dir = config.figures_dir / "pairwise_envelope"
+        envelope_figures_dir.mkdir(exist_ok=True, parents=True)
+
+        occ_pairwise_results = occupancy.pairwise_envelope_test_occupancy(
+            combined_binned_occupancy_dict=self.shared_data["occupancy_dict"],
+            packing_modes=config.packing_modes,
+            alpha=config.envelope_test_params["alpha"],
+            statistic=config.envelope_test_params["statistic"],
+        )
+
+        for dm in config.occupancy_distance_measures:
+            _ = visualization.plot_pairwise_envelope_matrix(
+                pairwise_results=occ_pairwise_results,
+                distance_measure=dm,
+                figures_dir=envelope_figures_dir,
+                suffix=config.suffix,
+                save_format=config.save_format,
+            )
+
+        # Joint test across all occupancy distance measures
+        _ = visualization.plot_pairwise_envelope_matrix(
+            pairwise_results=occ_pairwise_results,
+            distance_measure=None,
+            figures_dir=envelope_figures_dir,
+            suffix=config.suffix,
+            save_format=config.save_format,
+        )
+
+        self.shared_data["occupancy_pairwise_envelope_results"] = occ_pairwise_results
+
+    def _run_occupancy_interpolation_analysis(self, config: AnalysisConfig) -> None:
+        """Run interpolation analysis for occupancy data (KDE mode only)."""
+        if config.distribution_method != "kde":
+            logger.warning(
+                "run_occupancy_interpolation_analysis requires distribution_method='kde'. "
+                "Skipping (current method: '%s').",
+                config.distribution_method,
+            )
+            return
         if "occupancy_dict" not in self.shared_data:
             logger.warning("Occupancy data not available. Running occupancy analysis first.")
             self._run_occupancy_analysis(config)
