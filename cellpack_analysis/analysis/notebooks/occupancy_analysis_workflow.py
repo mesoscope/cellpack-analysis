@@ -1,23 +1,24 @@
 # %% [markdown]
-# # Occupancy workflow for punctate structures (discrete / histogram-based)
-#
-# Calculate and plot the occupancy ratio for different observed and simulated data
-# using *discrete KDE* methods
-#
-# Pipeline overview:
-# 1. Load positions and mesh information
-# 2. Compute distance dictionaries and normalize → ``all_distance_dict``
-# 3. Compute binned occupancy ratios directly from distance arrays
-#    → ``combined_binned_occupancy_dict``
-# 4. Plot occupancy illustration (histogram overlay + ratio curve for one cell)
-# 5. Plot occupancy ratio: mean (thick line) + 95 % pointwise envelope
-# 6. Occupancy EMD: bar/violin comparisons + pairwise EMD matrix
-# 7. Pairwise envelope test on occupancy ratio curves
-# 8. Pairwise KS test on occupancy distributions
+"""
+# Occupancy workflow for punctate structures (KDE-based)
+
+Calculate and plot the occupancy ratio for different observed and simulated data
+using *KDE* methods
+
+## Workflow steps:
+1. Load positions and mesh information
+2. Compute distance dictionaries and normalize → ``all_distance_dict``
+3. Compute occupancy ratio KDE dictionary directly from distance arrays
+   → ``combined_kde_occupancy_dict``
+4. Plot occupancy illustration (KDE occupied + available + ratio curve for one cell)
+5. Plot occupancy ratio: mean (thick line) + 95 % pointwise envelope
+6. Occupancy EMD: bar/violin comparisons + pairwise EMD matrix
+7. Pairwise envelope test on occupancy ratio curves
+8. Pairwise KS test on occupancy distributions
+"""
+# %% [markdown]
 import logging
 import time
-
-from IPython.display import display
 
 from cellpack_analysis.lib import distance, occupancy, visualization
 from cellpack_analysis.lib.file_io import get_project_root
@@ -50,7 +51,7 @@ STRUCTURE_NAME = "peroxisome"
 CONDITION = "rules_shape_with_seed"
 """Experimental condition / packing output subfolder."""
 
-RESULT_SUBFOLDER = "occupancy_test_discrete"
+RESULT_SUBFOLDER = "occupancy_test_kde_rules_shape_with_seed"
 """Subfolder within results/ to save outputs for this workflow."""
 # %% [markdown]
 # ### Set packing modes and channel map
@@ -88,7 +89,7 @@ figures_dir.mkdir(exist_ok=True, parents=True)
 # Options: "nucleus", "z", "scaled_nucleus", "membrane"
 occupancy_distance_measures = [
     "nucleus",
-    "z",
+    # "z",
 ]
 # %% [markdown]
 # ### Set normalization
@@ -109,7 +110,7 @@ all_positions = get_position_data_from_outputs(
     results_dir=results_dir,
     packing_output_folder=packing_output_folder,
     ingredient_key=f"membrane_interior_{STRUCTURE_NAME}",
-    recalculate=False,
+    recalculate=True,
 )
 # %% [markdown]
 # ### Get mesh information
@@ -118,7 +119,7 @@ for structure_id in all_structures:
     mesh_information_dict = get_mesh_information_dict_for_structure(
         structure_id=structure_id,
         base_datadir=base_datadir,
-        recalculate=False,
+        recalculate=True,
     )
     combined_mesh_information_dict[structure_id] = mesh_information_dict
 # %% [markdown]
@@ -131,8 +132,8 @@ all_distance_dict = distance.get_distance_dictionary(
     mesh_information_dict=combined_mesh_information_dict,
     channel_map=channel_map,
     results_dir=results_dir,
-    recalculate=False,
-    num_workers=32,
+    recalculate=True,
+    num_workers=16,
 )
 all_distance_dict = distance.normalize_distance_dictionary(
     all_distance_dict=all_distance_dict,
@@ -196,7 +197,7 @@ occupancy_dict = occupancy.get_kde_occupancy_dict(
     distance_kde_dict=distance_kde_dict,
     channel_map=channel_map,
     results_dir=results_dir,
-    recalculate=False,
+    recalculate=True,
     suffix=suffix,
     distance_measure=occupancy_distance_measure,
     bandwidth=occupancy_params[occupancy_distance_measure]["bandwidth"],
@@ -311,7 +312,6 @@ for occupancy_distance_measure in occupancy_distance_measures:
             save_format=save_format,
             plot_type=plot_type,
         )
-        display(fig_interp)
 # %%
 logger.info(f"Time taken to complete workflow: {time.time() - start_time:.2f} s")
 

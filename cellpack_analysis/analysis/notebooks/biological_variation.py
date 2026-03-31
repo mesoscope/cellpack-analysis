@@ -2,6 +2,7 @@
 """
 # Biological variation workflow
 This notebook compares variation in spatial organization due to biological factors.
+Uses a KDE based approach for visualization and statistical comparison of distance distributions, as well as pairwise KS tests and Monte Carlo Envelope tests.
 
 Factors affecting spatial organization:
 1. Size variation
@@ -34,8 +35,13 @@ start_time = time.time()
 # %% [markdown]
 # ### Set structure ID and radius
 STRUCTURE_ID = "SLC25A17"
+"""This is the ID for the packed structure, it is used to get the cell containers for the shape variation mode."""
+
 PACKING_ID = "peroxisome"
+"""This is the ID for the overall packing configuration, it is used for naming outputs and folders."""
+
 STRUCTURE_NAME = "peroxisome"
+"""This is the name of the structure being analyzed, it is used in cellPACK output files."""
 # %% [markdown]
 # ### Set packing modes to analyze
 save_format = "pdf"
@@ -44,7 +50,7 @@ channel_map = {
     "baseline": "mean",
     "variable_count": "mean",
     "variable_size": "mean",
-    "shape": "SLC25A17",
+    "shape": STRUCTURE_ID,
 }
 
 # packing_output_folder = "packing_outputs/stochastic_variation_analysis/"
@@ -131,18 +137,17 @@ distance_figures_dir = figures_dir / "distance_distributions"
 distance_figures_dir.mkdir(exist_ok=True, parents=True)
 # %% [markdown]
 # ### plot distance distribution histograms
-fig, axs = visualization.plot_distance_distributions_discrete(
+fig, axs = visualization.plot_distance_distributions_kde(
     distance_measures=distance_measures,
     packing_modes=packing_modes,
     all_distance_dict=all_distance_dict,
     figures_dir=distance_figures_dir,
     suffix=suffix,
     normalization=normalization,
-    plot_individual_curves=False,
+    minimum_distance=0,
     distance_limits=DISTANCE_LIMITS,
-    bin_width=0.2,
+    bandwidth=0.4,
     save_format=save_format,
-    production_mode=True,
 )
 # %% [markdown]
 # ### log central tendencies for distance distributions

@@ -1,6 +1,6 @@
 # %% [markdown]
 """
-# Distance analysis workflow
+# Distance analysis workflow.
 
 Compare distributions of various measures of distance:
 1. Nearest neighbor distance
@@ -9,16 +9,18 @@ Compare distributions of various measures of distance:
 4. Distance to membrane
 5. Distance from basal surface (z-distance)
 
-Can be used to compare distirbutions in the presence or absence of other influencing structures.
-Uses a KDE based approach for visualization and statistical comparison of distance distributions, as well as pairwise KS tests and Monte Carlo Envelope tests.
+Can be used to compare distributions in the presence or absence of other influencing structures.
 
 Workflow steps:
 1. Calculate distance distributions for each distance measure and packing mode.
 2. Visualize distance distribution histograms for each distance measure and mode.
-3. Calculate and visualize Earth Mover's Distance (EMD) between distance distributions of different modes.
+3. Calculate and visualize Earth Mover's Distance (EMD) between distance distributions of different
+modes.
 4. Perform pairwise Monte Carlo Envelope Tests to compare distance distributions between modes.
-5. Plot pairwise envelope test results in a matrix format to identify significant differences between modes for each distance measure.
-6. Perform pairwise KS tests to compare distance distributions between modes, and bootstrap results to get confidence intervals.
+5. Plot pairwise envelope test results in a matrix format to identify significant differences
+between modes for each distance measure.
+6. Perform pairwise KS tests to compare distance distributions between modes, and bootstrap results
+to get confidence intervals.
 """
 
 import logging
@@ -236,6 +238,7 @@ for dm in distance_measures:
         bin_width=0.2,
         minimum_distance=0,
         figures_dir=emd_figures_dir,
+        figsize=(3.5, 3.5),
         suffix=suffix,
         save_format=save_format,
     )
@@ -350,10 +353,12 @@ for ref_mode in packing_modes:
 pairwise_ks_log_file_path = (
     results_dir / f"{STRUCTURE_NAME}_pairwise_ks_central_tendencies{suffix}.log"
 )
-for ref_mode in packing_modes:
-    ref_boot_df = pairwise_ks_bootstrap_df.query("baseline_mode == @ref_mode")
+for _ref_mode in packing_modes:
+    ref_boot_df = pairwise_ks_bootstrap_df.query("baseline_mode == @_ref_mode")
     distance.log_central_tendencies_for_ks(
         df_ks_bootstrap=ref_boot_df,
         distance_measures=distance_measures,
         file_path=pairwise_ks_log_file_path,
     )
+
+# %%
