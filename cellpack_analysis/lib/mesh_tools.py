@@ -327,9 +327,7 @@ def get_mesh_information_for_shape(
     inside_mem_inds = np.where((mem_grid_distances > 0) & ~np.isinf(mem_grid_distances))[0]
     mem_grid_distances = mem_grid_distances[inside_mem_inds]
     if not (
-        len(nuc_grid_distances)
-        == len(mem_grid_distances)
-        == len(z_grid_distances)
+        len(nuc_grid_distances) == len(mem_grid_distances) == len(z_grid_distances)
         # == len(scaled_nuc_grid_distances)
         # == len(scaled_z_grid_distances)
     ):
@@ -455,7 +453,7 @@ def get_mesh_from_image(
 
     if img.sum() == 0:
         raise ValueError(
-            "No foreground voxels found after pre-processing." "Is the object of interest centered?"
+            "No foreground voxels found after pre-processing.Is the object of interest centered?"
         )
 
     # Create vtkImageData
@@ -580,6 +578,8 @@ def calc_scaled_distance_to_nucleus_surface_serial(
         A trimesh object representing the membrane surface
     mem_distances
         Pre-computed distances to membrane surface
+    nuc_query
+        Pre-computed ProximityQuery object for the nucleus mesh
 
     Returns
     -------
@@ -679,6 +679,8 @@ def calc_scaled_distance_to_nucleus_surface(
         A trimesh object representing the membrane surface
     mem_distances
         Pre-computed distances to membrane surface. If None, will be computed.
+    nuc_query
+        Pre-computed ProximityQuery object for the nucleus mesh. If None, will be computed.
 
     Returns
     -------
@@ -963,14 +965,14 @@ def _compute_all_interior_distances(
     logger.info(f"Took {formatted_time} to compute interior distances for {cell_id}")
 
     if save_dir is not None:
-        _SAVE_NAMES = {
+        _save_names = {
             "nucleus": "nuc_distances",
             "scaled_nucleus": "scaled_nuc_distances",
             "z": "z_distances",
             "scaled_z": "scaled_z_distances",
         }
         for dm, arr in arrays.items():
-            prefix = _SAVE_NAMES.get(dm)
+            prefix = _save_names.get(dm)
             if prefix is not None:
                 np.save(save_dir / f"{prefix}_{cell_id}.npy", arr)
 
@@ -1177,7 +1179,8 @@ def calculate_grid_distances(
         z_distances = interior_results.get("z")
         scaled_z_distances = interior_results.get("scaled_z")
 
-    # Raise error if any requested distance measure is still None at this point (should only happen if save_dir was None or files were missing when recalculate=False)
+    # Raise error if any requested distance measure is still None at this point
+    # (should only happen if save_dir was None or files were missing when recalculate=False)
     for key in distance_flags:
         if distance_flags[key] and locals().get(f"{key}_distances") is None:
             raise ValueError(f"{key} distances must be calculated or loaded first")

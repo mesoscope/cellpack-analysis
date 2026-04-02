@@ -25,7 +25,7 @@ import pandas as pd
 from IPython.display import display
 
 from cellpack_analysis.lib import distance, occupancy, visualization
-from cellpack_analysis.lib.file_io import get_project_root
+from cellpack_analysis.lib.file_io import get_project_root, make_dir
 from cellpack_analysis.lib.load_data import get_position_data_from_outputs
 from cellpack_analysis.lib.mesh_tools import get_mesh_information_dict_for_structure
 
@@ -210,8 +210,7 @@ for dm in occupancy_distance_measures:
 # %% [markdown]
 # ### Plot occupancy ratio (mean + 95 % pointwise envelope)
 for dm in occupancy_distance_measures:
-    occupancy_figures_dir = figures_dir / dm
-    occupancy_figures_dir.mkdir(exist_ok=True, parents=True)
+    occupancy_figures_dir = make_dir(figures_dir / dm)
     fig, ax = visualization.plot_binned_occupancy_ratio(
         binned_occupancy_dict=combined_binned_occupancy_dict[dm],
         channel_map=channel_map,
@@ -255,9 +254,8 @@ fig_v_emd, ax_v_emd, fig_b_emd, ax_b_emd = visualization.plot_emd_comparisons(
 # %% [markdown]
 # ### Plot pairwise occupancy EMD matrix per distance measure
 for dm in occupancy_distance_measures:
-    occupancy_figures_dir = figures_dir / dm
-    occupancy_figures_dir.mkdir(exist_ok=True, parents=True)
-    fig_emd_mat, axs_emd_mat = visualization.plot_pairwise_occupancy_emd_matrix(
+    occupancy_figures_dir = make_dir(figures_dir / dm)
+    fig_emd_mat, axs_emd_mat = visualization.plot_pairwise_emd_matrix(
         df_emd=occupancy_emd_df,
         binned_occupancy_dict=combined_binned_occupancy_dict[dm],
         packing_modes=packing_modes,

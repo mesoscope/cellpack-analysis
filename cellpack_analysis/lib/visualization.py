@@ -17,6 +17,7 @@ from scipy.stats import gaussian_kde
 from statannotations.Annotator import Annotator
 from tqdm import tqdm
 
+from cellpack_analysis.analysis.rule_interpolation import CVResult
 from cellpack_analysis.lib import label_tables
 from cellpack_analysis.lib.default_values import PIXEL_SIZE_IN_UM
 from cellpack_analysis.lib.distance import filter_invalid_distances, get_scaled_structure_radius
@@ -66,7 +67,7 @@ def get_distance_label(distance_measure: str, normalization: str | None = None) 
 
 
 def plot_cell_diameter_distribution(
-    mesh_information_dict: dict[Any, dict[str, float]],
+    mesh_information_dict: dict[str, dict[str, Any]],
 ) -> tuple[Figure, Axes]:
     """
     Plot distribution of cell and nucleus diameters as histograms.
@@ -2377,6 +2378,188 @@ def plot_grouped_rejection_bars_by_sign(
     return fig, ax
 
 
+def _compute_diag_xlim(
+    modes: list[str],
+    envelopes: dict[str, Any],
+    distance_measure: str | None,
+    pairwise_results: dict[str, Any],
+) -> tuple[float, float] | None:
+    """Compute shared x-axis limits across all diagonal envelope subplots."""
+    diag_xmax = 0.0
+    for mode in modes:
+        if distance_measure is not None:
+            if distance_measure in envelopes.get(mode, {}):
+                xvals = envelopes[mode][distance_measure]["xvals"]
+                diag_xmax = max(diag_xmax, float(xvals.max()))
+        else:
+            for dm in pairwise_results.get("distance_measures", []):
+                if dm in envelopes.get(mode, {}):
+                    xvals = envelopes[mode][dm]["xvals"]
+                    diag_xmax = max(diag_xmax, float(xvals.max()))
+    return (0, diag_xmax) if diag_xmax > 0 else None
+
+
+def _draw_diagonal_cell_per_dm(
+    ax: Axes,
+    mode: str,
+    envelopes: dict[str, Any],
+    distance_measure: str,
+    is_first_col: bool,
+    is_last_row: bool,
+) -> None:
+    """Render the per-distance-measure ECDF envelope on a diagonal subplot."""
+    env = envelopes[mode][distance_measure]
+    mode_color = label_tables.COLOR_PALETTE.get(mode, "lightgray")
+    ax.fill_between(
+        env["xvals"],
+        env["lo"],
+        env["hi"],
+        color=mode_color,
+        alpha=0.7,
+        label="Envelope",
+        edgecolor="none",
+    )
+    ax.plot(env["xvals"], env["mu"], "--", color="dimgray", lw=1, label="Mean")
+    ax.set_ylabel("ECDF" if is_first_col else "")
+    label_str = label_tables.DISTANCE_MEASURE_LABELS.get(distance_measure, distance_measure)
+    ax.set_xlabel(label_str if is_last_row else "")
+    ax.xaxis.set_major_locator(MaxNLocator(5, integer=True))
+    sns.despine(ax=ax)
+
+
+def _draw_diagonal_cell_joint(
+    ax: Axes,
+    mode: str,
+    envelopes: dict[str, Any],
+    pairwise_results: dict[str, Any],
+    is_first_col: bool,
+    is_last_row: bool,
+) -> None:
+    """Render the joint (all-distance-measures overlaid) ECDF on a diagonal subplot."""
+    for dm in pairwise_results["distance_measures"]:
+        if dm in envelopes.get(mode, {}):
+            env = envelopes[mode][dm]
+            color = label_tables.COLOR_PALETTE.get(dm, "#808080")
+            dm_label = label_tables.DISTANCE_MEASURE_TITLES.get(dm, dm)
+            ax.plot(env["xvals"], env["mu"], color=color, lw=1, label=dm_label)
+            # also plot the envelope for the joint test if available
+            ax.fill_between(
+                env["xvals"],
+                env["lo"],
+                env["hi"],
+                color=color,
+                alpha=0.3,
+                edgecolor="none",
+            )
+    if is_last_row:
+        ax.legend(fontsize=5, frameon=False, loc="lower right")
+    ax.set_ylabel("ECDF" if is_first_col else "")
+    ax.set_xlabel("Distance (µm)" if is_last_row else "")
+    ax.xaxis.set_major_locator(MaxNLocator(5, integer=True))
+    sns.despine(ax=ax)
+
+
+def _draw_diagonal_cell_label(ax: Axes, mode_label: str) -> None:
+    """Render a plain text mode label on a diagonal subplot (fallback when no envelope data)."""
+    ax.text(
+        0.5,
+        0.5,
+        mode_label,
+        ha="center",
+        va="center",
+        transform=ax.transAxes,
+        fontsize=12,
+        fontweight="bold",
+    )
+    ax.axis("off")
+
+
+def _draw_diagonal_cell(
+    ax: Axes,
+    mode: str,
+    envelopes: dict[str, Any],
+    distance_measure: str | None,
+    pairwise_results: dict[str, Any],
+    i: int,
+    j: int,
+    n: int,
+) -> None:
+    """Dispatch to the correct diagonal-cell renderer and set the subplot title."""
+    mode_label = label_tables.MODE_LABELS.get(mode, mode) or mode
+    is_first_col = j == 0
+    is_last_row = i == n - 1
+
+    if distance_measure is not None and distance_measure in envelopes.get(mode, {}):
+        _draw_diagonal_cell_per_dm(ax, mode, envelopes, distance_measure, is_first_col, is_last_row)
+    elif distance_measure is None:
+        _draw_diagonal_cell_joint(ax, mode, envelopes, pairwise_results, is_first_col, is_last_row)
+    else:
+        _draw_diagonal_cell_label(ax, mode_label)
+
+    ax.set_title(mode_label, fontsize=9, fontweight="bold")
+
+
+def _draw_offdiagonal_cell(
+    ax: Axes,
+    pair: tuple[str, str],
+    result_dict: dict[tuple[str, str], Any],
+    cmap: LinearSegmentedColormap,
+    norm: Normalize,
+) -> None:
+    """Render an annotated heatmap cell for an off-diagonal subplot."""
+    if pair in result_dict:
+        val = result_dict[pair]["rejection_fraction"]
+        positive_rejections = result_dict[pair].get("rejection_fraction_positive", 0)
+        negative_rejections = result_dict[pair].get("rejection_fraction_negative", 0)
+
+        rgba = (*cmap(norm(val))[:3], 0.7)
+        ax.set_facecolor(rgba)
+
+        # Adaptive text colour for readability
+        r_c, g_c, b_c, _ = rgba
+        luminance = 0.299 * r_c + 0.587 * g_c + 0.114 * b_c
+        text_color = "white" if luminance < 0.5 else "black"
+
+        ax.text(
+            0.5,
+            0.6,
+            f"{val:.2f}",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+            fontsize=10,
+            fontweight="bold",
+            color=text_color,
+        )
+        ax.text(
+            0.5,
+            0.25,
+            f"+:{positive_rejections:.2f}, -:{negative_rejections:.2f}",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+            fontsize=8,
+            color=text_color,
+        )
+    else:
+        ax.text(
+            0.5,
+            0.5,
+            "N/A",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+            fontsize=10,
+            color="gray",
+        )
+
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.set_xticks([])
+    ax.set_yticks([])
+    sns.despine(ax=ax, left=True, bottom=True)
+
+
 def plot_pairwise_envelope_matrix(
     pairwise_results: dict[str, Any],
     distance_measure: str | None = None,
@@ -2437,21 +2620,7 @@ def plot_pairwise_envelope_matrix(
     cmap = LinearSegmentedColormap.from_list(f"{cmap_name}_alpha07", cmap_colors)
     norm = Normalize(vmin=0, vmax=1)
 
-    # Pre-compute global x range across all diagonal envelopes so that all
-    # diagonal subplots share the same x-axis limits for easier comparison.
-    diag_xmax = 0.0
-    for mode in modes:
-        if distance_measure is not None:
-            if distance_measure in envelopes.get(mode, {}):
-                xvals = envelopes[mode][distance_measure]["xvals"]
-                diag_xmax = max(diag_xmax, float(xvals.max()))
-        else:
-            for dm in pairwise_results.get("distance_measures", []):
-                if dm in envelopes.get(mode, {}):
-                    xvals = envelopes[mode][dm]["xvals"]
-                    diag_xmax = max(diag_xmax, float(xvals.max()))
-    diag_xlim = (0, diag_xmax) if diag_xmax > 0 else None
-
+    diag_xlim = _compute_diag_xlim(modes, envelopes, distance_measure, pairwise_results)
     diagonal_axes: list[Axes] = []
 
     for i in range(n):
@@ -2461,134 +2630,12 @@ def plot_pairwise_envelope_matrix(
             mode_j = modes[j]
 
             if i == j:
-                # --- Diagonal: ECDF envelope (per-dm) or mode label (joint) ---
-                mode = modes[i]
-                mode_label = label_tables.MODE_LABELS.get(mode, mode) or mode
-                mode_color = label_tables.COLOR_PALETTE.get(mode, "lightgray")
-                if distance_measure is not None and distance_measure in envelopes.get(mode, {}):
-                    env = envelopes[mode][distance_measure]
-                    ax.fill_between(
-                        env["xvals"],
-                        env["lo"],
-                        env["hi"],
-                        color=mode_color,
-                        alpha=0.7,
-                        label="Envelope",
-                        edgecolor="none",
-                    )
-                    ax.plot(env["xvals"], env["mu"], "--", color="dimgray", lw=1, label="Mean")
-                    ax.set_ylabel("ECDF" if j == 0 else "")
-                    label_str = label_tables.DISTANCE_MEASURE_LABELS.get(
-                        distance_measure, distance_measure
-                    )
-                    ax.set_xlabel(label_str if i == n - 1 else "")
-                    ax.xaxis.set_major_locator(MaxNLocator(5, integer=True))
-                    sns.despine(ax=ax)
-                elif distance_measure is None:
-                    # Joint view: overlay mean ECDFs for each distance measure
-                    for dm in pairwise_results["distance_measures"]:
-                        if dm in envelopes.get(mode, {}):
-                            env = envelopes[mode][dm]
-                            color = label_tables.COLOR_PALETTE.get(dm, "#808080")
-                            dm_label = label_tables.DISTANCE_MEASURE_TITLES.get(dm, dm)
-                            ax.plot(env["xvals"], env["mu"], color=color, lw=1, label=dm_label)
-                            # also plot the envelope for the joint test if available
-                            ax.fill_between(
-                                env["xvals"],
-                                env["lo"],
-                                env["hi"],
-                                color=color,
-                                alpha=0.3,
-                                edgecolor="none",
-                            )
-
-                    if i == n - 1:
-                        ax.legend(fontsize=5, frameon=False, loc="lower right")
-                    ax.set_ylabel("ECDF" if j == 0 else "")
-                    ax.set_xlabel("Distance (µm)" if i == n - 1 else "")
-                    ax.xaxis.set_major_locator(MaxNLocator(5, integer=True))
-                    sns.despine(ax=ax)
-                else:
-                    ax.text(
-                        0.5,
-                        0.5,
-                        mode_label,
-                        ha="center",
-                        va="center",
-                        transform=ax.transAxes,
-                        fontsize=12,
-                        fontweight="bold",
-                    )
-                    ax.axis("off")
-
-                ax.set_title(mode_label, fontsize=9, fontweight="bold")
+                _draw_diagonal_cell(
+                    ax, mode_i, envelopes, distance_measure, pairwise_results, i, j, n
+                )
                 diagonal_axes.append(ax)
             else:
-                # --- Off-diagonal: annotated heatmap cell ---
-                pair = (mode_i, mode_j)
-                if pair in result_dict:
-                    val = result_dict[pair]["rejection_fraction"]
-                    positive_rejections = result_dict[pair].get("rejection_fraction_positive", 0)
-                    negative_rejections = result_dict[pair].get("rejection_fraction_negative", 0)
-                    # n_tested = len(result_dict[pair]["pvals"])
-
-                    rgba = (*cmap(norm(val))[:3], 0.7)
-                    ax.set_facecolor(rgba)
-
-                    # Adaptive text colour for readability
-                    r_c, g_c, b_c, _ = rgba
-                    luminance = 0.299 * r_c + 0.587 * g_c + 0.114 * b_c
-                    text_color = "white" if luminance < 0.5 else "black"
-
-                    ax.text(
-                        0.5,
-                        0.6,
-                        f"{val:.2f}",
-                        ha="center",
-                        va="center",
-                        transform=ax.transAxes,
-                        fontsize=10,
-                        fontweight="bold",
-                        color=text_color,
-                    )
-                    # ax.text(
-                    #     0.5,
-                    #     0.25,
-                    #     f"n={n_tested}",
-                    #     ha="center",
-                    #     va="center",
-                    #     transform=ax.transAxes,
-                    #     fontsize=8,
-                    #     color=text_color,
-                    # )
-                    ax.text(
-                        0.5,
-                        0.25,
-                        f"+:{positive_rejections:.2f}, -:{negative_rejections:.2f}",
-                        ha="center",
-                        va="center",
-                        transform=ax.transAxes,
-                        fontsize=8,
-                        color=text_color,
-                    )
-
-                else:
-                    ax.text(
-                        0.5,
-                        0.5,
-                        "N/A",
-                        ha="center",
-                        va="center",
-                        transform=ax.transAxes,
-                        fontsize=10,
-                        color="gray",
-                    )
-
-                ax.set_xlim(0, 1)
-                ax.set_ylim(0, 1)
-                ax.set_xticks([])
-                ax.set_yticks([])
-                sns.despine(ax=ax, left=True, bottom=True)
+                _draw_offdiagonal_cell(ax, (mode_i, mode_j), result_dict, cmap, norm)
 
             # Row label on left column (skip diagonal to avoid redundancy)
             if j == 0 and i != 0:
@@ -2637,78 +2684,16 @@ def plot_pairwise_envelope_matrix(
     return fig, axs
 
 
-def plot_pairwise_emd_matrix(
-    df_emd: pd.DataFrame,
+def _build_distance_curves(
     all_distance_dict: dict[str, dict[str, dict[str, dict[str, np.ndarray]]]],
     packing_modes: list[str],
     distance_measure: str,
-    normalization: str | None = None,
-    distance_limits: dict[str, tuple[float, float]] | None = None,
-    bin_width: float | dict[str, float] = 0.5,
-    minimum_distance: float | None = 0,
-    envelope_alpha: float = 0.05,
-    figsize: tuple[float, float] | None = None,
-    figures_dir: Path | None = None,
-    suffix: str = "",
-    save_format: Literal["svg", "png", "pdf"] = "pdf",
-) -> tuple[Figure, np.ndarray]:
-    """Plot an NxN matrix of pairwise EMD comparisons and distance distributions.
-
-    For a single distance measure, create an *n_modes* x *n_modes* grid of
-    subplots:
-
-    * **Lower triangle** (row > col): distance-distribution overlay of the
-      row mode and column mode (using discrete histogram curves).
-    * **Diagonal** (row == col): intra-mode EMD violinplot coloured by the
-      mode colour.
-    * **Upper triangle** (row < col): cross-mode EMD violinplot comparing
-      the row mode versus the column mode, coloured by the column (reference)
-      mode colour.
-
-    Parameters
-    ----------
-    df_emd
-        DataFrame with columns ``distance_measure``, ``packing_mode_1``,
-        ``packing_mode_2``, and ``emd``.
-    all_distance_dict
-        ``{distance_measure: {mode: {cell_id: {seed: distances}}}}``
-    packing_modes
-        Ordered list of packing modes forming the matrix axes.
-    distance_measure
-        The distance measure to plot.
-    normalization
-        Normalization method applied to distances (used for axis labelling).
-    distance_limits
-        Optional per-measure ``(lo, hi)`` used to fix axis ranges and bin
-        edges.
-    bin_width
-        Histogram bin width (scalar or per-measure dict).
-    minimum_distance
-        Minimum distance for filtering invalid values.
-    envelope_alpha
-        Significance level for pointwise envelope shading.
-    figsize
-        Figure size in inches; auto-scaled from *n* when ``None``.
-    figures_dir
-        Directory to save the figure; skipped when ``None``.
-    suffix
-        Suffix appended to the saved filename.
-    save_format
-        Image format for saving.
-
-    Returns
-    -------
-    :
-        Tuple of ``(Figure, 2-D ndarray of Axes)``.
-    """
-    n = len(packing_modes)
-    if figsize is None:
-        figsize = (n * 1.8, n * 1.6)
-
-    plt.rcParams.update({"font.size": 4})
-    fig, axs = plt.subplots(n, n, figsize=figsize, dpi=300, squeeze=False)
-
-    # ── Build shared r-grid for the distance distributions ──────────────
+    distance_limits: dict[str, tuple[float, float]] | None,
+    bin_width: float | dict[str, float],
+    minimum_distance: float | None,
+    envelope_alpha: float,
+) -> tuple[np.ndarray, dict[str, np.ndarray], dict[str, np.ndarray], dict[str, np.ndarray]]:
+    """Build r-grid and per-mode PDF mean/envelope curves from raw distance arrays."""
     distance_dict = all_distance_dict[distance_measure]
     measure_bin_width = bin_width[distance_measure] if isinstance(bin_width, dict) else bin_width
 
@@ -2729,9 +2714,7 @@ def plot_pairwise_emd_matrix(
         [r_grid - measure_bin_width / 2, [r_grid[-1] + measure_bin_width / 2]]
     )
 
-    # ── Pre-compute per-mode mean curves and envelopes ──────────────────
     pseudocount = 1.0
-    mode_curves: dict[str, np.ndarray] = {}  # vstack of individual PDFs
     mode_mean: dict[str, np.ndarray] = {}
     mode_lo: dict[str, np.ndarray] = {}
     mode_hi: dict[str, np.ndarray] = {}
@@ -2749,143 +2732,142 @@ def plot_pairwise_emd_matrix(
                 curves.append(pdf)
         arr = np.vstack(curves)
         lo, hi, mu, _ = pointwise_envelope(arr, alpha=envelope_alpha)
-        mode_curves[mode] = arr
         mode_mean[mode] = mu
         mode_lo[mode] = lo
         mode_hi[mode] = hi
 
-    # ── Axis label helper ───────────────────────────────────────────────
-    distance_label = get_distance_label(distance_measure, normalization)
-
-    # ── Shared x-limits for EMD histogram subplots ──────────────────────
-    dm_emd = df_emd.query(f"distance_measure == '{distance_measure}'")
-    emd_xmax = dm_emd["emd"].quantile(0.99) * 1.1 if len(dm_emd) > 0 else 1.0
-
-    # ── Fill matrix ─────────────────────────────────────────────────────
-    for i in range(n):
-        for j in range(n):
-            ax = axs[i, j]
-            mode_i = packing_modes[i]
-            mode_j = packing_modes[j]
-            color_i = label_tables.COLOR_PALETTE.get(mode_i, "gray")
-            color_j = label_tables.COLOR_PALETTE.get(mode_j, "gray")
-            label_i = label_tables.MODE_LABELS.get(mode_i, mode_i)
-            label_j = label_tables.MODE_LABELS.get(mode_j, mode_j)
-
-            if i == j:
-                # ── Diagonal: intra-mode EMD KDE ────────────────────────
-                sub = dm_emd.query(f"packing_mode_1 == '{mode_i}' and packing_mode_2 == '{mode_i}'")
-                if len(sub) > 0:
-                    sns.violinplot(
-                        data=sub,
-                        x="emd",
-                        ax=ax,
-                        color=color_i,
-                        fill=True,
-                        alpha=0.4,
-                        linewidth=0.8,
-                        cut=0,
-                        orient="h",
-                    )
-                ax.set_title(label_i, fontweight="bold", fontsize=6)
-                ax.set_xlim(0, emd_xmax)
-                ax.set_ylabel("Density" if j == 0 else "")
-                ax.set_xlabel("EMD" if i == n - 1 else "")
-                ax.xaxis.set_major_locator(MaxNLocator(3))
-                ax.yaxis.set_major_locator(MaxNLocator(3))
-                sns.despine(ax=ax)
-
-            elif i < j:
-                # ── Upper triangle: cross-mode EMD KDE ──────────────────
-                # Show EMD for (mode_i vs mode_j), coloured by reference
-                # mode_j.
-                sub = dm_emd.query(
-                    "(packing_mode_1 == @mode_i and packing_mode_2 == @mode_j) or "
-                    "(packing_mode_1 == @mode_j and packing_mode_2 == @mode_i)"
-                )
-                if len(sub) > 0:
-                    sns.violinplot(
-                        data=sub,
-                        x="emd",
-                        ax=ax,
-                        color=color_j,
-                        fill=True,
-                        alpha=0.4,
-                        linewidth=0.8,
-                        cut=0,
-                        orient="h",
-                    )
-                ax.set_xlim(0, emd_xmax)
-                ax.set_ylabel("")
-                ax.set_xlabel("EMD" if i == n - 1 else "")
-                ax.xaxis.set_major_locator(MaxNLocator(3))
-                ax.yaxis.set_major_locator(MaxNLocator(3))
-                sns.despine(ax=ax)
-
-            else:
-                # ── Lower triangle: distance-distribution overlay ───────
-                for mode, color in [(mode_j, color_j), (mode_i, color_i)]:
-                    mode_lbl = label_tables.MODE_LABELS.get(mode, mode)
-                    ax.fill_between(
-                        r_grid,
-                        mode_lo[mode],
-                        mode_hi[mode],
-                        color=color,
-                        alpha=0.12,
-                        edgecolor="none",
-                    )
-                    ax.plot(
-                        r_grid,
-                        mode_mean[mode],
-                        color=color,
-                        linewidth=0.8,
-                        label=mode_lbl,
-                    )
-
-                if distance_limits is not None and distance_measure in distance_limits:
-                    ax.set_xlim(distance_limits[distance_measure])
-                else:
-                    ax.set_xlim(r_grid[0], r_grid[-1])
-
-                y_max = max(mode_hi[mode_i].max(), mode_hi[mode_j].max()) * 1.05
-                ax.set_ylim(0, y_max)
-                ax.set_ylabel("PDF" if j == 0 else "")
-                ax.set_xlabel(distance_label if i == n - 1 else "")
-                ax.xaxis.set_major_locator(MaxNLocator(3, integer=True))
-                ax.yaxis.set_major_locator(MaxNLocator(2))
-                # ax.legend(fontsize=5, frameon=False, loc="upper right")
-                sns.despine(ax=ax)
-
-            # Column header on the first row
-            if i == 0 and j != 0:
-                ax.set_title(label_j, fontsize=6)
-
-            # Row labels on leftmost column (skip diagonal, it is already labelled)
-            if j == 0 and i != 0:
-                ax.set_ylabel(
-                    f"{label_i}\n{'PDF' if i > j else 'Density'}",
-                )
-
-    # ── Axis description labels ─────────────────────────────────────────
-    # dm_title = label_tables.DISTANCE_MEASURE_TITLES.get(distance_measure, distance_measure)
-    # fig.suptitle(f"Pairwise EMD — {dm_title}", fontweight="bold", y=1.02)
-    fig.tight_layout()
-    plt.show()
-
-    if figures_dir is not None:
-        filepath = figures_dir / f"pairwise_emd_matrix_{distance_measure}{suffix}.{save_format}"
-        fig.savefig(filepath, format=save_format, dpi=300, bbox_inches="tight")
-        logger.info("Saved pairwise EMD matrix to %s", filepath)
-
-    return fig, axs
+    return r_grid, mode_mean, mode_lo, mode_hi
 
 
-def plot_pairwise_occupancy_emd_matrix(
-    df_emd: pd.DataFrame,
+def _draw_emd_violin_cell(
+    ax: Axes,
+    sub: pd.DataFrame,
+    color: str,
+    emd_xmax: float,
+    ylabel: str,
+    show_xlabel: bool,
+    title: str | None = None,
+) -> None:
+    """Draw a violinplot of EMD values on *ax* (diagonal or upper-triangle cell)."""
+    if len(sub) > 0:
+        sns.violinplot(
+            data=sub,
+            x="emd",
+            ax=ax,
+            color=color,
+            fill=True,
+            alpha=0.4,
+            linewidth=0.8,
+            cut=0,
+            orient="h",
+        )
+    if title is not None:
+        ax.set_title(title, fontweight="bold", fontsize=6)
+    ax.set_xlim(0, emd_xmax)
+    ax.set_ylabel(ylabel)
+    ax.set_xlabel("EMD" if show_xlabel else "")
+    ax.xaxis.set_major_locator(MaxNLocator(3))
+    ax.yaxis.set_major_locator(MaxNLocator(3))
+    sns.despine(ax=ax)
+
+
+def _draw_lower_distance_cell(
+    ax: Axes,
+    mode_i: str,
+    mode_j: str,
+    color_i: str,
+    color_j: str,
+    r_grid: np.ndarray,
+    mode_mean: dict[str, np.ndarray],
+    mode_lo: dict[str, np.ndarray],
+    mode_hi: dict[str, np.ndarray],
+    distance_limits: dict[str, tuple[float, float]] | None,
+    distance_measure: str,
+    distance_label: str,
+    is_last_row: bool,
+    is_first_col: bool,
+) -> None:
+    """Draw overlaid distance PDF curves for two modes on a lower-triangle cell."""
+    for mode, color in [(mode_j, color_j), (mode_i, color_i)]:
+        mode_lbl = label_tables.MODE_LABELS.get(mode, mode)
+        ax.fill_between(
+            r_grid, mode_lo[mode], mode_hi[mode], color=color, alpha=0.12, edgecolor="none"
+        )
+        ax.plot(r_grid, mode_mean[mode], color=color, linewidth=0.8, label=mode_lbl)
+
+    if distance_limits is not None and distance_measure in distance_limits:
+        ax.set_xlim(distance_limits[distance_measure])
+    else:
+        ax.set_xlim(r_grid[0], r_grid[-1])
+
+    y_max = max(mode_hi[mode_i].max(), mode_hi[mode_j].max()) * 1.05
+    ax.set_ylim(0, y_max)
+    ax.set_ylabel("PDF" if is_first_col else "")
+    ax.set_xlabel(distance_label if is_last_row else "")
+    ax.xaxis.set_major_locator(MaxNLocator(3, integer=True))
+    ax.yaxis.set_major_locator(MaxNLocator(2))
+    sns.despine(ax=ax)
+
+
+def _draw_lower_occupancy_cell(
+    ax: Axes,
+    mode_i: str,
+    mode_j: str,
+    color_i: str,
+    color_j: str,
     binned_occupancy_dict: dict[str, dict[str, Any]],
+    distance_label: str,
+    xlim: float | None,
+    ylim: float | None,
+    is_last_row: bool,
+    is_first_col: bool,
+) -> None:
+    """Draw overlaid occupancy ratio curves for two modes on a lower-triangle cell."""
+    xvals: np.ndarray = np.array([])
+    for mode, color in [(mode_j, color_j), (mode_i, color_i)]:
+        mode_lbl = label_tables.MODE_LABELS.get(mode, mode)
+        combined = binned_occupancy_dict.get(mode, {}).get("combined", {})
+        if not combined:
+            continue
+        xvals = combined["xvals"]
+        mean_occ = combined["occupancy"]
+
+        if "envelope_lo" in combined and "envelope_hi" in combined:
+            lo = combined["envelope_lo"]
+            hi = combined["envelope_hi"]
+        elif "std_occupancy" in combined:
+            lo = mean_occ - combined["std_occupancy"]
+            hi = mean_occ + combined["std_occupancy"]
+        else:
+            lo = hi = None
+
+        if lo is not None and hi is not None:
+            ax.fill_between(xvals, lo, hi, color=color, alpha=0.12, edgecolor="none")
+        ax.plot(xvals, mean_occ, color=color, linewidth=0.8, label=mode_lbl)
+        ax.axhline(1, color="gray", linewidth=0.5, linestyle="--")
+
+    _xlim = xlim if xlim is not None else (float(xvals[-1]) if len(xvals) else 1.0)
+    ax.set_xlim(0, _xlim)
+    if ylim is not None:
+        ax.set_ylim(0, ylim)
+    ax.set_ylabel("Occ. Ratio" if is_first_col else "")
+    ax.set_xlabel(distance_label if is_last_row else "")
+    ax.xaxis.set_major_locator(MaxNLocator(3, integer=True))
+    ax.yaxis.set_major_locator(MaxNLocator(3))
+    ax.legend(fontsize=5, frameon=False, loc="upper right")
+    sns.despine(ax=ax)
+
+
+def plot_pairwise_emd_matrix(
+    df_emd: pd.DataFrame,
     packing_modes: list[str],
     distance_measure: str,
+    all_distance_dict: dict[str, dict[str, dict[str, dict[str, np.ndarray]]]] | None = None,
+    binned_occupancy_dict: dict[str, dict[str, Any]] | None = None,
     normalization: str | None = None,
+    distance_limits: dict[str, tuple[float, float]] | None = None,
+    bin_width: float | dict[str, float] = 0.5,
+    minimum_distance: float | None = 0,
     xlim: float | None = None,
     ylim: float | None = None,
     envelope_alpha: float = 0.05,
@@ -2894,39 +2876,49 @@ def plot_pairwise_occupancy_emd_matrix(
     suffix: str = "",
     save_format: Literal["svg", "png", "pdf"] = "pdf",
 ) -> tuple[Figure, np.ndarray]:
-    """Plot an NxN matrix of pairwise occupancy EMD and ratio curves.
+    """Plot an NxN matrix of pairwise EMD comparisons.
 
-    Layout mirrors :func:`plot_pairwise_emd_matrix` but uses occupancy ratio
-    curves instead of distance distributions in the lower triangle:
+    Accepts either raw distance arrays (via *all_distance_dict*) or pre-binned
+    occupancy data (via *binned_occupancy_dict*) — exactly one must be provided.
 
-    * **Lower triangle** (row > col): occupancy ratio mean + envelope for the
-      row mode and column mode.
-    * **Diagonal** (row == col): intra-mode EMD KDE.
-    * **Upper triangle** (row < col): cross-mode EMD KDE.
+    * **Lower triangle** (row > col): distance PDF overlay when using
+      *all_distance_dict*; occupancy ratio curves when using
+      *binned_occupancy_dict*.
+    * **Diagonal** (row == col): intra-mode EMD violinplot.
+    * **Upper triangle** (row < col): cross-mode EMD violinplot.
 
     Parameters
     ----------
     df_emd
         DataFrame with columns ``distance_measure``, ``packing_mode_1``,
         ``packing_mode_2``, and ``emd``.
-    binned_occupancy_dict
-        ``{mode: {"individual": {...}, "combined": {"xvals", "occupancy",
-        "envelope_lo", "envelope_hi" or "std_occupancy", ...}}}`` for one
-        distance measure.
     packing_modes
         Ordered list of packing modes forming the matrix axes.
     distance_measure
-        Distance measure label used for the title and filename.
+        The distance measure to plot.
+    all_distance_dict
+        ``{distance_measure: {mode: {cell_id: {seed: distances}}}}``.
+        Mutually exclusive with *binned_occupancy_dict*.
+    binned_occupancy_dict
+        ``{mode: {"combined": {"xvals", "occupancy", ...}}}``.
+        Mutually exclusive with *all_distance_dict*.
     normalization
-        Normalization method (axis labelling only).
+        Normalization method applied to distances (used for axis labelling).
+    distance_limits
+        Optional per-measure ``(lo, hi)`` used to fix axis ranges and bin
+        edges (distance mode only).
+    bin_width
+        Histogram bin width (scalar or per-measure dict; distance mode only).
+    minimum_distance
+        Minimum distance for filtering invalid values (distance mode only).
     xlim
-        Upper x-axis limit for occupancy ratio panels.
+        Upper x-axis limit for occupancy ratio panels (occupancy mode only).
     ylim
-        Upper y-axis limit for occupancy ratio panels.
+        Upper y-axis limit for occupancy ratio panels (occupancy mode only).
     envelope_alpha
-        Alpha for envelope shading in lower-triangle panels.
+        Significance level for pointwise envelope shading.
     figsize
-        Figure size in inches; auto-scaled when ``None``.
+        Figure size in inches; auto-scaled from *n* when ``None``.
     figures_dir
         Directory to save the figure; skipped when ``None``.
     suffix
@@ -2939,6 +2931,12 @@ def plot_pairwise_occupancy_emd_matrix(
     :
         Tuple of ``(Figure, 2-D ndarray of Axes)``.
     """
+    if (all_distance_dict is None) == (binned_occupancy_dict is None):
+        raise ValueError(
+            "Exactly one of all_distance_dict or binned_occupancy_dict must be provided."
+        )
+
+    use_occupancy = binned_occupancy_dict is not None
     n = len(packing_modes)
     if figsize is None:
         figsize = (n * 1.8, n * 1.6)
@@ -2948,9 +2946,28 @@ def plot_pairwise_occupancy_emd_matrix(
 
     dm_emd = df_emd.query(f"distance_measure == '{distance_measure}'")
     emd_xmax = dm_emd["emd"].quantile(0.99) * 1.1 if len(dm_emd) > 0 else 1.0
-
     distance_label = get_distance_label(distance_measure, normalization)
 
+    # ── Pre-compute per-mode distance curves (distance mode only) ────────
+    r_grid: np.ndarray = np.array([])
+    mode_mean: dict[str, np.ndarray] = {}
+    mode_lo: dict[str, np.ndarray] = {}
+    mode_hi: dict[str, np.ndarray] = {}
+    if not use_occupancy:
+        assert all_distance_dict is not None
+        r_grid, mode_mean, mode_lo, mode_hi = _build_distance_curves(
+            all_distance_dict,
+            packing_modes,
+            distance_measure,
+            distance_limits,
+            bin_width,
+            minimum_distance,
+            envelope_alpha,
+        )
+
+    lower_ylabel = "Occupancy Ratio" if use_occupancy else "PDF"
+
+    # ── Fill matrix ──────────────────────────────────────────────────────
     for i in range(n):
         for j in range(n):
             ax = axs[i, j]
@@ -2962,113 +2979,411 @@ def plot_pairwise_occupancy_emd_matrix(
             label_j = label_tables.MODE_LABELS.get(mode_j, mode_j)
 
             if i == j:
-                # Diagonal: intra-mode EMD KDE
+                # ── Diagonal: intra-mode EMD violinplot ──────────────────
                 sub = dm_emd.query(f"packing_mode_1 == '{mode_i}' and packing_mode_2 == '{mode_i}'")
-                if len(sub) > 0:
-                    sns.kdeplot(
-                        data=sub,
-                        x="emd",
-                        ax=ax,
-                        color=color_i,
-                        fill=True,
-                        alpha=0.4,
-                        linewidth=0.8,
-                        cut=0,
-                    )
-                ax.set_title(label_i, fontsize=8, fontweight="bold")
-                ax.set_xlim(0, emd_xmax)
-                ax.set_ylabel("Density" if j == 0 else "")
-                ax.set_xlabel("EMD" if i == n - 1 else "")
-                ax.xaxis.set_major_locator(MaxNLocator(3))
-                ax.yaxis.set_major_locator(MaxNLocator(3))
-                sns.despine(ax=ax)
+                _draw_emd_violin_cell(
+                    ax,
+                    sub,
+                    color_i,
+                    emd_xmax,
+                    ylabel="Density" if j == 0 else "",
+                    show_xlabel=(i == n - 1),
+                    title=label_i,
+                )
 
             elif i < j:
-                # Upper triangle: cross-mode EMD KDE
+                # ── Upper triangle: cross-mode EMD violinplot ────────────
                 sub = dm_emd.query(
                     "(packing_mode_1 == @mode_i and packing_mode_2 == @mode_j) or "
                     "(packing_mode_1 == @mode_j and packing_mode_2 == @mode_i)"
                 )
-                if len(sub) > 0:
-                    sns.kdeplot(
-                        data=sub,
-                        x="emd",
-                        ax=ax,
-                        color=color_j,
-                        fill=True,
-                        alpha=0.4,
-                        linewidth=0.8,
-                        cut=0,
-                    )
-                ax.set_xlim(0, emd_xmax)
-                ax.set_ylabel("")
-                ax.set_xlabel("EMD" if i == n - 1 else "")
-                ax.xaxis.set_major_locator(MaxNLocator(3))
-                ax.yaxis.set_major_locator(MaxNLocator(3))
-                sns.despine(ax=ax)
-
-            else:
-                # Lower triangle: occupancy ratio curves
-                xvals: np.ndarray = np.array([])
-                for mode, color in [(mode_j, color_j), (mode_i, color_i)]:
-                    mode_lbl = label_tables.MODE_LABELS.get(mode, mode)
-                    combined = binned_occupancy_dict.get(mode, {}).get("combined", {})
-                    if not combined:
-                        continue
-                    xvals = combined["xvals"]
-                    mean_occ = combined["occupancy"]
-
-                    if "envelope_lo" in combined and "envelope_hi" in combined:
-                        lo = combined["envelope_lo"]
-                        hi = combined["envelope_hi"]
-                    elif "std_occupancy" in combined:
-                        lo = mean_occ - combined["std_occupancy"]
-                        hi = mean_occ + combined["std_occupancy"]
-                    else:
-                        lo = hi = None
-
-                    if lo is not None and hi is not None:
-                        ax.fill_between(
-                            xvals,
-                            lo,
-                            hi,
-                            color=color,
-                            alpha=0.12,
-                            edgecolor="none",
-                        )
-                    ax.plot(xvals, mean_occ, color=color, linewidth=0.8, label=mode_lbl)
-                    ax.axhline(1, color="gray", linewidth=0.5, linestyle="--")
-
-                _xlim = xlim if xlim is not None else (float(xvals[-1]) if len(xvals) else 1.0)
-                ax.set_xlim(0, _xlim)
-                if ylim is not None:
-                    ax.set_ylim(0, ylim)
-                ax.set_ylabel("Occ. Ratio" if j == 0 else "")
-                ax.set_xlabel(distance_label if i == n - 1 else "")
-                ax.xaxis.set_major_locator(MaxNLocator(3, integer=True))
-                ax.yaxis.set_major_locator(MaxNLocator(3))
-                ax.legend(fontsize=5, frameon=False, loc="upper right")
-                sns.despine(ax=ax)
-
-            if i == 0 and j != 0:
-                ax.set_title(label_j, fontsize=8)
-
-            if j == 0 and i != 0:
-                ax.set_ylabel(
-                    f"{label_i}\n{'Occ. Ratio' if i > j else 'Density'}",
-                    fontsize=7,
+                _draw_emd_violin_cell(
+                    ax,
+                    sub,
+                    color_j,
+                    emd_xmax,
+                    ylabel="",
+                    show_xlabel=(i == n - 1),
+                    title=None,
                 )
 
-    dm_title = label_tables.DISTANCE_MEASURE_TITLES.get(distance_measure, distance_measure)
-    fig.suptitle(f"Pairwise Occupancy EMD — {dm_title}", fontsize=10, fontweight="bold", y=1.02)
+            else:
+                # ── Lower triangle: data curves ──────────────────────────
+                if use_occupancy:
+                    assert binned_occupancy_dict is not None
+                    _draw_lower_occupancy_cell(
+                        ax,
+                        mode_i,
+                        mode_j,
+                        color_i,
+                        color_j,
+                        binned_occupancy_dict,
+                        distance_label,
+                        xlim,
+                        ylim,
+                        is_last_row=(i == n - 1),
+                        is_first_col=(j == 0),
+                    )
+                else:
+                    _draw_lower_distance_cell(
+                        ax,
+                        mode_i,
+                        mode_j,
+                        color_i,
+                        color_j,
+                        r_grid,
+                        mode_mean,
+                        mode_lo,
+                        mode_hi,
+                        distance_limits,
+                        distance_measure,
+                        distance_label,
+                        is_last_row=(i == n - 1),
+                        is_first_col=(j == 0),
+                    )
+
+            # Column header on the first row
+            if i == 0 and j != 0:
+                ax.set_title(label_j, fontsize=6)
+
+            # Row labels on leftmost column
+            if j == 0 and i != 0:
+                ax.set_ylabel(f"{label_i}\n{lower_ylabel if i > j else 'Density'}")
+
     fig.tight_layout()
     plt.show()
 
     if figures_dir is not None:
-        filepath = (
-            figures_dir / f"pairwise_occupancy_emd_matrix_{distance_measure}{suffix}.{save_format}"
-        )
+        prefix = "pairwise_occupancy_emd_matrix" if use_occupancy else "pairwise_emd_matrix"
+        filepath = figures_dir / f"{prefix}_{distance_measure}{suffix}.{save_format}"
         fig.savefig(filepath, format=save_format, dpi=300, bbox_inches="tight")
-        logger.info("Saved pairwise occupancy EMD matrix to %s", filepath)
+        logger.info("Saved pairwise EMD matrix to %s", filepath)
 
     return fig, axs
+
+
+def plot_rule_interpolation_fit(
+    fit_result: Any,
+    occupancy_dict: dict[str, dict[str, Any]],
+    channel_map: dict[str, str],
+    baseline_mode: str,
+    distance_measure: str = "nucleus",
+    plot_type: str = "joint",
+    figures_dir: Path | None = None,
+    xlim: float | None = None,
+    ylim: float | None = None,
+    suffix: str = "",
+    save_format: Literal["svg", "png", "pdf"] = "pdf",
+    fig_params: dict[str, Any] | None = None,
+) -> tuple[Figure, Axes]:
+    """Plot all mode occupancy curves with a NNLS rule-interpolation reconstruction overlaid.
+
+    Renders the same combined-occupancy curves and pointwise envelopes as
+    :func:`plot_binned_occupancy_ratio`, then adds a dash-dot overlay for the
+    NNLS reconstruction stored in *fit_result*.
+
+    Parameters
+    ----------
+    fit_result
+        :class:`~cellpack_analysis.analysis.rule_interpolation.FitResult` returned
+        by :func:`~cellpack_analysis.analysis.rule_interpolation.fit_rule_interpolation`.
+    occupancy_dict
+        ``{distance_measure: {mode: {"individual": ..., "combined": {...}}}}``
+        (same structure passed to ``fit_rule_interpolation``).
+    channel_map
+        Mapping from packing modes to structure IDs (used to determine draw order).
+    baseline_mode
+        Baseline packing mode key — used for the reconstruction overlay colour.
+    distance_measure
+        Which distance measure to plot.
+    plot_type
+        Scope of the reconstruction to overlay: ``"individual"`` (per-dm NNLS)
+        or ``"joint"`` (stacked-across-dm NNLS).
+    figures_dir
+        Directory to save the figure; skipped when ``None``.
+    xlim
+        Upper x-axis limit.
+    ylim
+        Upper y-axis limit.
+    suffix
+        Suffix appended to the saved filename.
+    save_format
+        File format for saving.
+    fig_params
+        Optional matplotlib ``Figure`` keyword arguments.
+
+    Returns
+    -------
+    :
+        Tuple of ``(Figure, Axes)``.
+    """
+    plt.rcParams.update({"font.size": 8})
+    _fig_params: dict[str, Any] = {"dpi": 300, "figsize": (3.5, 2.5)}
+    if fig_params is not None:
+        _fig_params.update(fig_params)
+    fig, ax = plt.subplots(**_fig_params)
+
+    dm_occ = occupancy_dict[distance_measure]
+
+    # ── Draw all mode combined occupancy curves + pointwise envelopes ────────
+    for mode in channel_map.keys():
+        combined = dm_occ[mode]["combined"]
+        xvals = combined["xvals"]
+        mean_occ = np.nan_to_num(combined["occupancy"])
+        color = label_tables.COLOR_PALETTE.get(mode, "gray")
+        label = label_tables.MODE_LABELS.get(mode, mode)
+
+        smooth_occ = uniform_filter1d(mean_occ, size=3)
+        ax.plot(xvals, smooth_occ, color=color, linewidth=2.0, label=label, zorder=2)
+
+        if "envelope_lo" in combined and "envelope_hi" in combined:
+            lo: np.ndarray | None = combined["envelope_lo"]
+            hi: np.ndarray | None = combined["envelope_hi"]
+        elif "std_occupancy" in combined:
+            lo = smooth_occ - combined["std_occupancy"]
+            hi = smooth_occ + combined["std_occupancy"]
+        else:
+            lo = hi = None
+
+        if lo is not None and hi is not None:
+            ax.fill_between(
+                xvals,
+                uniform_filter1d(lo, size=3),
+                uniform_filter1d(hi, size=3),
+                alpha=0.15,
+                color=color,
+                linewidth=0,
+                label="_nolegend_",
+                zorder=0,
+            )
+
+    # ── Overlay NNLS reconstruction ──────────────────────────────────────────
+    recon: np.ndarray = fit_result.reconstructed_occupancy[distance_measure][plot_type]
+    common_xvals: np.ndarray = dm_occ[baseline_mode]["combined"]["xvals"]
+
+    mse: float = (
+        fit_result.train_mse_individual[distance_measure]
+        if plot_type == "individual"
+        else fit_result.train_mse_joint[distance_measure]
+    )
+    relative_contribs: dict[str, float] = (
+        fit_result.relative_contributions_individual[distance_measure]
+        if plot_type == "individual"
+        else fit_result.relative_contributions_joint
+    )
+
+    ax.plot(
+        common_xvals,
+        recon,
+        color=label_tables.COLOR_PALETTE.get(baseline_mode, "gray"),
+        linewidth=2,
+        linestyle="-.",
+        zorder=3,
+        label=f"Interpolated ({plot_type})",
+    )
+
+    ax.xaxis.set_major_locator(MaxNLocator(4, integer=True))
+    ax.yaxis.set_major_locator(MaxNLocator(3, integer=True))
+    if xlim is not None:
+        ax.set_xlim((0, xlim))
+    else:
+        ax.set_xlim((0, ax.get_xlim()[1]))
+    if ylim is not None:
+        ax.set_ylim((0, ylim))
+    ax.axhline(1, linewidth=1, color="gray", linestyle="--", zorder=1)
+    ax.set_xlabel(get_distance_label(distance_measure))
+    ax.set_ylabel("Occupancy Ratio")
+    ax.set_title(f"{plot_type.capitalize()}, MSE: {mse:.4f}")
+
+    contrib_text = "\n".join(
+        f"{label_tables.MODE_LABELS.get(k, k)}: {v:.0%}" for k, v in relative_contribs.items()
+    )
+    ax.text(
+        0.95,
+        0.95,
+        contrib_text,
+        ha="right",
+        va="top",
+        transform=ax.transAxes,
+        fontsize=7,
+    )
+
+    sns.despine(fig=fig)
+    fig.tight_layout()
+
+    if figures_dir is not None:
+        fig.savefig(
+            figures_dir
+            / f"{distance_measure}_{plot_type}_rule_interpolation_fit{suffix}.{save_format}",
+            dpi=300,
+            bbox_inches="tight",
+        )
+    plt.show()
+
+    return fig, ax
+
+
+def plot_cv_mse_summary(
+    cv_df: pd.DataFrame,
+    figures_dir: Path | None = None,
+    suffix: str = "",
+    save_format: Literal["svg", "png", "pdf"] = "pdf",
+    fig_params: dict[str, Any] | None = None,
+) -> tuple[Figure, np.ndarray]:
+    """Plot cross-validation MSE for each scope and distance measure.
+
+    Draws a boxplot panel per *scope* (``"individual"``, ``"joint"``), with
+    ``distance_measure`` on the x-axis and train/test split as the hue.
+
+    Parameters
+    ----------
+    cv_df
+        DataFrame returned by
+        :func:`~cellpack_analysis.analysis.rule_interpolation.summarize_cv_results`.
+        Expected columns: ``fold_idx``, ``scope``, ``distance_measure``, ``split``,
+        ``mse``.
+    figures_dir
+        Directory to save the figure; skipped when ``None``.
+    suffix
+        Suffix appended to the saved filename.
+    save_format
+        File format for saving.
+    fig_params
+        Optional matplotlib ``Figure`` keyword arguments.
+
+    Returns
+    -------
+    :
+        Tuple of ``(Figure, 1-D ndarray of Axes)`` — one axis per scope.
+    """
+    scopes = list(cv_df["scope"].unique())
+    n_scopes = len(scopes)
+    plt.rcParams.update({"font.size": 8})
+    _fig_params: dict[str, Any] = {"dpi": 300, "figsize": (max(3.0, n_scopes * 2.5), 2.5)}
+    if fig_params is not None:
+        _fig_params.update(fig_params)
+    fig, axs = plt.subplots(1, n_scopes, squeeze=False, **_fig_params)
+
+    for ax, scope in zip(axs[0], scopes, strict=False):
+        scope_df = cv_df[cv_df["scope"] == scope]
+        sns.boxplot(
+            data=scope_df,
+            x="distance_measure",
+            y="mse",
+            hue="split",
+            ax=ax,
+            palette={"train": "#4e9af1", "test": "#f97306"},
+            linewidth=0.8,
+            fliersize=2,
+        )
+        ax.set_title(scope.capitalize())
+        ax.set_xlabel("Distance measure")
+        ax.set_ylabel("MSE")
+        ax.yaxis.set_major_locator(MaxNLocator(4))
+        sns.despine(ax=ax)
+        legend = ax.get_legend()
+        if legend is not None:
+            legend.set_title("")
+
+    fig.suptitle("Cross-validation MSE", fontsize=9)
+    fig.tight_layout()
+
+    if figures_dir is not None:
+        fig.savefig(
+            figures_dir / f"rule_interpolation_cv_mse_summary{suffix}.{save_format}",
+            dpi=300,
+            bbox_inches="tight",
+        )
+    plt.show()
+
+    return fig, axs[0]
+
+
+def plot_cv_coefficient_stability(
+    cv_result: CVResult,
+    figures_dir: Path | None = None,
+    suffix: str = "",
+    save_format: Literal["svg", "png", "pdf"] = "pdf",
+    fig_params: dict[str, Any] | None = None,
+) -> tuple[Figure, np.ndarray]:
+    """Plot coefficient stability across cross-validation folds.
+
+    Draws one bar-chart panel for the joint fit and one panel per distance
+    measure for the individual fits.  Bar heights are the mean coefficient
+    across folds; error bars show the standard deviation.
+
+    Parameters
+    ----------
+    cv_result
+        :class:`~cellpack_analysis.analysis.rule_interpolation.CVResult` returned
+        by :func:`~cellpack_analysis.analysis.rule_interpolation.run_rule_interpolation_cv`.
+    figures_dir
+        Directory to save the figure; skipped when ``None``.
+    suffix
+        Suffix appended to the saved filename.
+    save_format
+        File format for saving.
+    fig_params
+        Optional matplotlib ``Figure`` keyword arguments.
+
+    Returns
+    -------
+    :
+        Tuple of ``(Figure, 1-D ndarray of Axes)`` — joint panel first, then
+        one panel per distance measure.
+    """
+    distance_measures = list(cv_result.aggregated_coefficients_individual.keys())
+    packing_modes = list(cv_result.aggregated_coefficients_joint.keys())
+    n_subplots = 1 + len(distance_measures)
+
+    plt.rcParams.update({"font.size": 8})
+    _fig_params: dict[str, Any] = {"dpi": 300, "figsize": (n_subplots * 2.5, 2.5)}
+    if fig_params is not None:
+        _fig_params.update(fig_params)
+    fig, axs = plt.subplots(1, n_subplots, squeeze=False, **_fig_params)
+
+    x_pos = np.arange(len(packing_modes))
+    colors = [label_tables.COLOR_PALETTE.get(mode, "gray") for mode in packing_modes]
+    mode_labels = [label_tables.MODE_LABELS.get(mode, mode) for mode in packing_modes]
+
+    def _draw_coeff_bars(ax: Axes, means: list[float], stds: list[float], title: str) -> None:
+        ax.bar(
+            x_pos,
+            means,
+            yerr=stds,
+            color=colors,
+            capsize=4,
+            linewidth=0.8,
+            error_kw={"linewidth": 1, "ecolor": "black"},
+        )
+        ax.set_xticks(x_pos)
+        ax.set_xticklabels(mode_labels, rotation=30, ha="right")
+        ax.set_title(title)
+        ax.set_ylabel("Coefficient (mean ± std)")
+        ax.yaxis.set_major_locator(MaxNLocator(4))
+        sns.despine(ax=ax)
+
+    # Joint panel
+    joint_means = [cv_result.aggregated_coefficients_joint[m][0] for m in packing_modes]
+    joint_stds = [cv_result.aggregated_coefficients_joint[m][1] for m in packing_modes]
+    _draw_coeff_bars(axs[0, 0], joint_means, joint_stds, "Joint")
+
+    # Per-dm panels
+    for i, dm in enumerate(distance_measures):
+        dm_means = [cv_result.aggregated_coefficients_individual[dm][m][0] for m in packing_modes]
+        dm_stds = [cv_result.aggregated_coefficients_individual[dm][m][1] for m in packing_modes]
+        dm_label = label_tables.DISTANCE_MEASURE_LABELS.get(dm, dm)
+        _draw_coeff_bars(axs[0, 1 + i], dm_means, dm_stds, dm_label)
+
+    fig.suptitle("Coefficient stability across CV folds", fontsize=9)
+    fig.tight_layout()
+
+    if figures_dir is not None:
+        fig.savefig(
+            figures_dir / f"rule_interpolation_cv_coefficients{suffix}.{save_format}",
+            dpi=300,
+            bbox_inches="tight",
+        )
+    plt.show()
+
+    return fig, axs[0]

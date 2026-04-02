@@ -168,3 +168,17 @@ def setup_workflow_logging(log_file_path: str | Path) -> Path:
     add_file_handler_to_logger(root_logger, log_path, level=logging.DEBUG)
 
     return log_path
+
+
+def make_dir(dir_path: str | Path) -> Path:
+    """
+    Create a directory if it doesn't already exist.
+
+    Parameters
+    ----------
+    dir_path
+        Path of the directory to create
+    """
+    path_obj = Path(dir_path)
+    path_obj.mkdir(parents=True, exist_ok=True)
+    return path_obj

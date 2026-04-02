@@ -35,6 +35,8 @@ Occupancy analysis
   on per-cell occupancy ratio curves.
 - ``run_occupancy_interpolation_analysis`` — Interpolation analysis for KDE occupancy
   data (KDE mode only).
+- ``run_rule_interpolation_cv`` — K-fold cross-validation for NNLS rule-mixing
+  coefficients (works with both KDE and discrete occupancy).
 
 Config key: ``distribution_method``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -76,6 +78,7 @@ from pathlib import Path
 import pandas as pd
 
 from cellpack_analysis import setup_logging
+from cellpack_analysis.analysis import rule_interpolation
 from cellpack_analysis.analysis.workflows.configs import defaults
 from cellpack_analysis.lib import distance, occupancy, visualization
 from cellpack_analysis.lib.file_io import get_project_root
@@ -100,6 +103,7 @@ class AnalysisConfig:
         self._setup_occupancy_params()
         self._setup_envelope_params()
         self._setup_recalculate()
+        self._setup_rule_interpolation_cv_params()
         self._setup_paths()
 
     def _load_config(self) -> dict:
@@ -172,6 +176,17 @@ class AnalysisConfig:
         self.envelope_test_params: dict = defaults.ENVELOPE_TEST_PARAMS.copy()
         self.envelope_test_params.update(self.config.get("envelope_test_params", {}))
 
+    def _setup_rule_interpolation_cv_params(self) -> None:
+        """Set rule interpolation cross-validation parameters."""
+        self.rule_interpolation_cv_params: dict = defaults.RULE_INTERPOLATION_CV_PARAMS.copy()
+        self.rule_interpolation_cv_params.update(
+            self.config.get("rule_interpolation_cv_params", {})
+        )
+        self.base_packing_config_path: str | None = self.config.get(
+            "base_packing_config_path", None
+        )
+        self.mode_to_gradient_name: dict[str, str] = self.config.get("mode_to_gradient_name", {})
+
     def _setup_recalculate(self) -> None:
         """Parse and validate the recalculate config field."""
         recalculate_config = self.config.get("recalculate")
@@ -235,6 +250,7 @@ class AnalysisRunner:
             "run_occupancy_emd_analysis": self._run_occupancy_emd_analysis,
             "run_occupancy_pairwise_envelope_test": self._run_occupancy_pairwise_envelope_test,
             "run_occupancy_interpolation_analysis": self._run_occupancy_interpolation_analysis,
+            "run_rule_interpolation_cv": self._run_rule_interpolation_cv,
         }
 
         if step in step_method_map:
@@ -741,7 +757,7 @@ class AnalysisRunner:
             dm_figures_dir.mkdir(exist_ok=True, parents=True)
             xlim = config.occupancy_params.get(dm, {}).get("xlim", 8)
             ylim = config.occupancy_params.get(dm, {}).get("ylim", 3)
-            _ = visualization.plot_pairwise_occupancy_emd_matrix(
+            _ = visualization.plot_pairwise_emd_matrix(
                 df_emd=occupancy_emd_df,
                 binned_occupancy_dict=self.shared_data["occupancy_dict"][dm],
                 packing_modes=config.packing_modes,
@@ -792,6 +808,50 @@ class AnalysisRunner:
         )
 
         self.shared_data["occupancy_pairwise_envelope_results"] = occ_pairwise_results
+
+    def _run_rule_interpolation_cv(self, config: AnalysisConfig) -> None:
+        """Run k-fold cross-validation for rule interpolation on occupancy data."""
+        occupancy_key = "occupancy_dict"
+        if occupancy_key not in self.shared_data:
+            logger.warning("Occupancy data not available. Running occupancy analysis first.")
+            self._run_occupancy_analysis(config)
+
+        logger.info("Running rule interpolation cross-validation")
+        cv_params = config.rule_interpolation_cv_params
+
+        cv_result = rule_interpolation.run_rule_interpolation_cv(
+            occupancy_dict=self.shared_data[occupancy_key],
+            channel_map=config.channel_map,
+            baseline_mode=config.baseline_mode,
+            n_folds=cv_params["n_folds"],
+            random_state=cv_params["random_state"],
+            distance_measures=config.occupancy_distance_measures,
+            results_dir=config.results_dir,
+            recalculate=config.recalculate["run_rule_interpolation_cv"],
+            suffix=config.suffix,
+        )
+        self.shared_data["rule_interpolation_cv_result"] = cv_result
+
+        # Log CV summary to file
+        cv_log_path = (
+            config.results_dir / f"{config.packing_id}_rule_interpolation_cv{config.suffix}.log"
+        )
+        rule_interpolation.log_cv_summary(cv_result=cv_result, file_path=cv_log_path)
+
+        # Optionally generate packing configs for held-out cells
+        if cv_params.get("generate_packing_configs") and config.base_packing_config_path:
+            packing_configs_dir = config.results_dir / "mixed_rule_packing_configs"
+            written = rule_interpolation.generate_mixed_rule_packing_configs(
+                cv_result=cv_result,
+                base_config_path=config.project_root / config.base_packing_config_path,
+                output_config_dir=packing_configs_dir,
+                mode_to_gradient_name=config.mode_to_gradient_name,
+                scope=cv_params.get("packing_config_scope", "joint"),
+            )
+            logger.info(
+                f"Generated {len(written)} mixed-rule packing config(s) in {packing_configs_dir}"
+            )
+            self.shared_data["mixed_rule_packing_configs"] = written
 
     def _run_occupancy_interpolation_analysis(self, config: AnalysisConfig) -> None:
         """Run interpolation analysis for occupancy data (KDE mode only)."""

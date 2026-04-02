@@ -87,8 +87,18 @@ RECALCULATE = {
     "run_occupancy_emd_analysis": False,
     "run_occupancy_pairwise_envelope_test": False,
     "run_occupancy_interpolation_analysis": False,
+    "run_rule_interpolation_cv": False,
 }
 """Default recalculation flags for analysis workflow."""
+
+RULE_INTERPOLATION_CV_PARAMS: dict = {
+    "n_folds": 5,
+    "random_state": None,
+    "generate_packing_configs": False,
+    "packing_config_scope": "joint",
+    "cv_use_slurm": True,
+}
+"""Default parameters for rule interpolation cross-validation."""
 
 NUM_WORKERS = 16
 """Default number of workers for parallel processing."""
