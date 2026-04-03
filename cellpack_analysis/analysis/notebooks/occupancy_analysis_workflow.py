@@ -49,10 +49,10 @@ PACKING_ID = "peroxisome"
 STRUCTURE_NAME = "peroxisome"
 """Name of the packed punctate structure in cellPACK output files."""
 
-CONDITION = "norm_weights"
+CONDITION = "rules_shape_with_seed"
 """Experimental condition / packing output subfolder."""
 
-RESULT_SUBFOLDER = "occupancy_test_kde_norm_weights"
+RESULT_SUBFOLDER = "occupancy_test_kde_rules_shape_with_seed"
 """Subfolder within results/ to save outputs for this workflow."""
 # %% [markdown]
 # ### Set packing modes and channel map
@@ -175,25 +175,6 @@ for dm in occupancy_distance_measures:
     )
 
 # %% [markdown]
-# ### Plot illustration for occupancy distribution
-for dm in occupancy_distance_measures:
-    pdf_occupied, pdf_available, xvals, occupancy_vals, fig_ill, axs_ill = (
-        visualization.plot_occupancy_illustration(
-            kde_dict=distance_kde_dict[dm],
-            packing_mode="random",
-            suffix=suffix,
-            distance_measure=dm,
-            normalization=normalization,
-            method="pdf",
-            cellid_index=743916,
-            figures_dir=occupancy_figures_dir[dm],
-            save_format=save_format,
-            xlim=occupancy_params[dm]["xlim"],
-            bandwidth=0.4,
-        )
-    )
-
-# %% [markdown]
 # ### Calculate occupancy ratio
 combined_occupancy_dict = {}
 for dm in occupancy_distance_measures:
@@ -213,6 +194,20 @@ for dm in occupancy_distance_measures:
     )
 
 # %% [markdown]
+# ### Plot illustration for one example cell
+for dm in occupancy_distance_measures:
+    fig_ill, axs_ill = visualization.plot_occupancy_illustration(
+        occupancy_dict=combined_occupancy_dict[dm],
+        packing_mode=baseline_mode,
+        figures_dir=occupancy_figures_dir[dm],
+        suffix=suffix,
+        distance_measure=dm,
+        normalization=normalization,
+        save_format=save_format,
+        xlim=occupancy_params[dm]["xlim"],
+    )
+
+# %% [markdown]
 # ### Plot occupancy ratio
 for dm in occupancy_distance_measures:
     fig, ax = visualization.plot_occupancy_ratio(
@@ -225,7 +220,6 @@ for dm in occupancy_distance_measures:
         distance_measure=dm,
         save_format=save_format,
         xlim=occupancy_params[dm]["xlim"],
-        # xlim=12,
         ylim=occupancy_params[dm]["ylim"],
         fig_params={"dpi": 300, "figsize": (3.5, 2.5)},
     )
@@ -297,42 +291,6 @@ visualization.plot_ks_test_results(
     baseline_mode=baseline_mode,
     save_format=save_format,
 )
-# %% [markdown]
-# ### Interpolate occupancy ratio
-interp_occupancy_dict = occupancy.interpolate_occupancy_dict(
-    occupancy_dict=combined_occupancy_dict,
-    channel_map=channel_map,
-    baseline_mode=baseline_mode,
-    results_dir=results_dir,
-    suffix=suffix,
-)
-# %% [markdown]
-# ### Plot interpolated occupancy ratio
-interp_figures_dir = make_dir(figures_dir / "interpolated")
-for dm in occupancy_distance_measures:
-    for plot_type in ["individual", "joint"]:
-        fig, ax = visualization.plot_occupancy_ratio(
-            occupancy_dict=combined_occupancy_dict[dm],
-            channel_map=channel_map,
-            baseline_mode=baseline_mode,
-            suffix=suffix,
-            normalization=normalization,
-            distance_measure=dm,
-            xlim=occupancy_params[dm]["xlim"],
-            # xlim=12,
-            ylim=occupancy_params[dm]["ylim"],
-            fig_params={"dpi": 300, "figsize": (3.5, 2.5)},
-        )
-        fig_interp, ax_interp = visualization.add_baseline_occupancy_interpolation_to_plot(
-            ax=ax,
-            interpolated_occupancy_dict=interp_occupancy_dict,
-            baseline_mode=baseline_mode,
-            distance_measure=dm,
-            figures_dir=interp_figures_dir,
-            suffix=suffix,
-            save_format=save_format,
-            plot_type=plot_type,
-        )
 # %%
 logger.info(f"Time taken to complete workflow: {time.time() - start_time:.2f} s")
 

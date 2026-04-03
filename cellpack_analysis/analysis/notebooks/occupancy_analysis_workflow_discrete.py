@@ -194,8 +194,8 @@ for dm in occupancy_distance_measures:
 for dm in occupancy_distance_measures:
     occupancy_figures_dir = figures_dir / dm
     occupancy_figures_dir.mkdir(exist_ok=True, parents=True)
-    fig_ill, axs_ill = visualization.plot_occupancy_illustration_discrete(
-        binned_occupancy_dict=combined_binned_occupancy_dict[dm],
+    fig_ill, axs_ill = visualization.plot_occupancy_illustration(
+        occupancy_dict=combined_binned_occupancy_dict[dm],
         packing_mode="SLC25A17",
         # cell_id_or_index=5,
         figures_dir=occupancy_figures_dir,
@@ -211,8 +211,8 @@ for dm in occupancy_distance_measures:
 # ### Plot occupancy ratio (mean + 95 % pointwise envelope)
 for dm in occupancy_distance_measures:
     occupancy_figures_dir = make_dir(figures_dir / dm)
-    fig, ax = visualization.plot_binned_occupancy_ratio(
-        binned_occupancy_dict=combined_binned_occupancy_dict[dm],
+    fig, ax = visualization.plot_occupancy_ratio(
+        occupancy_dict=combined_binned_occupancy_dict[dm],
         channel_map=channel_map,
         figures_dir=occupancy_figures_dir,
         normalization=normalization,
@@ -221,7 +221,6 @@ for dm in occupancy_distance_measures:
         xlim=occupancy_params[dm]["xlim"],
         ylim=occupancy_params[dm]["ylim"],
         save_format=save_format,
-        envelope_alpha=0.05,
         fig_params={"dpi": 300, "figsize": (3.5, 2.5)},
     )
 # %% [markdown]

@@ -1,6 +1,6 @@
 # %% [markdown]
 """
-# Distance analysis workflow
+# Distance analysis workflow.
 
 Compare distributions of various measures of distance:
 1. Nearest neighbor distance
@@ -9,16 +9,19 @@ Compare distributions of various measures of distance:
 4. Distance to membrane
 5. Distance from basal surface (z-distance)
 
-Can be used to compare distirbutions in the presence or absence of other influencing structures.
-Uses a KDE based approach for visualization and statistical comparison of distance distributions, as well as pairwise KS tests and Monte Carlo Envelope tests.
+Can be used to compare distributions in the presence or absence of other influencing structures.
+Uses a KDE based approach for visualization and statistical comparison of distance distributions.
 
 Workflow steps:
 1. Calculate distance distributions for each distance measure and packing mode.
 2. Visualize distance distribution histograms for each distance measure and mode.
-3. Calculate and visualize Earth Mover's Distance (EMD) between distance distributions of different modes.
+3. Calculate and visualize Earth Mover's Distance (EMD) between distance distributions of different
+modes.
 4. Perform pairwise Monte Carlo Envelope Tests to compare distance distributions between modes.
-5. Plot pairwise envelope test results in a matrix format to identify significant differences between modes for each distance measure.
-6. Perform pairwise KS tests to compare distance distributions between modes, and bootstrap results to get confidence intervals.
+5. Plot pairwise envelope test results in a matrix format to identify significant differences
+between modes for each distance measure.
+6. Perform pairwise KS tests to compare distance distributions between modes, and bootstrap results
+to get confidence intervals.
 """
 
 import logging
@@ -27,7 +30,7 @@ import time
 import pandas as pd
 
 from cellpack_analysis.lib import distance, visualization
-from cellpack_analysis.lib.file_io import get_project_root
+from cellpack_analysis.lib.file_io import get_project_root, make_dir
 from cellpack_analysis.lib.label_tables import DISTANCE_LIMITS
 from cellpack_analysis.lib.load_data import get_position_data_from_outputs
 from cellpack_analysis.lib.mesh_tools import get_mesh_information_dict_for_structure
@@ -57,9 +60,11 @@ it is used for naming outputs and folders"""
 STRUCTURE_NAME = "peroxisome"
 """This is the name of the structure being analyzed, it is used in cellPACK output files"""
 
-OUTPUT_SUBFOLDER = "rules_shape_with_seed"
-"""This is the experimental condition or packing output subfolder to analyze
-(e.g. a specific set of rules or random seed)"""
+CONDITION = "rules_shape_with_seed"
+"""This is the experimental condition or packing output subfolder to analyze"""
+
+RESULT_SUBFOLDER = "distance_analysis_kde_rules_shape_with_seed"
+"""Subfolder within results/ to save outputs for this workflow."""
 # %% [markdown]
 # ### Set packing modes to analyze
 save_format = "pdf"
@@ -74,7 +79,7 @@ channel_map = {
 }
 
 # relative path to packing outputs
-packing_output_folder = f"packing_outputs/8d_sphere_data/{OUTPUT_SUBFOLDER}/"
+packing_output_folder = f"packing_outputs/8d_sphere_data/{CONDITION}/"
 baseline_mode = PUNCTATE_STRUCTURE_ID
 
 all_structures = list(set(channel_map.values()))
@@ -85,16 +90,14 @@ project_root = get_project_root()
 base_datadir = project_root / "data"
 base_results_dir = project_root / "results"
 
-results_dir = base_results_dir / f"distance_analysis/{PACKING_ID}/{OUTPUT_SUBFOLDER}"
-results_dir.mkdir(exist_ok=True, parents=True)
+results_dir = make_dir(base_results_dir / RESULT_SUBFOLDER)
 
-figures_dir = results_dir / "figures/"
-figures_dir.mkdir(exist_ok=True, parents=True)
+figures_dir = make_dir(results_dir / "figures/")
 # %% [markdown]
 # ### Distance measures to use
 distance_measures = [
-    # "nearest",
-    # "pairwise",
+    "nearest",
+    "pairwise",
     "nucleus",
     # "scaled_nucleus",
     # "scaled_z",
@@ -140,7 +143,7 @@ all_distance_dict = distance.get_distance_dictionary(
     channel_map=channel_map,
     results_dir=results_dir,
     recalculate=False,
-    num_workers=16,
+    num_workers=8,
 )
 
 all_distance_dict = distance.filter_invalids_from_distance_distribution_dict(
@@ -156,11 +159,10 @@ all_distance_dict = distance.normalize_distance_dictionary(
 
 # %% [markdown]
 # ## Distance distributions
-distance_figures_dir = figures_dir / "distance_distributions"
-distance_figures_dir.mkdir(exist_ok=True, parents=True)
+distance_figures_dir = make_dir(results_dir / "figures/distance_distributions/")
 # %% [markdown]
 # ### plot distance distribution discrete
-fig, axs = visualization.plot_distance_distributions_discrete(
+fig, axs = visualization.plot_distance_distributions_kde(
     distance_measures=distance_measures,
     packing_modes=packing_modes,
     all_distance_dict=all_distance_dict,
@@ -168,7 +170,7 @@ fig, axs = visualization.plot_distance_distributions_discrete(
     suffix=suffix,
     normalization=normalization,
     distance_limits=DISTANCE_LIMITS,
-    bin_width=0.21,
+    bandwidth=0.2,
     save_format=save_format,
 )
 # %% [markdown]

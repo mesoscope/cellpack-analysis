@@ -4,10 +4,12 @@ from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
+from scipy.stats import gaussian_kde
 
 from cellpack_analysis.lib.occupancy import (
     _compute_single_cell_occupancy,
     get_binned_occupancy_dict_from_distance_dict,
+    get_kde_occupancy_dict,
 )
 
 
@@ -205,3 +207,115 @@ class TestGetBinnedOccupancyDictFromDistanceDict:
             recalculate=True,
         )
         assert len(result["real"]["individual"]) == 2
+
+
+class TestGetKdeOccupancyDictUnifiedFormat:
+    """Verify get_kde_occupancy_dict produces the same unified combined-key format as discrete."""
+
+    @pytest.fixture()
+    def mock_kde_inputs(self):
+        """Build minimal synthetic kde_dict and channel_map."""
+        rng = np.random.default_rng(77)
+        n_cells = 4
+        cell_ids = [f"cell_{i}" for i in range(n_cells)]
+        n_points = 50  # small for speed
+
+        kde_dict: dict = {}
+        for cid in cell_ids:
+            occupied_data = rng.exponential(2.0, size=300)
+            available_data = rng.exponential(3.0, size=1000)
+            kde_dict[cid] = {
+                "real": gaussian_kde(occupied_data),
+                "available": gaussian_kde(available_data),
+            }
+
+        channel_map = {"real": "ST001"}
+        return kde_dict, channel_map, n_cells, n_points
+
+    def test_combined_has_all_unified_keys(self, mock_kde_inputs):
+        kde_dict, channel_map, n_cells, n_points = mock_kde_inputs
+        result = get_kde_occupancy_dict(
+            distance_kde_dict=kde_dict,
+            channel_map=channel_map,
+            num_points=n_points,
+            x_min=0,
+            x_max=8.0,
+            recalculate=True,
+        )
+        combined = result["real"]["combined"]
+        expected_keys = {
+            "xvals",
+            "occupancy",
+            "occupancy_pooled",
+            "std_occupancy",
+            "envelope_lo",
+            "envelope_hi",
+            "pdf_occupied",
+            "pdf_available",
+            "all_occupancy",
+        }
+        assert expected_keys == set(combined.keys())
+
+    def test_all_occupancy_shape(self, mock_kde_inputs):
+        kde_dict, channel_map, n_cells, n_points = mock_kde_inputs
+        result = get_kde_occupancy_dict(
+            distance_kde_dict=kde_dict,
+            channel_map=channel_map,
+            num_points=n_points,
+            x_min=0,
+            x_max=8.0,
+            recalculate=True,
+        )
+        combined = result["real"]["combined"]
+        assert combined["all_occupancy"].shape == (n_cells, n_points)
+        assert len(combined["xvals"]) == n_points
+
+    def test_mean_occupancy_differs_from_pooled(self, mock_kde_inputs):
+        kde_dict, channel_map, n_cells, n_points = mock_kde_inputs
+        result = get_kde_occupancy_dict(
+            distance_kde_dict=kde_dict,
+            channel_map=channel_map,
+            num_points=n_points,
+            x_min=0,
+            x_max=8.0,
+            recalculate=True,
+        )
+        combined = result["real"]["combined"]
+        # Mean-of-per-cell and pooled KDE ratio are computed differently
+        assert not np.allclose(
+            np.nan_to_num(combined["occupancy"]),
+            np.nan_to_num(combined["occupancy_pooled"]),
+        )
+
+    def test_envelope_bounds_combined_mean(self, mock_kde_inputs):
+        kde_dict, channel_map, n_cells, n_points = mock_kde_inputs
+        result = get_kde_occupancy_dict(
+            distance_kde_dict=kde_dict,
+            channel_map=channel_map,
+            num_points=n_points,
+            x_min=0,
+            x_max=8.0,
+            recalculate=True,
+        )
+        combined = result["real"]["combined"]
+        lo = combined["envelope_lo"]
+        hi = combined["envelope_hi"]
+        mu = combined["occupancy"]
+        # At most grid points the mean should lie within [lo, hi]
+        within = (mu >= lo - 1e-9) & (mu <= hi + 1e-9)
+        assert np.mean(within) >= 0.9
+
+    def test_individual_per_cell_keys(self, mock_kde_inputs):
+        kde_dict, channel_map, n_cells, n_points = mock_kde_inputs
+        result = get_kde_occupancy_dict(
+            distance_kde_dict=kde_dict,
+            channel_map=channel_map,
+            num_points=n_points,
+            x_min=0,
+            x_max=8.0,
+            recalculate=True,
+        )
+        individual = result["real"]["individual"]
+        assert len(individual) == n_cells
+        for cell_data in individual.values():
+            assert {"xvals", "occupancy", "pdf_occupied", "pdf_available"} == set(cell_data.keys())

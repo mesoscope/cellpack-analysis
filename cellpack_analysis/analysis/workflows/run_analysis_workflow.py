@@ -66,7 +66,8 @@ Occupancy analysis::
 Usage::
 
     python run_analysis_workflow.py --config_file path/to/config.json
-    python run_analysis_workflow.py --config_file configs/distance_analysis_config.json --log_level DEBUG
+    python run_analysis_workflow.py --config_file configs/distance_analysis_config.json \
+        --log_level DEBUG
 """
 
 import argparse
@@ -607,8 +608,8 @@ class AnalysisRunner:
         self.shared_data["occupancy_dict"][occupancy_distance_measure] = binned_occupancy_dict
 
         # Illustration for one example cell
-        _ = visualization.plot_occupancy_illustration_discrete(
-            binned_occupancy_dict=binned_occupancy_dict,
+        _ = visualization.plot_occupancy_illustration(
+            occupancy_dict=binned_occupancy_dict,
             packing_mode=config.baseline_mode,
             figures_dir=occupancy_figures_dir,
             suffix=config.suffix,
@@ -619,8 +620,8 @@ class AnalysisRunner:
 
         # Occupancy ratio: mean + 95% pointwise envelope
         ylim = config.occupancy_params.get(occupancy_distance_measure, {}).get("ylim", 3)
-        _ = visualization.plot_binned_occupancy_ratio(
-            binned_occupancy_dict=binned_occupancy_dict,
+        _ = visualization.plot_occupancy_ratio(
+            occupancy_dict=binned_occupancy_dict,
             channel_map=config.channel_map,
             figures_dir=occupancy_figures_dir,
             normalization=config.normalization,
@@ -629,7 +630,6 @@ class AnalysisRunner:
             xlim=xlim,
             ylim=ylim,
             save_format=config.save_format,
-            envelope_alpha=config.envelope_test_params["alpha"],
             fig_params=config.occupancy_params.get(
                 "fig_params", {"dpi": 300, "figsize": (3.5, 2.5)}
             ),
@@ -661,21 +661,6 @@ class AnalysisRunner:
             minimum_distance=-1,
         )
 
-        # Plot illustration for occupancy distribution
-        _ = visualization.plot_occupancy_illustration(
-            kde_dict=distance_kde_dict,
-            packing_mode="random",
-            suffix=config.suffix,
-            distance_measure=occupancy_distance_measure,
-            normalization=config.normalization,
-            method="pdf",
-            cellid_index=743916,
-            figures_dir=occupancy_figures_dir,
-            save_format=config.save_format,
-            xlim=config.occupancy_params[occupancy_distance_measure]["xlim"],
-            bandwidth=config.occupancy_params[occupancy_distance_measure]["bandwidth"],
-        )
-
         # Compute and store occupancy ratios
         occupancy_dict = occupancy.get_kde_occupancy_dict(
             distance_kde_dict=distance_kde_dict,
@@ -692,7 +677,19 @@ class AnalysisRunner:
 
         self.shared_data["occupancy_dict"][occupancy_distance_measure] = occupancy_dict
 
-        # Plot individual occupancy ratio
+        # Illustration for one example cell (uses precomputed occupancy dict)
+        _ = visualization.plot_occupancy_illustration(
+            occupancy_dict=occupancy_dict,
+            packing_mode=config.baseline_mode,
+            figures_dir=occupancy_figures_dir,
+            suffix=config.suffix,
+            distance_measure=occupancy_distance_measure,
+            normalization=config.normalization,
+            save_format=config.save_format,
+            xlim=config.occupancy_params[occupancy_distance_measure]["xlim"],
+        )
+
+        # Plot occupancy ratio: mean + pointwise envelope
         _ = visualization.plot_occupancy_ratio(
             occupancy_dict=self.shared_data["occupancy_dict"][occupancy_distance_measure],
             channel_map=config.channel_map,
