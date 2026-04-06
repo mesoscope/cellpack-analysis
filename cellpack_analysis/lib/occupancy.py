@@ -1,5 +1,6 @@
 import logging
 import pickle
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Literal
 
@@ -116,18 +117,61 @@ def _build_combined_available_kde(
     combined_available_kde: dict[str, gaussian_kde] = {}
     x_min_calc = np.inf
     x_max_calc = -np.inf
-    for structure_id, cell_ids in cell_id_map.items():
-        combined_available_distances = []
+    for _, cell_ids in cell_id_map.items():
+        # combined_available_distances = []
         for cell_id in cell_ids:
-            combined_available_distances.extend(distance_kde_dict[cell_id]["available"].dataset)
+            # combined_available_distances.extend(distance_kde_dict[cell_id]["available"].dataset)
             for mode in channel_map.keys():
                 if mode in distance_kde_dict[cell_id]:
-                    x_min_calc = min(x_min_calc, np.min(distance_kde_dict[cell_id][mode].dataset))
-                    x_max_calc = max(x_max_calc, np.max(distance_kde_dict[cell_id][mode].dataset))
-        combined_available_kde[structure_id] = gaussian_kde(
-            np.concatenate(combined_available_distances), bw_method=bandwidth
-        )
+                    occupied_distances = distance_kde_dict[cell_id][mode].dataset
+                    x_min_calc = min(x_min_calc, np.nanmin(occupied_distances))
+                    x_max_calc = max(x_max_calc, np.nanmax(occupied_distances))
+        # combined_available_kde[structure_id] = gaussian_kde(
+        #     np.concatenate(combined_available_distances), bw_method=bandwidth
+        # )
     return combined_available_kde, float(x_min_calc), float(x_max_calc)
+
+
+def _process_single_cell_kde(
+    cell_id: str,
+    mode: str,
+    distance_kde_dict: dict[str, dict[str, gaussian_kde]],
+    x_vals: np.ndarray,
+    bandwidth: str | float | None,
+    num_points: int,
+) -> tuple[str, dict[str, Any]] | None:
+    """Compute KDE occupancy for a single cell; returns ``(cell_id, result)`` or ``None``."""
+    if mode not in distance_kde_dict[cell_id]:
+        return None
+
+    occupied_kde = distance_kde_dict[cell_id][mode]
+    available_kde = distance_kde_dict[cell_id]["available"]
+    available_distances = available_kde.dataset
+
+    if bandwidth is not None:
+        occupied_kde.set_bandwidth(bandwidth)
+        available_kde.set_bandwidth(bandwidth)
+
+    cell_xvals = np.linspace(np.min(available_distances), np.max(available_distances), num_points)
+    pdf_occupied = normalize_pdf(cell_xvals, occupied_kde.evaluate(cell_xvals))
+    pdf_available = normalize_pdf(cell_xvals, available_kde.evaluate(cell_xvals))
+    occupancy, pdf_occupied, pdf_available = pdf_ratio(cell_xvals, pdf_occupied, pdf_available)
+    result: dict[str, Any] = {
+        "xvals": cell_xvals,
+        "occupancy": occupancy,
+        "pdf_occupied": pdf_occupied,
+        "pdf_available": pdf_available,
+    }
+
+    pdf_occ_common = normalize_pdf(x_vals, occupied_kde.evaluate(x_vals))
+    pdf_avail_common = normalize_pdf(x_vals, available_kde.evaluate(x_vals))
+    occ_common, pdf_occ_common, pdf_avail_common = pdf_ratio(
+        x_vals, pdf_occ_common, pdf_avail_common
+    )
+    result["occupancy_common"] = occ_common
+    result["pdf_occupied_common"] = pdf_occ_common
+    result["pdf_available_common"] = pdf_avail_common
+    return cell_id, result
 
 
 def _compute_mode_kde_occupancy(
@@ -135,10 +179,11 @@ def _compute_mode_kde_occupancy(
     structure_id: str,
     cell_id_map: dict[str, list[str]],
     distance_kde_dict: dict[str, dict[str, gaussian_kde]],
-    combined_available_kde: dict[str, gaussian_kde],
+    # combined_available_kde: dict[str, gaussian_kde],
     x_vals: np.ndarray,
     bandwidth: str | float | None,
     num_points: int,
+    num_workers: int | None = None,
 ) -> dict[str, Any]:
     """
     Compute individual and combined KDE occupancy for one packing mode.
@@ -150,53 +195,48 @@ def _compute_mode_kde_occupancy(
         stored directly under ``kde_occupancy_dict[mode]``.
     """
     individual: dict[str, dict[str, Any]] = {}
-    combined_occupied_distances: list[np.ndarray] = []
-    all_occupancy_list: list[np.ndarray] = []
+    # combined_occupied_distances: list[np.ndarray] = []
+    all_occupancy_list: list[np.ndarray] = []  # shape: (n_cells, n_points)
 
-    for cell_id in tqdm(cell_id_map.get(structure_id, []), desc=f"Computing occupancy for {mode}"):
-        if mode not in distance_kde_dict[cell_id]:
-            continue
-
-        occupied_kde = distance_kde_dict[cell_id][mode]
-        occupied_distances = occupied_kde.dataset
-        combined_occupied_distances.extend(occupied_distances)
-
-        available_kde = distance_kde_dict[cell_id]["available"]
-        if bandwidth is not None:
-            occupied_kde.set_bandwidth(bandwidth)
-            available_kde.set_bandwidth(bandwidth)
-
-        # Per-cell range for individual entry
-        cell_xvals = np.linspace(np.min(occupied_distances), np.max(occupied_distances), num_points)
-        pdf_occupied = normalize_pdf(cell_xvals, occupied_kde.evaluate(cell_xvals))
-        pdf_available = normalize_pdf(cell_xvals, available_kde.evaluate(cell_xvals))
-        occupancy, pdf_occupied, pdf_available = pdf_ratio(cell_xvals, pdf_occupied, pdf_available)
-        individual[cell_id] = {
-            "xvals": cell_xvals,
-            "occupancy": occupancy,
-            "pdf_occupied": pdf_occupied,
-            "pdf_available": pdf_available,
+    cell_ids = cell_id_map.get(structure_id, [])
+    with ThreadPoolExecutor(max_workers=num_workers) as executor:
+        futures = {
+            executor.submit(
+                _process_single_cell_kde,
+                cell_id,
+                mode,
+                distance_kde_dict,
+                x_vals,
+                bandwidth,
+                num_points,
+            ): cell_id
+            for cell_id in cell_ids
         }
-
-        # Shared grid for aggregation
-        pdf_occ_common = normalize_pdf(x_vals, occupied_kde.evaluate(x_vals))
-        pdf_avail_common = normalize_pdf(x_vals, available_kde.evaluate(x_vals))
-        occ_common, _, _ = pdf_ratio(x_vals, pdf_occ_common, pdf_avail_common)
-        all_occupancy_list.append(occ_common)
+        for future in tqdm(
+            as_completed(futures),
+            total=len(futures),
+            desc=f"Computing occupancy for {mode}",
+        ):
+            result = future.result()
+            if result is None:
+                continue
+            cell_id, cell_data = result
+            individual[cell_id] = cell_data
+            all_occupancy_list.append(cell_data["occupancy_common"])
 
     # Pooled combined occupancy across all cells
-    pdf_combined_occupied = normalize_pdf(
-        x_vals,
-        gaussian_kde(np.concatenate(combined_occupied_distances), bw_method=bandwidth).evaluate(
-            x_vals
-        ),
-    )
-    pdf_combined_available = normalize_pdf(
-        x_vals, combined_available_kde[structure_id].evaluate(x_vals)
-    )
-    occupancy_pooled, pdf_combined_occupied, pdf_combined_available = pdf_ratio(
-        x_vals, pdf_combined_occupied, pdf_combined_available
-    )
+    # pdf_combined_occupied = normalize_pdf(
+    #     x_vals,
+    #     gaussian_kde(np.concatenate(combined_occupied_distances), bw_method=bandwidth).evaluate(
+    #         x_vals
+    #     ),
+    # )
+    # pdf_combined_available = normalize_pdf(
+    #     x_vals, combined_available_kde[structure_id].evaluate(x_vals)
+    # )
+    # occupancy_pooled, pdf_combined_occupied, pdf_combined_available = pdf_ratio(
+    #     x_vals, pdf_combined_occupied, pdf_combined_available
+    # )
 
     if all_occupancy_list:
         all_occ_arr = np.vstack(all_occupancy_list)
@@ -216,12 +256,12 @@ def _compute_mode_kde_occupancy(
         "combined": {
             "xvals": x_vals,
             "occupancy": mean_occ,
-            "occupancy_pooled": occupancy_pooled,
+            # "occupancy_pooled": occupancy_pooled,
             "std_occupancy": std_occ,
             "envelope_lo": env_lo,
             "envelope_hi": env_hi,
-            "pdf_occupied": pdf_combined_occupied,
-            "pdf_available": pdf_combined_available,
+            # "pdf_occupied": pdf_combined_occupied,
+            # "pdf_available": pdf_combined_available,
             "all_occupancy": all_occ_arr,
         },
     }
@@ -239,6 +279,7 @@ def get_kde_occupancy_dict(
     num_points: int = 100,
     x_min: float | None = 0,
     x_max: float | None = None,
+    num_workers: int | None = None,
 ) -> dict[str, dict[str, dict[str, Any]]]:
     """
     Load or compute occupancy ratio from distance distribution KDEs.
@@ -268,6 +309,10 @@ def get_kde_occupancy_dict(
         Minimum x value for occupancy evaluation. Default is 0
     x_max
         Maximum x value for occupancy evaluation. Default is None
+    num_workers
+        Number of worker threads for parallel per-cell KDE evaluation.
+        ``None`` lets :class:`~concurrent.futures.ThreadPoolExecutor` choose
+        (defaults to ``min(32, os.cpu_count() + 4)``).
 
     Returns
     -------
@@ -303,7 +348,7 @@ def get_kde_occupancy_dict(
                     cell_ids, size=num_cells, replace=False
                 ).tolist()
 
-    combined_available_kde, x_min_calc, x_max_calc = _build_combined_available_kde(
+    _, x_min_calc, x_max_calc = _build_combined_available_kde(
         distance_kde_dict, cell_id_map, channel_map, bandwidth
     )
     x_vals = np.linspace(
@@ -318,10 +363,11 @@ def get_kde_occupancy_dict(
             structure_id,
             cell_id_map,
             distance_kde_dict,
-            combined_available_kde,
+            # combined_available_kde,
             x_vals,
             bandwidth,
             num_points,
+            num_workers=num_workers,
         )
         for mode, structure_id in channel_map.items()
     }
@@ -341,6 +387,7 @@ def get_occupancy_ks_test_df(
     significance_level: float = 0.05,
     save_dir: Path | None = None,
     recalculate: bool = True,
+    x_max_per_dm: dict[str, float] | None = None,
 ) -> pd.DataFrame:
     """
     Perform KS test between distance distributions of different packing modes and combine results.
@@ -361,6 +408,14 @@ def get_occupancy_ks_test_df(
         Directory to save the results
     recalculate
         Whether to recalculate even if results exist
+    x_max_per_dm
+        Optional per-distance-measure upper limit on the occupancy array used
+        for the KS test.  For each cell the per-cell ``xvals`` (from
+        ``individual[cell_id]["xvals"]``) are read and only occupancy values
+        at positions ``<= x_max`` are kept before calling ``ks_2samp``.  This
+        excludes the flat ECDF tail at large distances that reduces test power.
+        Build automatically with :func:`compute_x_max_per_dm`, or supply
+        ``{"nucleus": 6.0, "z": 8.0}`` directly.  ``None`` uses all bins.
 
     Returns
     -------
@@ -396,6 +451,14 @@ def get_occupancy_ks_test_df(
                 continue
             occupancy_1 = occupancy_dict[baseline_mode]["individual"][cell_id]["occupancy"]
             occupancy_2 = occupancy_dict[mode]["individual"][cell_id]["occupancy"]
+            if x_max_per_dm is not None and distance_measure in x_max_per_dm:
+                x_max = x_max_per_dm[distance_measure]
+                xvals_1 = occupancy_dict[baseline_mode]["individual"][cell_id].get("xvals")  # type: ignore[union-attr]
+                xvals_2 = occupancy_dict[mode]["individual"][cell_id].get("xvals")  # type: ignore[union-attr]
+                if xvals_1 is not None:
+                    occupancy_1 = occupancy_1[np.asarray(xvals_1) <= x_max]
+                if xvals_2 is not None:
+                    occupancy_2 = occupancy_2[np.asarray(xvals_2) <= x_max]
             ks_result = ks_2samp(occupancy_1, occupancy_2)
             ks_stat, p_value = ks_result.statistic, ks_result.pvalue  # type: ignore
             record_list.append(
@@ -915,7 +978,7 @@ def _infer_common_r_grid(
                 if avail is not None:
                     a = np.asarray(avail)
                     if not is_scaled_measure:
-                        a = a * PIXEL_SIZE_IN_UM
+                        a = a * PIXEL_SIZE_IN_UM  # type: ignore[operator]
                     all_available.append(a)
         return make_r_grid_from_pooled(all_available, bin_width=bin_width)
 
@@ -1080,15 +1143,27 @@ def _collect_mode_cell_results(
         all_occupied_distances.append(occupied_concat)
         all_available_distances.append(available_concat)
 
-        interp_ratios.append(
-            np.interp(
-                common_r_grid,
-                cell_result["xvals"],
-                cell_result["occupancy"],
-                left=np.nan,
-                right=np.nan,
-            )
+        occ_common = np.interp(
+            common_r_grid, cell_result["xvals"], cell_result["occupancy"], left=np.nan, right=np.nan
         )
+        pdf_occ_common = np.interp(
+            common_r_grid,
+            cell_result["xvals"],
+            cell_result["pdf_occupied"],
+            left=np.nan,
+            right=np.nan,
+        )
+        pdf_avail_common = np.interp(
+            common_r_grid,
+            cell_result["xvals"],
+            cell_result["pdf_available"],
+            left=np.nan,
+            right=np.nan,
+        )
+        individual[cell_id]["occupancy_common"] = occ_common
+        individual[cell_id]["pdf_occupied_common"] = pdf_occ_common
+        individual[cell_id]["pdf_available_common"] = pdf_avail_common
+        interp_ratios.append(occ_common)
 
     return individual, all_occupied_distances, all_available_distances, interp_ratios
 
@@ -1352,14 +1427,63 @@ def get_binned_occupancy_dict_from_distance_dict(
     return occupancy_result
 
 
+def compute_x_max_per_dm(
+    combined_occupancy_dict: dict[str, dict[str, dict[str, Any]]],
+    percentile: float,
+    packing_modes: list[str],
+) -> dict[str, float]:
+    """
+    Derive a per-distance-measure x-axis upper limit from the occupancy grid.
+
+    For each distance measure the shared ``xvals`` grid (a uniform linspace) is
+    read from the first available mode's ``"combined"`` result, and the value at
+    ``percentile`` is returned.  Because the grid is *uniformly spaced*, the
+    percentile corresponds to a fraction of the x-axis **range** — not weighted
+    by observation counts — making it an appropriate way to trim the flat ECDF
+    tail at large distances without being biased by the number of particles in
+    each bin.
+
+    Parameters
+    ----------
+    combined_occupancy_dict
+        ``{distance_measure: {mode: {"combined": {"xvals": np.ndarray, ...}, ...}}}``
+        — the output of :func:`get_kde_occupancy_dict` or
+        :func:`get_binned_occupancy_dict_from_distance_dict`.
+    percentile
+        Percentile of the x grid to use as the upper limit (e.g. ``95`` to
+        keep the first 95 % of the distance axis).
+    packing_modes
+        Ordered list of packing modes; used to find a non-empty ``xvals`` array.
+
+    Returns
+    -------
+    :
+        ``{distance_measure: x_max}`` — one float per distance measure.
+    """
+    x_max_per_dm: dict[str, float] = {}
+    for dm, occ_dm in combined_occupancy_dict.items():
+        xvals: np.ndarray | None = None
+        for mode in packing_modes:
+            candidate = occ_dm.get(mode, {}).get("combined", {}).get("xvals")
+            if candidate is not None and len(candidate) > 0:
+                xvals = np.asarray(candidate)
+                break
+        if xvals is None or len(xvals) == 0:
+            logger.warning("No xvals found for distance measure '%s' — skipping x_max.", dm)
+            continue
+        x_max_per_dm[dm] = float(np.percentile(xvals, percentile))
+    return x_max_per_dm
+
+
 def pairwise_envelope_test_occupancy(
-    combined_binned_occupancy_dict: dict[str, dict[str, dict[str, Any]]],
+    combined_occupancy_dict: dict[str, dict[str, dict[str, Any]]],
     packing_modes: list[str],
     alpha: float = 0.05,
     statistic: Literal["supremum", "intdev"] = "intdev",
     envelope_type: EnvelopeType = "pointwise",
     joint_r_grid_size: int | None = None,
     comparison_type: Literal["ratio", "ecdf"] = "ratio",
+    x_max_per_dm: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     """
     Run a pairwise Monte Carlo envelope test on per-cell occupancy ratio curves.
@@ -1377,11 +1501,13 @@ def pairwise_envelope_test_occupancy(
 
     Parameters
     ----------
-    combined_binned_occupancy_dict
+    combined_occupancy_dict
         ``{distance_measure: {mode: {"individual": {cell_id: {"occupancy":
         np.ndarray, "xvals": np.ndarray}}, "combined": {...}}}}`` — the output
-        of :func:`get_binned_occupancy_dict_from_distance_dict` wrapped in a
-        distance-measure outer key.
+        of :func:`get_kde_occupancy_dict` or
+        :func:`get_binned_occupancy_dict_from_distance_dict` wrapped in a
+        distance-measure outer key.  Both functions share the same unified
+        format and are accepted here.
     packing_modes
         Ordered list of modes forming the pairwise matrix.
     alpha
@@ -1405,6 +1531,13 @@ def pairwise_envelope_test_occupancy(
         space before comparison.  The ECDF treats the bin-wise ratio values as
         a 1-D sample and evaluates the cumulative distribution on a shared grid
         spanning the range of all ratio values for that distance measure.
+    x_max_per_dm
+        Optional per-distance-measure upper limit on the x-axis used for the
+        test.  Bins whose ``xvals`` exceed the limit are dropped before any
+        statistical comparison or envelope construction.  This prevents the
+        flat ECDF tail at large distances from diluting test power.
+        Build automatically with :func:`compute_x_max_per_dm`, or supply
+        ``{"nucleus": 6.0, "z": 8.0}`` directly.  ``None`` uses all bins.
 
     Returns
     -------
@@ -1439,23 +1572,31 @@ def pairwise_envelope_test_occupancy(
                 "comparison_type": str,
             }
     """
-    distance_measures = list(combined_binned_occupancy_dict.keys())
+    distance_measures = list(combined_occupancy_dict.keys())
 
     envelopes: dict[str, dict[str, Any]] = {}
     mode_curves: dict[str, dict[str, np.ndarray]] = {mode: {} for mode in packing_modes}
     mode_xvals: dict[str, dict[str, np.ndarray]] = {mode: {} for mode in packing_modes}
 
     for dm in distance_measures:
-        occ_dm = combined_binned_occupancy_dict[dm]
+        occ_dm = combined_occupancy_dict[dm]
         for mode in packing_modes:
             combined = occ_dm.get(mode, {}).get("combined", {})
             xvals = combined.get("xvals", np.array([]))
-            mode_xvals[mode][dm] = xvals
 
             # Use the pre-interpolated per-cell ratios on the common grid
             arr = combined.get("all_occupancy", np.empty((0, max(1, len(xvals)))))
             # Replace NaN with 0 for stacking/envelope operations
             arr = np.where(np.isnan(arr), 0.0, arr)
+
+            # Trim to x_max before any envelope or test computation so the flat
+            # ECDF tail at large distances does not dilute statistical power.
+            if x_max_per_dm is not None and dm in x_max_per_dm:
+                mask = xvals <= x_max_per_dm[dm]
+                xvals = xvals[mask]
+                arr = arr[:, mask]
+
+            mode_xvals[mode][dm] = xvals
             mode_curves[mode][dm] = arr
 
             # Build pointwise envelope for visualization (always pointwise regardless of

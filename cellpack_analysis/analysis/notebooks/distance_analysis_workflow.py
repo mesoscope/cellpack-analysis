@@ -63,7 +63,7 @@ STRUCTURE_NAME = "peroxisome"
 CONDITION = "rules_shape_with_seed"
 """This is the experimental condition or packing output subfolder to analyze"""
 
-RESULT_SUBFOLDER = "distance_analysis_kde_rules_shape_with_seed"
+RESULT_SUBFOLDER = "distance_analysis/rules_shape_with_seed/nucleus_z_distance"
 """Subfolder within results/ to save outputs for this workflow."""
 # %% [markdown]
 # ### Set packing modes to analyze
@@ -96,8 +96,8 @@ figures_dir = make_dir(results_dir / "figures/")
 # %% [markdown]
 # ### Distance measures to use
 distance_measures = [
-    "nearest",
-    "pairwise",
+    # "nearest",
+    # "pairwise",
     "nucleus",
     # "scaled_nucleus",
     # "scaled_z",
@@ -136,7 +136,7 @@ for structure_id in all_structures:
     combined_mesh_information_dict[structure_id] = mesh_information_dict
 # %% [markdown]
 # ### Calculate distance measures and normalize
-all_distance_dict = distance.get_distance_dictionary(
+all_distance_dict_raw = distance.get_distance_dictionary(
     all_positions=all_positions,
     distance_measures=distance_measures,
     mesh_information_dict=combined_mesh_information_dict,
@@ -146,12 +146,12 @@ all_distance_dict = distance.get_distance_dictionary(
     num_workers=8,
 )
 
-all_distance_dict = distance.filter_invalids_from_distance_distribution_dict(
-    distance_distribution_dict=all_distance_dict, minimum_distance=None
+all_distance_dict_filtered = distance.filter_invalids_from_distance_distribution_dict(
+    distance_distribution_dict=all_distance_dict_raw, minimum_distance=None
 )
 
 all_distance_dict = distance.normalize_distance_dictionary(
-    all_distance_dict=all_distance_dict,
+    all_distance_dict=all_distance_dict_filtered,
     mesh_information_dict=combined_mesh_information_dict,
     channel_map=channel_map,
     normalization=normalization,
@@ -159,18 +159,28 @@ all_distance_dict = distance.normalize_distance_dictionary(
 
 # %% [markdown]
 # ## Distance distributions
-distance_figures_dir = make_dir(results_dir / "figures/distance_distributions/")
+distance_figures_dir = make_dir(figures_dir / "distance_distributions/")
 # %% [markdown]
-# ### plot distance distribution discrete
-fig, axs = visualization.plot_distance_distributions_kde(
+# ### compute distance PDFs
+distance_pdf_dict = distance.compute_distance_pdfs(
+    all_distance_dict=all_distance_dict,
     distance_measures=distance_measures,
     packing_modes=packing_modes,
-    all_distance_dict=all_distance_dict,
+    method="kde",
+    bin_width=0.2,
+    bandwidth=0.2,
+    distance_limits=DISTANCE_LIMITS,
+    minimum_distance=0,
+)
+# %% [markdown]
+# ### plot distance distributions
+fig, axs = visualization.plot_distance_distributions(
+    distance_pdf_dict=distance_pdf_dict,
+    distance_measures=distance_measures,
+    packing_modes=packing_modes,
     figures_dir=distance_figures_dir,
     suffix=suffix,
     normalization=normalization,
-    distance_limits=DISTANCE_LIMITS,
-    bandwidth=0.2,
     save_format=save_format,
 )
 # %% [markdown]
@@ -188,8 +198,7 @@ distance.log_central_tendencies_for_distance_distributions(
 # ## EMD Analysis for distance distributions
 # %% [markdown]
 # ### create emd analysis folders
-emd_figures_dir = figures_dir / "emd"
-emd_figures_dir.mkdir(exist_ok=True, parents=True)
+emd_figures_dir = make_dir(figures_dir / "emd")
 # %% [markdown]
 # ### Get earth movers distances between distance distributions
 df_emd = distance.get_distance_distribution_emd_df(
@@ -199,6 +208,7 @@ df_emd = distance.get_distance_distribution_emd_df(
     results_dir=results_dir,
     recalculate=False,
     suffix=suffix,
+    num_workers=8,
 )
 # %% [markdown]
 # ### Create plots for EMD comparisons
@@ -214,29 +224,15 @@ for comparison_type in ["intra_mode", "baseline"]:
         annotate_significance=False,
     )
 # %% [markdown]
-# ### Log statistics for EMD comparisons
-emd_log_file_path = results_dir / f"{PACKING_ID}_emd_central_tendencies{suffix}.log"
-for comparison_type in ["intra_mode", "baseline"]:
-    distance.log_central_tendencies_for_emd(
-        df_emd=df_emd,
-        distance_measures=distance_measures,
-        packing_modes=packing_modes,
-        baseline_mode=baseline_mode,
-        log_file_path=emd_log_file_path,
-        comparison_type=comparison_type,
-    )
-# %% [markdown]
 # ### Create plots for pairwise EMD matrix
 for dm in distance_measures:
     fig, axs = visualization.plot_pairwise_emd_matrix(
         df_emd=df_emd,
-        all_distance_dict=all_distance_dict,
+        distance_pdf_dict=distance_pdf_dict,
         packing_modes=packing_modes,
         distance_measure=dm,
         normalization=normalization,
-        distance_limits=DISTANCE_LIMITS,
-        bin_width=0.2,
-        minimum_distance=0,
+        figsize=(3.5, 3.5),
         figures_dir=emd_figures_dir,
         suffix=suffix,
         save_format=save_format,
@@ -270,8 +266,7 @@ pairwise_results = pairwise_envelope_test(
 # %% [markdown]
 # ### Plot pairwise envelope matrix per distance measure
 # %%
-envelope_figures_dir = figures_dir / "pairwise_envelope"
-envelope_figures_dir.mkdir(exist_ok=True, parents=True)
+envelope_figures_dir = make_dir(figures_dir / "envelope_tests/")
 
 for dm in distance_measures:
     fig, axs = visualization.plot_pairwise_envelope_matrix(
@@ -280,6 +275,8 @@ for dm in distance_measures:
         figures_dir=envelope_figures_dir,
         suffix=suffix,
         save_format=save_format,
+        figsize=(3.5, 2.5),
+        font_scale=0.8,
     )
 # %% [markdown]
 # ### Plot pairwise envelope matrix - joint test
@@ -288,8 +285,33 @@ fig, axs = visualization.plot_pairwise_envelope_matrix(
     pairwise_results=pairwise_results,
     distance_measure=None,
     figures_dir=envelope_figures_dir,
-    figsize=(5, 3),
     suffix=suffix,
+    save_format=save_format,
+    figsize=(7, 3.5),
+    font_scale=1.1,
+)
+# %% [markdown]
+# ### Per distance measure rejection bars (per reference mode)
+# %%
+for ref_mode in packing_modes:
+    for joint_test in [False, True]:
+        fig, axs = visualization.plot_per_dm_rejection_bars(
+            pairwise_results=pairwise_results,
+            reference_mode=ref_mode,
+            joint_test=joint_test,
+            figures_dir=envelope_figures_dir,
+            figsize=(3.5, 2),
+            suffix=suffix,
+            save_format=save_format,
+        )
+# %% [markdown]
+# ### Per distance measure envelope overlays
+# %%
+fig, axs = visualization.plot_per_dm_envelopes_overlaid(
+    pairwise_results=pairwise_results,
+    figures_dir=envelope_figures_dir,
+    suffix=suffix,
+    figsize=(6, 1.5),
     save_format=save_format,
 )
 # %% [markdown]
@@ -352,10 +374,12 @@ for ref_mode in packing_modes:
 pairwise_ks_log_file_path = (
     results_dir / f"{STRUCTURE_NAME}_pairwise_ks_central_tendencies{suffix}.log"
 )
-for ref_mode in packing_modes:
+for ref_mode in packing_modes:  # noqa:B007
     ref_boot_df = pairwise_ks_bootstrap_df.query("baseline_mode == @ref_mode")
     distance.log_central_tendencies_for_ks(
         df_ks_bootstrap=ref_boot_df,
         distance_measures=distance_measures,
         file_path=pairwise_ks_log_file_path,
     )
+# %% [markdown]
+logger.info(f"Total runtime: {(time.time() - start_time) / 60:.2f} minutes")

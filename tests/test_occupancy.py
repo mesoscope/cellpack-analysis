@@ -318,4 +318,12 @@ class TestGetKdeOccupancyDictUnifiedFormat:
         individual = result["real"]["individual"]
         assert len(individual) == n_cells
         for cell_data in individual.values():
-            assert {"xvals", "occupancy", "pdf_occupied", "pdf_available"} == set(cell_data.keys())
+            assert {
+                "xvals",
+                "occupancy",
+                "pdf_occupied",
+                "pdf_available",
+                "occupancy_common",
+                "pdf_occupied_common",
+                "pdf_available_common",
+            } == set(cell_data.keys())

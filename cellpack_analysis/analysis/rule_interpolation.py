@@ -35,8 +35,7 @@ import numpy as np
 import pandas as pd
 from scipy.optimize import nnls
 
-from cellpack_analysis.lib import distance as distance_lib
-from cellpack_analysis.lib import occupancy as occupancy_lib
+from cellpack_analysis.lib import distance, occupancy
 from cellpack_analysis.lib.file_io import (
     add_file_handler_to_logger,
     remove_file_handler_from_logger,
@@ -1247,7 +1246,7 @@ def run_mixed_rule_validation(
         :class:`ValidationResult` bundling all test outputs.
     """
     logger.info("Running mixed-rule occupancy EMD analysis")
-    emd_df = occupancy_lib.get_occupancy_emd_df(
+    emd_df = occupancy.get_occupancy_emd_df(
         combined_occupancy_dict=combined_occupancy_dict,
         packing_modes=packing_modes,
         distance_measures=distance_measures,
@@ -1257,7 +1256,7 @@ def run_mixed_rule_validation(
     )
 
     logger.info("Running mixed-rule occupancy KS test")
-    ks_df = occupancy_lib.get_occupancy_ks_test_df(
+    ks_df = occupancy.get_occupancy_ks_test_df(
         distance_measures=distance_measures,
         packing_modes=packing_modes,
         combined_occupancy_dict=combined_occupancy_dict,
@@ -1267,8 +1266,8 @@ def run_mixed_rule_validation(
     )
 
     logger.info("Running mixed-rule occupancy pairwise envelope test")
-    envelope_test = occupancy_lib.pairwise_envelope_test_occupancy(
-        combined_binned_occupancy_dict=combined_occupancy_dict,
+    envelope_test = occupancy.pairwise_envelope_test_occupancy(
+        combined_occupancy_dict=combined_occupancy_dict,
         packing_modes=packing_modes,
     )
 
@@ -1277,7 +1276,7 @@ def run_mixed_rule_validation(
 
     if mixed_rule_distance_dict is not None:
         logger.info("Running mixed-rule distance EMD analysis")
-        distance_emd_df = distance_lib.get_distance_distribution_emd_df(
+        distance_emd_df = distance.get_distance_distribution_emd_df(
             all_distance_dict=mixed_rule_distance_dict,
             packing_modes=packing_modes,
             distance_measures=distance_measures,

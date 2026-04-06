@@ -161,16 +161,25 @@ all_distance_dict = distance.normalize_distance_dictionary(
 distance_figures_dir = figures_dir / "distance_distributions"
 distance_figures_dir.mkdir(exist_ok=True, parents=True)
 # %% [markdown]
-# ### plot distance distribution discrete
-fig, axs = visualization.plot_distance_distributions_discrete(
+# ### compute distance PDFs
+distance_pdf_dict = distance.compute_distance_pdfs(
+    all_distance_dict=all_distance_dict,
     distance_measures=distance_measures,
     packing_modes=packing_modes,
-    all_distance_dict=all_distance_dict,
+    method="histogram",
+    bin_width=0.21,
+    distance_limits=DISTANCE_LIMITS,
+    minimum_distance=0,
+)
+# %% [markdown]
+# ### plot distance distributions
+fig, axs = visualization.plot_distance_distributions(
+    distance_pdf_dict=distance_pdf_dict,
+    distance_measures=distance_measures,
+    packing_modes=packing_modes,
     figures_dir=distance_figures_dir,
     suffix=suffix,
     normalization=normalization,
-    distance_limits=DISTANCE_LIMITS,
-    bin_width=0.21,
     save_format=save_format,
 )
 # %% [markdown]
@@ -230,15 +239,12 @@ for comparison_type in ["intra_mode", "baseline"]:
 for dm in distance_measures:
     fig, axs = visualization.plot_pairwise_emd_matrix(
         df_emd=df_emd,
-        all_distance_dict=all_distance_dict,
+        distance_pdf_dict=distance_pdf_dict,
         packing_modes=packing_modes,
         distance_measure=dm,
         normalization=normalization,
-        distance_limits=DISTANCE_LIMITS,
-        bin_width=0.2,
-        minimum_distance=0,
-        figures_dir=emd_figures_dir,
         figsize=(3.5, 3.5),
+        figures_dir=emd_figures_dir,
         suffix=suffix,
         save_format=save_format,
     )
@@ -290,6 +296,26 @@ fig, axs = visualization.plot_pairwise_envelope_matrix(
     distance_measure=None,
     figures_dir=envelope_figures_dir,
     figsize=(5, 3),
+    suffix=suffix,
+    save_format=save_format,
+)
+# %% [markdown]
+# ### Per distance measure rejection bars (per reference mode)
+# %%
+for ref_mode in packing_modes:
+    fig, axs = visualization.plot_per_dm_rejection_bars(
+        pairwise_results=pairwise_results,
+        reference_mode=ref_mode,
+        figures_dir=envelope_figures_dir,
+        suffix=suffix,
+        save_format=save_format,
+    )
+# %% [markdown]
+# ### Per distance measure envelope overlays
+# %%
+fig, axs = visualization.plot_per_dm_envelopes_overlaid(
+    pairwise_results=pairwise_results,
+    figures_dir=envelope_figures_dir,
     suffix=suffix,
     save_format=save_format,
 )

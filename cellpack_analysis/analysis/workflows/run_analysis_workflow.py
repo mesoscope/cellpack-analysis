@@ -345,32 +345,35 @@ class AnalysisRunner:
         distance_figures_dir = config.figures_dir / "distance_distributions"
         distance_figures_dir.mkdir(exist_ok=True, parents=True)
 
-        if config.distribution_method == "discrete":
-            _ = visualization.plot_distance_distributions_discrete(
-                distance_measures=config.distance_measures,
-                packing_modes=config.packing_modes,
-                all_distance_dict=self.shared_data["all_distance_dict"],
-                figures_dir=distance_figures_dir,
-                suffix=config.suffix,
-                normalization=config.normalization,
-                distance_limits=DISTANCE_LIMITS,
-                bin_width=config.bin_width_map.get(
-                    config.distance_measures[0] if config.distance_measures else "nucleus", 0.2
-                ),
-                save_format=config.save_format,
+        method = config.distribution_method
+        pdf_kwargs: dict = {
+            "all_distance_dict": self.shared_data["all_distance_dict"],
+            "distance_measures": config.distance_measures,
+            "packing_modes": config.packing_modes,
+            "method": method,
+            "distance_limits": DISTANCE_LIMITS,
+            "minimum_distance": 0,
+        }
+        if method == "discrete":
+            pdf_kwargs["bin_width"] = config.bin_width_map.get(
+                config.distance_measures[0] if config.distance_measures else "nucleus", 0.2
             )
         else:
-            _ = visualization.plot_distance_distributions_kde(
-                distance_measures=config.distance_measures,
-                packing_modes=config.packing_modes,
-                all_distance_dict=self.shared_data["all_distance_dict"],
-                figures_dir=distance_figures_dir,
-                suffix=config.suffix,
-                normalization=config.normalization,
-                distance_limits=DISTANCE_LIMITS,
-                bandwidth=config.bandwidth,
-                save_format=config.save_format,
-            )
+            pdf_kwargs["bin_width"] = 0.2
+            pdf_kwargs["bandwidth"] = config.bandwidth
+
+        distance_pdf_dict = distance.compute_distance_pdfs(**pdf_kwargs)
+        self.shared_data["distance_pdf_dict"] = distance_pdf_dict
+
+        _ = visualization.plot_distance_distributions(
+            distance_pdf_dict=distance_pdf_dict,
+            distance_measures=config.distance_measures,
+            packing_modes=config.packing_modes,
+            figures_dir=distance_figures_dir,
+            suffix=config.suffix,
+            normalization=config.normalization,
+            save_format=config.save_format,
+        )
 
         log_file_path = (
             config.results_dir
@@ -427,20 +430,25 @@ class AnalysisRunner:
             )
 
         # Pairwise EMD matrix per distance measure
+        distance_pdf_dict = self.shared_data.get("distance_pdf_dict")
         for dm in config.distance_measures:
-            _ = visualization.plot_pairwise_emd_matrix(
-                df_emd=df_emd,
-                all_distance_dict=self.shared_data["all_distance_dict"],
-                packing_modes=config.packing_modes,
-                distance_measure=dm,
-                normalization=config.normalization,
-                distance_limits=DISTANCE_LIMITS,
-                bin_width=config.bin_width_map.get(dm, 0.2),
-                minimum_distance=0,
-                figures_dir=emd_figures_dir,
-                suffix=config.suffix,
-                save_format=config.save_format,
-            )
+            emd_matrix_kwargs: dict = {
+                "df_emd": df_emd,
+                "packing_modes": config.packing_modes,
+                "distance_measure": dm,
+                "normalization": config.normalization,
+                "figures_dir": emd_figures_dir,
+                "suffix": config.suffix,
+                "save_format": config.save_format,
+            }
+            if distance_pdf_dict is not None:
+                emd_matrix_kwargs["distance_pdf_dict"] = distance_pdf_dict
+            else:
+                emd_matrix_kwargs["all_distance_dict"] = self.shared_data["all_distance_dict"]
+                emd_matrix_kwargs["distance_limits"] = DISTANCE_LIMITS
+                emd_matrix_kwargs["bin_width"] = config.bin_width_map.get(dm, 0.2)
+                emd_matrix_kwargs["minimum_distance"] = 0
+            _ = visualization.plot_pairwise_emd_matrix(**emd_matrix_kwargs)
 
         pairwise_emd_log_file_path = (
             config.results_dir
@@ -780,7 +788,7 @@ class AnalysisRunner:
         envelope_figures_dir.mkdir(exist_ok=True, parents=True)
 
         occ_pairwise_results = occupancy.pairwise_envelope_test_occupancy(
-            combined_binned_occupancy_dict=self.shared_data["occupancy_dict"],
+            combined_occupancy_dict=self.shared_data["occupancy_dict"],
             packing_modes=config.packing_modes,
             alpha=config.envelope_test_params["alpha"],
             statistic=config.envelope_test_params["statistic"],

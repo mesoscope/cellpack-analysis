@@ -272,7 +272,7 @@ for dm in occupancy_distance_measures:
 # %% [markdown]
 # ### Run pairwise envelope test on occupancy ratio curves
 occ_pairwise_results = occupancy.pairwise_envelope_test_occupancy(
-    combined_binned_occupancy_dict=combined_binned_occupancy_dict,
+    combined_occupancy_dict=combined_binned_occupancy_dict,
     packing_modes=packing_modes,
     alpha=0.05,
     statistic="intdev",

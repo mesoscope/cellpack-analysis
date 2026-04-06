@@ -28,7 +28,7 @@ from IPython.display import display
 
 from cellpack_analysis.analysis import rule_interpolation
 from cellpack_analysis.lib import distance, occupancy, visualization
-from cellpack_analysis.lib.file_io import get_project_root
+from cellpack_analysis.lib.file_io import get_project_root, make_dir
 from cellpack_analysis.lib.load_data import get_position_data_from_outputs
 from cellpack_analysis.lib.mesh_tools import get_mesh_information_dict_for_structure
 
@@ -86,11 +86,9 @@ project_root = get_project_root()
 base_datadir = project_root / "data"
 base_results_dir = project_root / "results"
 
-results_dir = base_results_dir / RESULT_SUBFOLDER / PACKING_ID
-results_dir.mkdir(exist_ok=True, parents=True)
+results_dir = make_dir(base_results_dir / RESULT_SUBFOLDER)
 
-figures_dir = results_dir / "figures/"
-figures_dir.mkdir(exist_ok=True, parents=True)
+figures_dir = make_dir(results_dir / "figures")
 # %% [markdown]
 # ### Distance measures to use
 # Options: "nucleus", "z", "scaled_nucleus", "membrane"

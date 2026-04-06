@@ -20,7 +20,12 @@ from cellpack_analysis.lib.file_io import (
 )
 from cellpack_analysis.lib.get_structure_stats_dataframe import get_structure_stats_dataframe
 from cellpack_analysis.lib.mesh_tools import _compute_distances_for_points
-from cellpack_analysis.lib.stats import ripley_k
+from cellpack_analysis.lib.stats import (
+    make_r_grid_from_pooled,
+    normalize_pdf,
+    pointwise_envelope,
+    ripley_k,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -474,7 +479,7 @@ def _calculate_distances_for_cell_id(
     need_nearest = _needed("nearest")
 
     if need_pairwise:
-        # Build full N×N matrix; reuse for nearest-neighbor if also needed
+        # Build full NxN matrix; reuse for nearest-neighbor if also needed
         all_distances = cdist(positions, positions, metric="euclidean")
         pairwise_distances = squareform(all_distances)
         distance_dict["pairwise"] = filter_invalid_distances(pairwise_distances)
@@ -1589,7 +1594,7 @@ def log_pairwise_emd_central_tendencies(
                 lower = sub_df.quantile(0.025)
                 upper = sub_df.quantile(0.975)
                 emd_logger.info(
-                    "  %s vs %s: %.2f ± %.2f " "(median: %.2f, 95%% CI: %.2f, %.2f)",
+                    "  %s vs %s: %.2f ± %.2f (median: %.2f, 95%% CI: %.2f, %.2f)",
                     mode_i,
                     mode_j,
                     mean,
@@ -1701,3 +1706,118 @@ def log_central_tendencies_for_distance_distributions(
             )
 
     remove_file_handler_from_logger(dist_logger, file_path)
+
+
+def compute_distance_pdfs(
+    all_distance_dict: dict[str, dict[str, dict[str, dict[str, np.ndarray]]]],
+    distance_measures: list[str],
+    packing_modes: list[str],
+    method: str = "histogram",
+    bin_width: float | dict[str, float] = 0.2,
+    bandwidth: float | str = "scott",
+    distance_limits: dict[str, tuple[float, float]] | None = None,
+    minimum_distance: float | None = 0,
+    envelope_alpha: float = 0.05,
+    n_grid: int = 100,
+) -> dict[str, dict[str, dict[str, np.ndarray]]]:
+    """Compute distance PDFs on a shared r-grid for each measure and mode.
+
+    Produces a unified dictionary structure that can be consumed by
+    :func:`~cellpack_analysis.lib.visualization.plot_distance_distributions`
+    and :func:`~cellpack_analysis.lib.visualization.plot_pairwise_emd_matrix`
+    regardless of whether the underlying estimation used histograms or KDE.
+
+    Parameters
+    ----------
+    all_distance_dict
+        ``{distance_measure: {mode: {cell_id: {seed: distances}}}}``
+    distance_measures
+        Distance measures to compute PDFs for.
+    packing_modes
+        Packing modes to compute PDFs for.
+    method
+        ``"histogram"`` (Laplace-smoothed histogram) or ``"kde"`` (Gaussian KDE).
+    bin_width
+        Bin width for histogram method (single float or per-measure dict).
+        Also used to determine the r-grid spacing for KDE.
+    bandwidth
+        Bandwidth for ``gaussian_kde`` (only used when *method* = ``"kde"``).
+        Accepts ``"scott"``, ``"silverman"``, or a float.
+    distance_limits
+        Optional ``{measure: (lo, hi)}`` to fix the r-grid range.
+    minimum_distance
+        Distances below this value are dropped before PDF estimation.
+    envelope_alpha
+        Significance level for pointwise envelopes (default 0.05 → 95 %).
+    n_grid
+        Number of grid points when *bin_width* is ``None`` and
+        *distance_limits* is not provided.
+
+    Returns
+    -------
+    :
+        ``{distance_measure: {mode: {"xvals": …, "individual_curves": …,
+        "mean_pdf": …, "envelope_lo": …, "envelope_hi": …}}}``
+    """
+    if method not in ("histogram", "kde"):
+        raise ValueError(f"method must be 'histogram' or 'kde', got {method!r}")
+
+    result: dict[str, dict[str, dict[str, np.ndarray]]] = {}
+
+    for dm in distance_measures:
+        distance_dict = all_distance_dict[dm]
+        measure_bin_width = bin_width[dm] if isinstance(bin_width, dict) else bin_width
+
+        # ── Shared r-grid across all modes ──
+        all_arrays: list[np.ndarray] = []
+        for mode in packing_modes:
+            for seed_dict in distance_dict[mode].values():
+                for arr in seed_dict.values():
+                    all_arrays.append(np.asarray(arr))
+
+        if distance_limits is not None and dm in distance_limits:
+            lo_lim, hi_lim = distance_limits[dm]
+            n_bins = int((hi_lim - lo_lim) / measure_bin_width) + 1
+            r_grid = np.linspace(lo_lim, hi_lim, n_bins)
+        else:
+            r_grid = make_r_grid_from_pooled(all_arrays, n=n_grid, bin_width=measure_bin_width)
+
+        bin_edges = np.concatenate(
+            [r_grid - measure_bin_width / 2, [r_grid[-1] + measure_bin_width / 2]]
+        )
+
+        result[dm] = {}
+        for mode in packing_modes:
+            curves: list[np.ndarray] = []
+            for seed_dict in tqdm(distance_dict[mode].values(), desc=f"Mode: {mode}"):
+                for distances in seed_dict.values():
+                    filtered = filter_invalid_distances(
+                        np.asarray(distances), minimum_distance=minimum_distance
+                    )
+
+                    if method == "histogram":
+                        raw_counts, _ = np.histogram(filtered, bins=bin_edges)
+                        smoothed = raw_counts.astype(float) + 1.0  # Laplace pseudocount
+                        pdf = normalize_pdf(r_grid, smoothed)
+                    else:  # kde
+                        if filtered.size <= 2:
+                            pdf = np.zeros_like(r_grid)
+                        else:
+                            kde = gaussian_kde(filtered, bw_method=bandwidth)
+                            pdf = kde.evaluate(r_grid)
+                            pdf = normalize_pdf(r_grid, pdf)
+
+                    curves.append(pdf)
+
+            curves_array = np.vstack(curves)
+            lo, hi, mu, _ = pointwise_envelope(curves_array, alpha=envelope_alpha)
+
+            result[dm][mode] = {
+                "xvals": r_grid,
+                "individual_curves": curves_array,
+                "mean_pdf": mu,
+                "envelope_lo": lo,
+                "envelope_hi": hi,
+            }
+
+    return result
