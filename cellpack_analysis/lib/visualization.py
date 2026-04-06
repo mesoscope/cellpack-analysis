@@ -13,12 +13,14 @@ from matplotlib.cm import ScalarMappable
 from matplotlib.colors import Colormap, LinearSegmentedColormap, Normalize
 from matplotlib.figure import Figure
 from matplotlib.ticker import MaxNLocator
+from scipy.stats import gaussian_kde
 from statannotations.Annotator import Annotator
 
 from cellpack_analysis.analysis.rule_interpolation import CVResult
 from cellpack_analysis.lib import label_tables
 from cellpack_analysis.lib.default_values import PIXEL_SIZE_IN_UM
 from cellpack_analysis.lib.distance import get_scaled_structure_radius
+from cellpack_analysis.lib.occupancy import get_kde_occupancy_for_single_cell
 
 logger = logging.getLogger(__name__)
 
@@ -518,13 +520,15 @@ def plot_emd_comparisons(
 
 
 def plot_occupancy_illustration(
-    occupancy_dict: dict[str, dict[str, Any]],
+    distance_kde_dict: dict[str, dict[str, gaussian_kde]],
     packing_mode: str = "random",
     cell_id_or_index: str | int | None = None,
     figures_dir: Path | None = None,
     suffix: str = "",
     distance_measure: str = "nucleus",
     normalization: str | None = None,
+    num_points: int = 100,
+    bandwidth: float | None = None,
     xlim: float | None = None,
     ylim_ratio: float | None = None,
     save_format: str = "pdf",
@@ -545,10 +549,8 @@ def plot_occupancy_illustration(
 
     Parameters
     ----------
-    occupancy_dict
-        ``{mode: {"individual": {cell_id: {"xvals", "occupancy",
-        "pdf_occupied", "pdf_available"}}, "combined": {...}}}``
-        for a single distance measure.
+    distance_kde_dict
+        ``{cell_id:{mode:gaussian_kde, "available":gaussian_kde}}`` for a single distance measure.
     packing_mode
         Packing mode to use for illustration.
     cell_id_or_index
@@ -562,6 +564,11 @@ def plot_occupancy_illustration(
         Distance measure label used for the x-axis and filename.
     normalization
         Normalization method applied to distances (used for axis labelling).
+    num_points
+        Number of points to evaluate KDEs on.
+    bandwidth
+        KDE bandwidth to use when evaluating PDFs.  When ``None``, the default bandwidth of
+        each KDE object is used.
     xlim
         Upper x-axis limit.
     ylim_ratio
@@ -574,14 +581,10 @@ def plot_occupancy_illustration(
     :
         Tuple of ``(Figure, [ax_occupied, ax_available, ax_ratio])``.
     """
-    individual = occupancy_dict.get(packing_mode, {}).get("individual", {})
-    if not individual:
-        raise ValueError(f"No individual cell data for packing_mode='{packing_mode}'")
-
     if cell_id_or_index is None:
-        cell_id = next(iter(individual))
+        cell_id = next(iter(distance_kde_dict))
     elif isinstance(cell_id_or_index, int):
-        cell_ids = list(individual.keys())
+        cell_ids = list(distance_kde_dict.keys())
         if cell_id_or_index < 0 or cell_id_or_index >= len(cell_ids):
             raise IndexError(
                 f"cell_id_or_index {cell_id_or_index} out of range for mode '{packing_mode}'"
@@ -589,16 +592,26 @@ def plot_occupancy_illustration(
         cell_id = cell_ids[cell_id_or_index]
     else:
         cell_id = str(cell_id_or_index)
-        if cell_id not in individual:
+        if cell_id not in distance_kde_dict:
             raise KeyError(f"cell_id '{cell_id}' not found for mode '{packing_mode}'")
 
-    cell_data = individual[cell_id]
-    xvals = (
-        occupancy_dict.get(packing_mode, {}).get("combined", {}).get("xvals", cell_data["xvals"])
+    x_vals = np.linspace(0, xlim if xlim is not None else 1, num_points)
+    result = get_kde_occupancy_for_single_cell(
+        cell_id=cell_id,
+        mode=packing_mode,
+        distance_kde_dict=distance_kde_dict,
+        x_vals=x_vals,
+        bandwidth=bandwidth,
+        num_points=num_points,
     )
-    pdf_occupied = cell_data.get("pdf_occupied_common", cell_data["pdf_occupied"])
-    pdf_available = cell_data.get("pdf_available_common", cell_data["pdf_available"])
-    occupancy = cell_data.get("occupancy_common", cell_data["occupancy"])
+
+    if result is None:
+        raise ValueError(f"Mode '{packing_mode}' not found for cell '{cell_id}'")
+
+    _, cell_result = result
+    pdf_occupied = cell_result["pdf_occupied_common"]
+    pdf_available = cell_result["pdf_available_common"]
+    occupancy = cell_result["occupancy_common"]
 
     plt.rcParams.update({"font.size": 8})
     fig, axs = plt.subplots(3, 1, dpi=300, figsize=(3.5, 4), sharex=True)
@@ -610,8 +623,8 @@ def plot_occupancy_illustration(
         [pdf_occupied, pdf_available, occupancy],
         strict=False,
     ):
-        sns.lineplot(x=xvals, y=np.nan_to_num(ydata), ax=ax, color="k")
-        ax.set_xlim(0, xlim if xlim is not None else float(xvals.max()))
+        sns.lineplot(x=x_vals, y=np.nan_to_num(ydata), ax=ax, color="k")
+        ax.set_xlim(0, xlim if xlim is not None else float(x_vals.max()))
         ax.set_ylabel(ylabel)
         ax.xaxis.set_major_locator(MaxNLocator(4, integer=True))
         ax.yaxis.set_major_locator(MaxNLocator(3, integer=True))

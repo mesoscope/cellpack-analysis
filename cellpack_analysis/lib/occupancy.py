@@ -132,7 +132,7 @@ def _build_combined_available_kde(
     return combined_available_kde, float(x_min_calc), float(x_max_calc)
 
 
-def _process_single_cell_kde(
+def get_kde_occupancy_for_single_cell(
     cell_id: str,
     mode: str,
     distance_kde_dict: dict[str, dict[str, gaussian_kde]],
@@ -202,7 +202,7 @@ def _compute_mode_kde_occupancy(
     with ThreadPoolExecutor(max_workers=num_workers) as executor:
         futures = {
             executor.submit(
-                _process_single_cell_kde,
+                get_kde_occupancy_for_single_cell,
                 cell_id,
                 mode,
                 distance_kde_dict,

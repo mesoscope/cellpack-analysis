@@ -177,7 +177,6 @@ for dm in occupancy_distance_measures:
         distance_measure=dm,
         minimum_distance=minimum_distance,
     )
-# %%
 
 # %% [markdown]
 
@@ -205,12 +204,15 @@ for dm in occupancy_distance_measures:
 # ### Plot illustration for one example cell
 for dm in occupancy_distance_measures:
     fig_ill, axs_ill = visualization.plot_occupancy_illustration(
-        occupancy_dict=combined_occupancy_dict[dm],
+        distance_kde_dict=distance_kde_dict[dm],
         packing_mode="random",
         figures_dir=occupancy_figures_dir[dm],
         suffix=suffix,
         distance_measure=dm,
         normalization=normalization,
+        cell_id_or_index=25,
+        num_points=250,
+        bandwidth=0.4,
         save_format=save_format,
         xlim=occupancy_params[dm]["xlim"],
     )
