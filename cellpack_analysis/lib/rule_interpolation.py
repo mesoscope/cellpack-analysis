@@ -164,6 +164,7 @@ class FoldResult:
     test_cell_ids: list[str]
     fit_result: FitResult
     test_mse: dict[str, dict[str, np.ndarray]]
+    repeat_idx: int = 0
 
 
 @dataclass
@@ -200,6 +201,7 @@ class CVResult:
     std_test_mse: dict[str, dict[str, float]]
     n_folds: int
     baseline_mode: str
+    n_repeats: int = 1
 
     @property
     def aggregated_coefficients_individual(self) -> dict[str, dict[str, tuple[float, float]]]:
@@ -540,6 +542,161 @@ def fit_rule_interpolation(
     )
 
 
+def fit_result_from_cv(
+    cv_result: CVResult,
+    occupancy_dict: dict[str, dict[str, dict[str, Any]]],
+    channel_map: dict[str, str],
+    baseline_mode: str,
+    distance_measures: list[str] | None = None,
+) -> FitResult:
+    """Construct a :class:`FitResult` from the mean CV coefficients.
+
+    Extracts the mean coefficients from ``cv_result.aggregated_coefficients``
+    and reconstructs occupancy curves by applying them to the same design
+    matrix used in :func:`fit_rule_interpolation`.  The returned
+    :class:`FitResult` is compatible with
+    :func:`~cellpack_analysis.lib.visualization.plot_rule_interpolation_fit`.
+
+    MSE values are evaluated against all baseline cells' combined occupancy
+    curve (i.e. ``occupancy_dict[dm][baseline_mode]["combined"]["occupancy"]``),
+    so they are directly comparable to the full-data fit.
+
+    Parameters
+    ----------
+    cv_result
+        Output from :func:`run_rule_interpolation_cv`.
+    occupancy_dict
+        Same ``{distance_measure: {mode: {"individual": ..., "combined": ...}}}``
+        dict passed to :func:`run_rule_interpolation_cv`.
+    channel_map
+        ``{mode: structure_id}`` — used to identify simulated modes.
+    baseline_mode
+        Key for the experimental baseline packing mode.
+    distance_measures
+        Subset of distance measures to use.  Defaults to all keys in
+        ``occupancy_dict``.
+
+    Returns
+    -------
+    :
+        :class:`FitResult` whose ``reconstructed_occupancy``, ``coefficients``,
+        ``relative_contributions``, and ``train_mse`` reflect the mean CV
+        coefficients.
+    """
+    if distance_measures is None:
+        distance_measures = list(occupancy_dict.keys())
+
+    packing_modes = [
+        mode for mode in channel_map.keys() if mode not in (baseline_mode, "interpolated")
+    ]
+
+    # Extract mean coefficients from aggregated CV results
+    mean_coeffs_individual: dict[str, dict[str, float]] = {
+        dm: {mode: cv_result.aggregated_coefficients[mode][dm][0] for mode in packing_modes}
+        for dm in distance_measures
+    }
+    mean_coeffs_joint: dict[str, float] = {
+        mode: cv_result.aggregated_coefficients[mode]["joint"][0] for mode in packing_modes
+    }
+
+    reconstructed_occupancy: dict[str, dict[str, np.ndarray]] = {}
+    train_mse_individual: dict[str, float] = {}
+    train_mse_joint: dict[str, float] = {}
+    stacked_simulated_occupancy: list[np.ndarray] = []
+    stacked_baseline_occupancy: list[np.ndarray] = []
+
+    for dm in distance_measures:
+        dm_data = occupancy_dict[dm]
+        baseline_dm = dm_data[baseline_mode]
+        common_xvals: np.ndarray = baseline_dm["combined"]["xvals"]
+
+        # Reference target: all baseline cells' combined occupancy curve
+        baseline_occ = np.nan_to_num(
+            np.interp(
+                common_xvals,
+                baseline_dm["combined"]["xvals"],
+                baseline_dm["combined"]["occupancy"],
+            )
+        )
+
+        # Build design matrix (same construction as fit_rule_interpolation)
+        simulated_occupancy_cols: list[np.ndarray] = []
+        for mode in packing_modes:
+            mode_combined_xvals: np.ndarray = dm_data[mode]["combined"]["xvals"]
+            mode_combined_occ: np.ndarray = dm_data[mode]["combined"]["occupancy"]
+            if len(mode_combined_xvals) != len(common_xvals) or not np.allclose(
+                mode_combined_xvals, common_xvals
+            ):
+                col = np.interp(
+                    common_xvals, mode_combined_xvals, mode_combined_occ, right=0.0, left=0.0
+                )
+            else:
+                col = mode_combined_occ
+            simulated_occupancy_cols.append(np.nan_to_num(col, nan=0.0))
+
+        design_matrix = np.column_stack(simulated_occupancy_cols)  # (n_bins, n_modes)
+
+        # Reconstruct using mean individual coefficients
+        coeffs_ind = np.array([mean_coeffs_individual[dm][mode] for mode in packing_modes])
+        recon_ind = design_matrix @ coeffs_ind
+        train_mse_individual[dm] = float(np.mean((baseline_occ - recon_ind) ** 2))
+        reconstructed_occupancy[dm] = {"individual": recon_ind}
+
+        stacked_simulated_occupancy.append(design_matrix)
+        stacked_baseline_occupancy.append(baseline_occ)
+
+    # Reconstruct using mean joint coefficients (applied per-dm)
+    coeffs_joint = np.array([mean_coeffs_joint[mode] for mode in packing_modes])
+    for i, dm in enumerate(distance_measures):
+        recon_joint = stacked_simulated_occupancy[i] @ coeffs_joint
+        train_mse_joint[dm] = float(np.mean((stacked_baseline_occupancy[i] - recon_joint) ** 2))
+        reconstructed_occupancy[dm]["joint"] = recon_joint
+
+    # Build consolidated coefficients and relative_contributions
+    coefficients: dict[str, dict[str, float]] = {
+        mode: {
+            **{dm: mean_coeffs_individual[dm][mode] for dm in distance_measures},
+            "joint": mean_coeffs_joint[mode],
+        }
+        for mode in packing_modes
+    }
+    relative_contributions_individual: dict[str, dict[str, float]] = {}
+    for dm in distance_measures:
+        _, rel_dm = _normalize_coefficients(
+            np.array([mean_coeffs_individual[dm][mode] for mode in packing_modes]),
+            packing_modes,
+        )
+        relative_contributions_individual[dm] = rel_dm
+    _, rel_dict_joint = _normalize_coefficients(coeffs_joint, packing_modes)
+
+    relative_contributions: dict[str, dict[str, float]] = {
+        mode: {
+            **{dm: relative_contributions_individual[dm][mode] for dm in distance_measures},
+            "joint": rel_dict_joint[mode],
+        }
+        for mode in packing_modes
+    }
+
+    # Collect all cell IDs seen across folds
+    all_cell_ids: list[str] = sorted(
+        {
+            cell_id
+            for fold in cv_result.folds
+            for cell_id in fold.train_cell_ids + fold.test_cell_ids
+        }
+    )
+
+    return FitResult(
+        coefficients=coefficients,
+        relative_contributions=relative_contributions,
+        train_mse={"individual": train_mse_individual, "joint": train_mse_joint},
+        train_cell_ids=all_cell_ids,
+        packing_modes=packing_modes,
+        distance_measures=list(distance_measures),
+        reconstructed_occupancy=reconstructed_occupancy,
+    )
+
+
 def _evaluate_on_cells(
     occupancy_dict: dict[str, dict[str, dict[str, Any]]],
     baseline_mode: str,
@@ -690,6 +847,7 @@ def run_rule_interpolation_cv(
     channel_map: dict[str, str],
     baseline_mode: str,
     n_folds: int = 5,
+    n_repeats: int = 1,
     random_state: int | None = None,
     distance_measures: list[str] | None = None,
     results_dir: Path | None = None,
@@ -704,6 +862,10 @@ def run_rule_interpolation_cv(
     evaluated on the held-out test cells.  Simulated modes always contribute
     their full combined occupancy to the design matrix.
 
+    The full k-fold procedure is repeated ``n_repeats`` times with independent
+    random shuffles.  Aggregated statistics (mean/std MSE and coefficients) are
+    computed across all ``n_folds x n_repeats`` fold results.
+
     Parameters
     ----------
     occupancy_dict
@@ -714,6 +876,9 @@ def run_rule_interpolation_cv(
         Key for the experimental baseline packing mode.
     n_folds
         Number of folds (default 5).
+    n_repeats
+        Number of independent repeats of the full k-fold procedure (default 1).
+        Per-repeat seeds are derived deterministically from ``random_state``.
     random_state
         Seed for reproducible shuffling.
     distance_measures
@@ -759,43 +924,50 @@ def run_rule_interpolation_cv(
             f"Cannot create {n_folds} folds from only {len(all_cell_ids)} baseline cells."
         )
 
+    # Derive independent per-repeat seeds from the master random state.
     rng = np.random.default_rng(random_state)
-    shuffled = list(rng.permutation(all_cell_ids))
-    folds_array = np.array_split(shuffled, n_folds)
+    repeat_seeds = rng.integers(0, 2**31, size=n_repeats)
 
     fold_results: list[FoldResult] = []
-    for fold_idx, test_arr in enumerate(folds_array):
-        test_cells = list(test_arr)
-        train_cells = [c for c in shuffled if c not in set(test_cells)]
-        logger.info(
-            f"Fold {fold_idx + 1}/{n_folds}: "
-            f"{len(train_cells)} train cells, {len(test_cells)} test cells"
-        )
+    for repeat_idx in range(n_repeats):
+        rng_r = np.random.default_rng(int(repeat_seeds[repeat_idx]))
+        shuffled = list(rng_r.permutation(all_cell_ids))
+        folds_array = np.array_split(shuffled, n_folds)
+        logger.info(f"Repeat {repeat_idx + 1}/{n_repeats}")
 
-        fit_result = fit_rule_interpolation(
-            occupancy_dict=occupancy_dict,
-            channel_map=channel_map,
-            baseline_mode=baseline_mode,
-            train_cell_ids=train_cells,
-            distance_measures=distance_measures,
-        )
-        test_mse = _evaluate_on_cells(
-            occupancy_dict=occupancy_dict,
-            baseline_mode=baseline_mode,
-            test_cell_ids=test_cells,
-            fit_result=fit_result,
-            distance_measures=distance_measures,
-            grouping=grouping,
-        )
-        fold_results.append(
-            FoldResult(
-                fold_idx=fold_idx,
+        for fold_idx, test_arr in enumerate(folds_array):
+            test_cells = list(test_arr)
+            train_cells = [c for c in shuffled if c not in set(test_cells)]
+            logger.info(
+                f"  Fold {fold_idx + 1}/{n_folds}: "
+                f"{len(train_cells)} train cells, {len(test_cells)} test cells"
+            )
+
+            fit_result = fit_rule_interpolation(
+                occupancy_dict=occupancy_dict,
+                channel_map=channel_map,
+                baseline_mode=baseline_mode,
                 train_cell_ids=train_cells,
+                distance_measures=distance_measures,
+            )
+            test_mse = _evaluate_on_cells(
+                occupancy_dict=occupancy_dict,
+                baseline_mode=baseline_mode,
                 test_cell_ids=test_cells,
                 fit_result=fit_result,
-                test_mse=test_mse,
+                distance_measures=distance_measures,
+                grouping=grouping,
             )
-        )
+            fold_results.append(
+                FoldResult(
+                    fold_idx=fold_idx,
+                    train_cell_ids=train_cells,
+                    test_cell_ids=test_cells,
+                    fit_result=fit_result,
+                    test_mse=test_mse,
+                    repeat_idx=repeat_idx,
+                )
+            )
 
     cv_result = _aggregate_cv_results(
         fold_results=fold_results,
@@ -803,6 +975,7 @@ def run_rule_interpolation_cv(
         packing_modes=fold_results[0].fit_result.packing_modes,
         baseline_mode=baseline_mode,
         n_folds=n_folds,
+        n_repeats=n_repeats,
     )
 
     if save_path is not None:
@@ -819,6 +992,7 @@ def _aggregate_cv_results(
     packing_modes: list[str],
     baseline_mode: str,
     n_folds: int,
+    n_repeats: int = 1,
 ) -> CVResult:
     """Aggregate per-fold FitResults into a CVResult."""
     # --- aggregated coefficients ---
@@ -874,6 +1048,7 @@ def _aggregate_cv_results(
         std_test_mse=_agg_std(test_getter),
         n_folds=n_folds,
         baseline_mode=baseline_mode,
+        n_repeats=n_repeats,
     )
 
 
@@ -901,6 +1076,7 @@ def summarize_cv_results(cv_result: CVResult) -> pd.DataFrame:
                 train_val = fold.fit_result.train_mse[scope][dm]
                 records.append(
                     {
+                        "repeat_idx": fold.repeat_idx,
                         "fold_idx": fold.fold_idx,
                         "scope": scope,
                         "distance_measure": dm,
@@ -914,6 +1090,7 @@ def summarize_cv_results(cv_result: CVResult) -> pd.DataFrame:
                 for cell_id, mse_val in zip(fold.test_cell_ids, test_arr, strict=False):
                     records.append(
                         {
+                            "repeat_idx": fold.repeat_idx,
                             "fold_idx": fold.fold_idx,
                             "scope": scope,
                             "distance_measure": dm,
@@ -944,7 +1121,9 @@ def log_cv_summary(
     else:
         cv_logger = logger
 
-    cv_logger.info(f"Cross-validation summary ({cv_result.n_folds} folds)")
+    cv_logger.info(
+        f"Cross-validation summary ({cv_result.n_folds} folds x {cv_result.n_repeats} repeats)"
+    )
     cv_logger.info(f"Baseline mode: {cv_result.baseline_mode}")
     cv_logger.info("=" * 80)
 
