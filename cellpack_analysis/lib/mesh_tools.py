@@ -20,6 +20,7 @@ from vtkmodules.vtkFiltersCore import vtkContourFilter
 from vtkmodules.vtkIOGeometry import vtkOBJReader
 
 from cellpack_analysis.lib.default_values import PIXEL_SIZE_IN_UM
+from cellpack_analysis.lib.file_io import get_datadir_path
 from cellpack_analysis.lib.get_cell_id_list import get_cell_id_list_for_structure
 from cellpack_analysis.lib.io import format_time
 from cellpack_analysis.lib.label_tables import AXIS_TO_INDEX_MAP
@@ -27,13 +28,14 @@ from cellpack_analysis.lib.label_tables import AXIS_TO_INDEX_MAP
 logger = logging.getLogger(__name__)
 
 _EPSILON = 1e-8
-_MAX_CHUNK_SIZE = 50_000
+_MAX_CHUNK_SIZE = 25_000
 _TARGET_CHUNKS = 10
 
 
 def _adaptive_chunk_size(n: int) -> int:
     """Return a chunk size that targets ``_TARGET_CHUNKS`` chunks but never exceeds
-    ``_MAX_CHUNK_SIZE``, bounding per-chunk memory for proximity queries."""
+    ``_MAX_CHUNK_SIZE``, bounding per-chunk memory for proximity queries.
+    """
     return min(_MAX_CHUNK_SIZE, max(1, -(-n // _TARGET_CHUNKS)))  # ceiling division
 
 
@@ -309,32 +311,33 @@ def get_mesh_information_for_shape(
     z_grid_distance_path = (
         base_datadir / f"structure_data/{structure_id}/grid_distances/z_distances_{seed}.npy"
     )
-    scaled_nuc_grid_distance_path = base_datadir / (
-        f"structure_data/{structure_id}/grid_distances/scaled_nuc_distances_{seed}.npy"
-    )
-    scaled_z_grid_distance_path = base_datadir / (
-        f"structure_data/{structure_id}/grid_distances/scaled_z_distances_{seed}.npy"
-    )
+    # scaled_nuc_grid_distance_path = base_datadir / (
+    #     f"structure_data/{structure_id}/grid_distances/scaled_nuc_distances_{seed}.npy"
+    # )
+    # scaled_z_grid_distance_path = base_datadir / (
+    #     f"structure_data/{structure_id}/grid_distances/scaled_z_distances_{seed}.npy"
+    # )
 
     nuc_grid_distances = np.load(nuc_grid_distance_path)
     mem_grid_distances = np.load(mem_grid_distance_path)
     z_grid_distances = np.load(z_grid_distance_path)
-    scaled_nuc_grid_distances = np.load(scaled_nuc_grid_distance_path)
-    scaled_z_grid_distances = np.load(scaled_z_grid_distance_path)
+    # scaled_nuc_grid_distances = np.load(scaled_nuc_grid_distance_path)
+    # scaled_z_grid_distances = np.load(scaled_z_grid_distance_path)
 
     inside_mem_inds = np.where((mem_grid_distances > 0) & ~np.isinf(mem_grid_distances))[0]
     mem_grid_distances = mem_grid_distances[inside_mem_inds]
     if not (
-        len(nuc_grid_distances)
-        == len(mem_grid_distances)
-        == len(z_grid_distances)
-        == len(scaled_nuc_grid_distances)
-        == len(scaled_z_grid_distances)
+        len(nuc_grid_distances) == len(mem_grid_distances) == len(z_grid_distances)
+        # == len(scaled_nuc_grid_distances)
+        # == len(scaled_z_grid_distances)
     ):
         raise ValueError(
             f"Grid distances have different lengths:\n"
-            f"nuc: {len(nuc_grid_distances)}, mem: {len(mem_grid_distances)},\n"
-            f"z: {len(z_grid_distances)}, scaled_nuc: {len(scaled_nuc_grid_distances)}"
+            f"nuc: {len(nuc_grid_distances)},\n"
+            f"mem: {len(mem_grid_distances)},\n"
+            f"z: {len(z_grid_distances)}, \n"
+            # f"scaled_nuc: {len(scaled_nuc_grid_distances)}, \n"
+            # f"scaled_z: {len(scaled_z_grid_distances)}"
         )
 
     cytoplasm_point_inds = np.where(nuc_grid_distances > 0)[0]
@@ -369,9 +372,9 @@ def get_mesh_information_for_shape(
         "nuc_sphericity": nuc_sphericity,
         "intracellular_radius": intracellular_radius,
         "nuc_grid_distances": nuc_grid_distances,
-        "mem_grid_distances": mem_grid_distances,
+        # "mem_grid_distances": mem_grid_distances,
         "z_grid_distances": z_grid_distances,
-        "scaled_nuc_grid_distances": scaled_nuc_grid_distances,
+        # "scaled_nuc_grid_distances": scaled_nuc_grid_distances,
     }
 
 
@@ -450,7 +453,7 @@ def get_mesh_from_image(
 
     if img.sum() == 0:
         raise ValueError(
-            "No foreground voxels found after pre-processing." "Is the object of interest centered?"
+            "No foreground voxels found after pre-processing.Is the object of interest centered?"
         )
 
     # Create vtkImageData
@@ -485,7 +488,7 @@ def get_mesh_from_image(
 
 def get_mesh_information_dict_for_structure(
     structure_id: str,
-    base_datadir: Path,
+    base_datadir: Path | None = None,
     recalculate: bool = False,
 ) -> dict[str, dict[str, Any]]:
     """
@@ -496,7 +499,7 @@ def get_mesh_information_dict_for_structure(
     structure_id
         ID of the structure
     base_datadir
-        Base directory path
+        Base data directory path. If None, the default data directory is used.
     recalculate
         If True, recalculate mesh information. Default is False
 
@@ -505,6 +508,9 @@ def get_mesh_information_dict_for_structure(
     :
         Dictionary mapping cell IDs to mesh information
     """
+    if base_datadir is None:
+        base_datadir = get_datadir_path()
+
     file_path = base_datadir / f"structure_data/{structure_id}/mesh_information.dat"
     if not recalculate and file_path.exists():
         logger.info(f"Loading mesh information for {structure_id} from {file_path}")
@@ -572,6 +578,8 @@ def calc_scaled_distance_to_nucleus_surface_serial(
         A trimesh object representing the membrane surface
     mem_distances
         Pre-computed distances to membrane surface
+    nuc_query
+        Pre-computed ProximityQuery object for the nucleus mesh
 
     Returns
     -------
@@ -671,6 +679,8 @@ def calc_scaled_distance_to_nucleus_surface(
         A trimesh object representing the membrane surface
     mem_distances
         Pre-computed distances to membrane surface. If None, will be computed.
+    nuc_query
+        Pre-computed ProximityQuery object for the nucleus mesh. If None, will be computed.
 
     Returns
     -------
@@ -955,14 +965,14 @@ def _compute_all_interior_distances(
     logger.info(f"Took {formatted_time} to compute interior distances for {cell_id}")
 
     if save_dir is not None:
-        _SAVE_NAMES = {
+        _save_names = {
             "nucleus": "nuc_distances",
             "scaled_nucleus": "scaled_nuc_distances",
             "z": "z_distances",
             "scaled_z": "scaled_z_distances",
         }
         for dm, arr in arrays.items():
-            prefix = _SAVE_NAMES.get(dm)
+            prefix = _save_names.get(dm)
             if prefix is not None:
                 np.save(save_dir / f"{prefix}_{cell_id}.npy", arr)
 
@@ -1169,7 +1179,8 @@ def calculate_grid_distances(
         z_distances = interior_results.get("z")
         scaled_z_distances = interior_results.get("scaled_z")
 
-    # Raise error if any requested distance measure is still None at this point (should only happen if save_dir was None or files were missing when recalculate=False)
+    # Raise error if any requested distance measure is still None at this point
+    # (should only happen if save_dir was None or files were missing when recalculate=False)
     for key in distance_flags:
         if distance_flags[key] and locals().get(f"{key}_distances") is None:
             raise ValueError(f"{key} distances must be calculated or loaded first")

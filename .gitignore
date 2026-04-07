@@ -186,3 +186,6 @@ pyrightconfig.json
 # outputs and logs
 *.out
 *.err
+
+# archived items
+**/archive/**

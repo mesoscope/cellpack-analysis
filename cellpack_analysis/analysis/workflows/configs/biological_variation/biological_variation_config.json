@@ -3,13 +3,14 @@
     "structure_id": "SLC25A17",
     "packing_id": "peroxisome",
     "structure_name": "peroxisome",
+    "output_path": "biological_variation",
     "channel_map": {
         "baseline": "mean",
         "variable_count": "mean",
         "variable_size": "mean",
         "shape": "SLC25A17"
     },
-    "packing_output_folder": "packing_outputs/stochastic_variation_analysis/",
+    "packing_output_folder": "packing_outputs/biological_variation/",
     "baseline_mode": "baseline",
     "distance_measures": [
         "nearest",
@@ -18,11 +19,22 @@
         "z"
     ],
     "normalization": null,
-    "save_format": "svg",
-    "bandwidth": 0.4,
+    "save_format": "pdf",
     "recalculate": false,
+    "filter_minimum_distance": null,
+    "distribution_method": "kde",
+    "distance_pdf_params": {
+        "bandwidth": 0.4
+    },
+    "envelope_test_params": {
+        "bin_width": 0.1
+    },
     "analysis_steps": [
+        "load_common_data",
+        "calculate_distances",
         "plot_distance_distributions",
-        "run_emd_analysis"
-    ]
+        "run_emd_analysis",
+        "run_pairwise_envelope_test"
+    ],
+    "num_workers": 8
 }

@@ -22,14 +22,14 @@
 #       --use-struct-mesh Exclude structure volume from available space
 #       --use-mean-shape  Process mean-shape cell only
 #       --use-all-cells   Use all cells, including those outside the 8D sphere
-#       --recalculate     Recalculate even if output files already exist
+#       --recalculate     Recalculate even if output files already exist. Default: false (skips existing)
 #       --chunk-size      Override adaptive chunk size
 #   -v, --venv            Path to venv activate script (auto-detected from
 #                         VIRTUAL_ENV if omitted)
 #   -p, --partition       SLURM partition (default: cluster default)
 #   -t, --time            Wall-clock limit per array task (default: 02:00:00)
 #   -m, --mem             Memory per array task (default: 64G)
-#       --cpus            CPUs per array task (default: 4)
+#       --cpus            CPUs per array task (default: batch-size)
 #       --max-jobs        Max concurrent array tasks (default: 16)
 #       --job-name        SLURM job name prefix (default: cellpack_avspace)
 #       --orch-time       Wall-clock limit for orchestrator job (default: 1:00:00)
@@ -66,7 +66,7 @@ CHUNK_SIZE=""
 PARTITION=""
 TIME="02:00:00"
 MEM="64G"
-CPUS="4"
+CPUS="$BATCH_SIZE"
 MAX_JOBS=16
 JOB_NAME="cellpack_avspace"
 ORCH_TIME="1-00:00:00"
@@ -151,7 +151,8 @@ TS=$(date +"%Y%m%d")
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 LOG_DIR="${PROJECT_ROOT}/data/structure_data/${STRUCTURE_ID}/slurm_logs/${TS}"
-mkdir -p "$LOG_DIR"
+ORCH_LOG_DIR="${LOG_DIR}/orchestrator"
+mkdir -p "$ORCH_LOG_DIR"
 
 # ----------------------------  build orchestrator cmd  ----------------------
 ACTIVATE_CMD=""
@@ -207,8 +208,8 @@ ${ORCH_PARTITION_DIRECTIVE}
 #SBATCH --time=${ORCH_TIME}
 #SBATCH --mem=${ORCH_MEM}
 #SBATCH --cpus-per-task=1
-#SBATCH --output=${LOG_DIR}/${JOB_NAME}_orch_%j.out
-#SBATCH --error=${LOG_DIR}/${JOB_NAME}_orch_%j.err
+#SBATCH --output=${ORCH_LOG_DIR}/${JOB_NAME}_orch_%j.out
+#SBATCH --error=${ORCH_LOG_DIR}/${JOB_NAME}_orch_%j.err
 
 set -euo pipefail
 
@@ -254,12 +255,12 @@ if [[ -z "$ORCH_JOB_ID" || "$ORCH_JOB_ID" == "$ORCH_SUBMIT" ]]; then
 fi
 
 TRACKING_FILE="${PROJECT_ROOT}/data/structure_data/${STRUCTURE_ID}/slurm_staging/${TS}/job_tracking.json"
-ORCH_LOG="${LOG_DIR}/${JOB_NAME}_orch_${ORCH_JOB_ID}.out"
+ORCH_LOG="${ORCH_LOG_DIR}/${JOB_NAME}_orch_${ORCH_JOB_ID}.out"
 
 echo "Submitted orchestrator job: $ORCH_JOB_ID"
 echo "  Script: $ORCH_SCRIPT"
 echo "  Stdout: ${ORCH_LOG}"
-echo "  Stderr: ${LOG_DIR}/${JOB_NAME}_orch_${ORCH_JOB_ID}.err"
+echo "  Stderr: ${ORCH_LOG_DIR}/${JOB_NAME}_orch_${ORCH_JOB_ID}.err"
 echo ""
 echo "The orchestrator will discover meshes on the compute node and submit"
 echo "a worker array job automatically."

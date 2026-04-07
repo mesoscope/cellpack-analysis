@@ -143,6 +143,7 @@ DISTANCE_MEASURE_TITLES = {
     "nearest": "Nearest",
     "pairwise": "Pairwise",
     "scaled_nucleus": "Scaled Nucleus",
+    "scaled_z": "Scaled Z",
 }
 
 # Labels for grid distance files
@@ -151,6 +152,7 @@ GRID_DISTANCE_LABELS = {
     "membrane": "mem_grid_distances",
     "z": "z_grid_distances",
     "scaled_nucleus": "scaled_nuc_grid_distances",
+    "scaled_z": "scaled_z_grid_distances",
 }
 
 # Labels for normalization methods

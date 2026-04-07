@@ -20,7 +20,12 @@ from cellpack_analysis.lib.file_io import (
 )
 from cellpack_analysis.lib.get_structure_stats_dataframe import get_structure_stats_dataframe
 from cellpack_analysis.lib.mesh_tools import _compute_distances_for_points
-from cellpack_analysis.lib.stats import ripley_k
+from cellpack_analysis.lib.stats import (
+    make_r_grid_from_pooled,
+    normalize_pdf,
+    pointwise_envelope,
+    ripley_k,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -124,38 +129,6 @@ def _validate_modes_match(
     return True, ""
 
 
-def _validate_distance_dict(
-    data: dict[str, Any],
-    requested_modes: set[str],
-) -> tuple[bool, str]:
-    """
-    Validate cached distance dictionary.
-
-    Checks that modes match and data is not empty.
-
-    Parameters
-    ----------
-    data
-        Distance dictionary to validate
-    requested_modes
-        Set of modes that were requested
-
-    Returns
-    -------
-    :
-        Tuple of (is_valid, error_message)
-    """
-    cached_modes = set(data.keys())
-    is_valid, message = _validate_modes_match(cached_modes, requested_modes)
-    if not is_valid:
-        return False, message
-
-    if not all(len(v) > 0 for v in data.values()):
-        return False, "empty distance data"
-
-    return True, ""
-
-
 def _validate_single_mode_distance_dict(
     data: dict[str, Any],
 ) -> tuple[bool, str]:
@@ -204,6 +177,57 @@ def _validate_kde_dict(
         cached_modes.update(set(cell_dict.keys()) - {"available"})
 
     return _validate_modes_match(cached_modes, requested_modes)
+
+
+_PDF_DICT_REQUIRED_KEYS = {"xvals", "individual_curves", "mean_pdf", "envelope_lo", "envelope_hi"}
+
+
+def _validate_distance_pdfs_dict(
+    data: dict[str, Any],
+    distance_measures: list[str],
+    packing_modes: list[str],
+) -> tuple[bool, str]:
+    """
+    Validate a cached distance PDFs dictionary.
+
+    Checks that all requested distance measures and packing modes are present
+    and that each inner entry contains the required array keys.
+
+    Parameters
+    ----------
+    data
+        PDFs dictionary to validate.  Expected structure::
+
+            {distance_measure: {mode: {"xvals": …, "individual_curves": …,
+            "mean_pdf": …, "envelope_lo": …, "envelope_hi": …}}}
+
+    distance_measures
+        Distance measures that must be present.
+    packing_modes
+        Packing modes that must be present for every distance measure.
+
+    Returns
+    -------
+    :
+        Tuple of (is_valid, error_message)
+    """
+    requested_dms = set(distance_measures)
+    cached_dms = set(data.keys())
+    is_valid, message = _validate_modes_match(cached_dms, requested_dms)
+    if not is_valid:
+        return False, f"distance measures {message}"
+
+    requested_modes = set(packing_modes)
+    for dm, mode_dict in data.items():
+        is_valid, message = _validate_modes_match(set(mode_dict.keys()), requested_modes)
+        if not is_valid:
+            return False, f"{dm}: packing modes {message}"
+        for mode, inner in mode_dict.items():
+            missing = _PDF_DICT_REQUIRED_KEYS - set(inner.keys())
+            if missing:
+                return False, f"{dm}/{mode}: missing keys {missing}"
+
+    return True, ""
 
 
 def filter_invalids_from_distance_distribution_dict(
@@ -474,7 +498,7 @@ def _calculate_distances_for_cell_id(
     need_nearest = _needed("nearest")
 
     if need_pairwise:
-        # Build full N×N matrix; reuse for nearest-neighbor if also needed
+        # Build full NxN matrix; reuse for nearest-neighbor if also needed
         all_distances = cdist(positions, positions, metric="euclidean")
         pairwise_distances = squareform(all_distances)
         distance_dict["pairwise"] = filter_invalid_distances(pairwise_distances)
@@ -1541,8 +1565,9 @@ def log_pairwise_emd_central_tendencies(
 ) -> None:
     """Log central tendencies for all pairwise EMD comparisons.
 
-    For every ordered pair of packing modes (including intra-mode) and every
-    distance measure, report mean, std, median, and 95% CI of the EMD
+    For every ordered pair of packing modes (including intra-mode), reports
+    per-distance-measure stats followed by stats pooled across all distance
+    measures.  Each row reports mean, std, median, and 95% CI of the EMD
     distribution.
 
     Parameters
@@ -1563,22 +1588,17 @@ def log_pairwise_emd_central_tendencies(
         emd_logger = logger
 
     emd_logger.info("=== Pairwise EMD central tendencies ===")
-    for distance_measure in distance_measures:
-        emd_logger.info("Distance measure: %s", distance_measure)
-        for mode_i in packing_modes:
-            for mode_j in packing_modes:
+    for mode_i in packing_modes:
+        for mode_j in packing_modes:
+            # Build the mode-pair mask once; reuse across distance measures.
+            mode_pair_mask = (
+                (df_emd["packing_mode_1"] == mode_i) & (df_emd["packing_mode_2"] == mode_j)
+            ) | ((df_emd["packing_mode_1"] == mode_j) & (df_emd["packing_mode_2"] == mode_i))
+
+            # Per-distance-measure stats
+            for distance_measure in distance_measures:
                 sub_df = df_emd.loc[
-                    (df_emd["distance_measure"] == distance_measure)
-                    & (
-                        (
-                            (df_emd["packing_mode_1"] == mode_i)
-                            & (df_emd["packing_mode_2"] == mode_j)
-                        )
-                        | (
-                            (df_emd["packing_mode_1"] == mode_j)
-                            & (df_emd["packing_mode_2"] == mode_i)
-                        )
-                    ),
+                    (df_emd["distance_measure"] == distance_measure) & mode_pair_mask,
                     "emd",
                 ]
                 if sub_df.empty:
@@ -1589,15 +1609,36 @@ def log_pairwise_emd_central_tendencies(
                 lower = sub_df.quantile(0.025)
                 upper = sub_df.quantile(0.975)
                 emd_logger.info(
-                    "  %s vs %s: %.2f ± %.2f " "(median: %.2f, 95%% CI: %.2f, %.2f)",
+                    "  %s vs %s [%s]: %.2f ± %.2f (median: %.2f, 95%% CI: %.2f, %.2f)",
                     mode_i,
                     mode_j,
+                    distance_measure,
                     mean,
                     std,
                     median,
                     lower,
                     upper,
                 )
+
+            # Pooled stats across all distance measures
+            pooled_df = df_emd.loc[mode_pair_mask, "emd"]
+            if pooled_df.empty:
+                continue
+            mean = pooled_df.mean()
+            std = pooled_df.std()
+            median = pooled_df.median()
+            lower = pooled_df.quantile(0.025)
+            upper = pooled_df.quantile(0.975)
+            emd_logger.info(
+                "  %s vs %s [pooled]: %.2f ± %.2f (median: %.2f, 95%% CI: %.2f, %.2f)",
+                mode_i,
+                mode_j,
+                mean,
+                std,
+                median,
+                lower,
+                upper,
+            )
 
     remove_file_handler_from_logger(emd_logger, log_file_path)
 
@@ -1701,3 +1742,142 @@ def log_central_tendencies_for_distance_distributions(
             )
 
     remove_file_handler_from_logger(dist_logger, file_path)
+
+
+def compute_distance_pdfs(
+    all_distance_dict: dict[str, dict[str, dict[str, dict[str, np.ndarray]]]],
+    distance_measures: list[str],
+    packing_modes: list[str],
+    method: str = "histogram",
+    bin_width: float | dict[str, float] = 0.2,
+    bandwidth: float | str = "scott",
+    distance_limits: dict[str, tuple[float, float]] | None = None,
+    minimum_distance: float | None = 0,
+    envelope_alpha: float = 0.05,
+    n_grid: int = 100,
+    results_dir: Path | None = None,
+    recalculate: bool = False,
+    suffix: str = "",
+) -> dict[str, dict[str, dict[str, np.ndarray]]]:
+    """Compute distance PDFs on a shared r-grid for each measure and mode.
+
+    Produces a unified dictionary structure that can be consumed by
+    :func:`~cellpack_analysis.lib.visualization.plot_distance_distributions`
+    and :func:`~cellpack_analysis.lib.visualization.plot_pairwise_emd_matrix`
+    regardless of whether the underlying estimation used histograms or KDE.
+
+    Parameters
+    ----------
+    all_distance_dict
+        ``{distance_measure: {mode: {cell_id: {seed: distances}}}}``
+    distance_measures
+        Distance measures to compute PDFs for.
+    packing_modes
+        Packing modes to compute PDFs for.
+    method
+        ``"histogram"`` (Laplace-smoothed histogram) or ``"kde"`` (Gaussian KDE).
+    bin_width
+        Bin width for histogram method (single float or per-measure dict).
+        Also used to determine the r-grid spacing for KDE.
+    bandwidth
+        Bandwidth for ``gaussian_kde`` (only used when *method* = ``"kde"``).
+        Accepts ``"scott"``, ``"silverman"``, or a float.
+    distance_limits
+        Optional ``{measure: (lo, hi)}`` to fix the r-grid range.
+    minimum_distance
+        Distances below this value are dropped before PDF estimation.
+    envelope_alpha
+        Significance level for pointwise envelopes (default 0.05 → 95 %).
+    n_grid
+        Number of grid points when *bin_width* is ``None`` and
+        *distance_limits* is not provided.
+    results_dir
+        Path to results directory, or ``None`` to skip saving.
+    recalculate
+        If ``True``, recompute PDFs even if they already exist.
+    suffix
+        Suffix appended to the saved filename.
+
+
+    Returns
+    -------
+    :
+        ``{distance_measure: {mode: {"xvals": …, "individual_curves": …,
+        "mean_pdf": …, "envelope_lo": …, "envelope_hi": …}}}``
+    """
+    if method not in ("histogram", "kde"):
+        raise ValueError(f"method must be 'histogram' or 'kde', got {method!r}")
+
+    if results_dir is not None:
+        filename = f"distance_pdfs_{method}{suffix}.dat"
+        save_file_path = results_dir / filename
+        if not recalculate and save_file_path.exists():
+            cached_result = _load_pickle_with_validation(
+                save_file_path,
+                validator=lambda data: _validate_distance_pdfs_dict(
+                    data, distance_measures, packing_modes
+                ),
+                context="distance PDFs",
+            )
+            if cached_result is not None:
+                return cached_result
+
+    result: dict[str, dict[str, dict[str, np.ndarray]]] = {}
+
+    for dm in distance_measures:
+        distance_dict = all_distance_dict[dm]
+        measure_bin_width = bin_width[dm] if isinstance(bin_width, dict) else bin_width
+
+        # ── Shared r-grid across all modes ──
+        all_arrays: list[np.ndarray] = []
+        for mode in packing_modes:
+            for seed_dict in distance_dict[mode].values():
+                for arr in seed_dict.values():
+                    all_arrays.append(np.asarray(arr))
+
+        if distance_limits is not None and dm in distance_limits:
+            lo_lim, hi_lim = distance_limits[dm]
+            n_bins = int((hi_lim - lo_lim) / measure_bin_width) + 1
+            r_grid = np.linspace(lo_lim, hi_lim, n_bins)
+        else:
+            r_grid = make_r_grid_from_pooled(all_arrays, n=n_grid, bin_width=measure_bin_width)
+
+        bin_edges = np.concatenate(
+            [r_grid - measure_bin_width / 2, [r_grid[-1] + measure_bin_width / 2]]
+        )
+
+        result[dm] = {}
+        for mode in packing_modes:
+            curves: list[np.ndarray] = []
+            for seed_dict in tqdm(distance_dict[mode].values(), desc=f"Mode: {mode}"):
+                for distances in seed_dict.values():
+                    filtered = filter_invalid_distances(
+                        np.asarray(distances), minimum_distance=minimum_distance
+                    )
+
+                    if method == "histogram":
+                        raw_counts, _ = np.histogram(filtered, bins=bin_edges)
+                        smoothed = raw_counts.astype(float) + 1.0  # Laplace pseudocount
+                        pdf = normalize_pdf(r_grid, smoothed)
+                    else:  # kde
+                        if filtered.size <= 2:
+                            pdf = np.zeros_like(r_grid)
+                        else:
+                            kde = gaussian_kde(filtered, bw_method=bandwidth)
+                            pdf = kde.evaluate(r_grid)
+                            pdf = normalize_pdf(r_grid, pdf)
+
+                    curves.append(pdf)
+
+            curves_array = np.vstack(curves)
+            lo, hi, mu, _ = pointwise_envelope(curves_array, alpha=envelope_alpha)
+
+            result[dm][mode] = {
+                "xvals": r_grid,
+                "individual_curves": curves_array,
+                "mean_pdf": mu,
+                "envelope_lo": lo,
+                "envelope_hi": hi,
+            }
+
+    return result

@@ -1,5 +1,10 @@
 # %% [markdown]
-# # Cell metrics: logging and distribution plots
+"""
+# Cell metrics visualization
+ 
+This notebook calculates and visualizes cell-level metrics (e.g., volume, height, diameter, sphericity) for the membrane and nucleus of each cell in the dataset. It logs summary statistics for each structure and plots the distributions of these metrics across cells.
+"""
+
 import logging
 
 import matplotlib.pyplot as plt

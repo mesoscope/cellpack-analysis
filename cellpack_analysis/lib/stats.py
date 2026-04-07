@@ -419,8 +419,8 @@ def compute_rank_envelope(
     # Envelope bounds at depth k = min(u_obs, v_obs)
     k = max(min(u_obs, v_obs), 1)
     sorted_all = np.sort(all_curves, axis=0)  # shape (s, L)
-    lo = sorted_all[k - 1]       # k-th smallest at each grid point
-    hi = sorted_all[num_total - k]       # k-th largest at each grid point
+    lo = sorted_all[k - 1]  # k-th smallest at each grid point
+    hi = sorted_all[num_total - k]  # k-th largest at each grid point
 
     return lo, hi, p_val, sign, r_obs
 
@@ -590,12 +590,12 @@ def monte_carlo_per_cell(
         sim_curves_by_distance_measure = {}
         obs_curves_by_distance_measure = {}
         for distance_measure in distance_measures:
-            r = r_grids[distance_measure]
+            xvals = r_grids[distance_measure]
             # observed curve
-            obs_curve = ecdf(observed_distances.get(distance_measure, np.array([])), r)
+            obs_curve = ecdf(observed_distances.get(distance_measure, np.array([])), xvals)
             # simulation curves
             sim_mat = np.vstack(
-                [ecdf(rep.get(distance_measure, np.array([])), r) for rep in reps]
+                [ecdf(rep.get(distance_measure, np.array([])), xvals) for rep in reps]
             )  # (R, L)
 
             if envelope_type == "rank":
@@ -612,7 +612,7 @@ def monte_carlo_per_cell(
                 )
 
             per_distance_measure[distance_measure] = {
-                "r": r,
+                "xvals": xvals,
                 "obs_curve": obs_curve,
                 "lo": lo,
                 "hi": hi,
@@ -630,20 +630,18 @@ def monte_carlo_per_cell(
         _joint_r_grid_size = r_grid_size if joint_r_grid_size is None else joint_r_grid_size
         joint_u = np.linspace(0.0, 1.0, _joint_r_grid_size)
 
-        def _resample(curve: np.ndarray, r: np.ndarray, joint_u: np.ndarray) -> np.ndarray:
-            r_norm = r - r.min()
-            r_max = r_norm.max()
-            if r_max == 0:
+        def _resample(curve: np.ndarray, xvals: np.ndarray, joint_u: np.ndarray) -> np.ndarray:
+            xvals_norm = xvals - xvals.min()
+            xvals_max = xvals_norm.max()
+            if xvals_max == 0:
                 return np.interp(joint_u, np.array([0.0, 1.0]), np.array([curve[0], curve[-1]]))
-            return np.interp(joint_u, r_norm / r_max, curve)
+            return np.interp(joint_u, xvals_norm / xvals_max, curve)
 
         sim_concat = np.vstack(
             [
                 np.concatenate(
                     [
-                        _resample(
-                            sim_curves_by_distance_measure[dm][i], r_grids[dm], joint_u
-                        )
+                        _resample(sim_curves_by_distance_measure[dm][i], r_grids[dm], joint_u)
                         for dm in distance_measures
                     ],
                     axis=0,
@@ -866,6 +864,8 @@ def _pairwise_test_on_curves(
             ),
             50,
         )
+        if not isinstance(joint_r_grid_size, int) or joint_r_grid_size <= 0:
+            raise ValueError(f"Invalid joint_r_grid_size: {joint_r_grid_size}")
     joint_u = np.linspace(0.0, 1.0, joint_r_grid_size)
 
     def _resample(curve: np.ndarray, xvals: np.ndarray) -> np.ndarray:
@@ -919,20 +919,15 @@ def _pairwise_test_on_curves(
                     "qvals": qvals_arr,
                     "signs": signs_arr,
                     "rejection_fraction": float(rejected.mean()),
-                    "rejection_fraction_positive": float(
-                        (rejected & (signs_arr == 1)).mean()
-                    ),
-                    "rejection_fraction_negative": float(
-                        (rejected & (signs_arr == -1)).mean()
-                    ),
+                    "rejection_fraction_positive": float((rejected & (signs_arr == 1)).mean()),
+                    "rejection_fraction_negative": float((rejected & (signs_arr == -1)).mean()),
                 }
 
             # Joint test: resample each dm to equal-length grid for equal weight in hstack
             valid_dms = [
                 dm
                 for dm in distance_measures
-                if mode_curves[mode_b][dm].shape[0] >= 2
-                and mode_curves[mode_a][dm].shape[0] >= 1
+                if mode_curves[mode_b][dm].shape[0] >= 2 and mode_curves[mode_a][dm].shape[0] >= 1
             ]
             if not valid_dms:
                 logger.warning(
@@ -1046,7 +1041,7 @@ def pairwise_envelope_test(
         - 'per_distance_measure': {dm: {(mode_a, mode_b): {pvals, qvals, signs,
           rejection_fraction, rejection_fraction_positive, rejection_fraction_negative}}}
         - 'joint': {(mode_a, mode_b): {same keys as above}}
-        - 'envelopes': {mode: {dm: {r, lo, hi, mu, sd}}}
+        - 'envelopes': {mode: {dm: {xvals, lo, hi, mu, sd}}}
         - 'packing_modes', 'distance_measures', 'alpha', 'statistic', 'envelope_type': input params
     """
     logger = logging.getLogger(__name__)
@@ -1086,7 +1081,7 @@ def pairwise_envelope_test(
             curves = np.vstack([ecdf(arr, r_grid) for arr in arrays])
             lo, hi, mu, sd = pointwise_envelope(curves, alpha=alpha)
             envelopes[mode][dm] = {
-                "r": r_grid,
+                "xvals": r_grid,
                 "lo": lo,
                 "hi": hi,
                 "mu": mu,

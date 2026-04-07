@@ -1,5 +1,18 @@
 # %% [markdown]
-# # Visualize grid points
+"""
+# Create illustration of grid points and distance/weight maps
+
+This notebook creates an illustration of the grid points used for distance calculations and the resulting distance and weight maps for a single cell. It calculates distances from the nucleus, membrane, and z-axis, as well as a uniform random distance, and visualizes these distances and weights in 2D slices along different projection axes.
+
+Workflow steps:
+1. Load meshes for a selected cell.
+2. Generate a grid of points within the bounding box of the cell.
+3. For each projection axis (x, y, z):
+   a. Determine which grid points are inside the membrane and outside the nucleus.
+   b. Calculate distances from the nucleus, membrane, and z-axis for the relevant grid points.
+   c. Calculate weights based on these distances using an exponential decay function.
+4. Visualize the distance and weight maps for each distance type and projection axis.
+"""
 import logging
 import pickle
 
@@ -149,9 +162,7 @@ distance_configs = {
     },
     "z": {
         "labels": {"distance": "Z Distance (µm)", "weight": "Z Weight"},
-        "calc_func": lambda axis_data, nuc_mesh, mem_mesh: np.abs(
-            axis_data["grid_points_slice"][axis_data["inside_mem_outside_nuc"], 2]
-        ),
+        "calc_func": lambda axis_data, nuc_mesh, mem_mesh: mem_mesh.bounds[1][2] - axis_data["grid_points_slice"][axis_data["inside_mem_outside_nuc"], 2],
     },
     "rnd": {
         "labels": {"distance": "Uniform Distance", "weight": "Uniform Weight"},
@@ -227,7 +238,7 @@ for measure in ["weights", "distances"]:
                 continue
 
             grid_points_slice = grid_map[projection_axis]["grid_points_slice"]
-            inside_nuc = grid_map[projection_axis]["inside_nuc"]
+            # inside_nuc = grid_map[projection_axis]["inside_nuc"]
             inside_mem_outside_nuc = grid_map[projection_axis]["inside_mem_outside_nuc"]
             color_var = grid_map[projection_axis][measure][distance_type]
             cbar_label = grid_map[projection_axis]["labels"][measure][distance_type]
@@ -236,10 +247,10 @@ for measure in ["weights", "distances"]:
             fig, ax = plot_grid_points_slice(
                 grid_points_slice=grid_points_slice,
                 inside_mem_outside_nuc=inside_mem_outside_nuc,
-                inside_nuc=inside_nuc,
                 color_var=color_var,
                 cbar_label=cbar_label,
                 dot_size=dot_size,
+                # inside_nuc=inside_nuc,
                 projection_axis=projection_axis,
                 clim=(0, 1) if measure == "weights" else None,
             )

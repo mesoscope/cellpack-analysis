@@ -1,0 +1,78 @@
+{
+    "name": "distance_analysis",
+    "structure_id": "RAB5A",
+    "packing_id": "endosome",
+    "structure_name": "endosome",
+    "packing_output_folder": "packing_outputs/8d_sphere_data/rules_shape_with_seed/",
+    "output_path": "rules_shape_with_seed/endosome/",
+    "figures_dir": "figures/supp",
+    "logs_dir": "logs/supp",
+    "channel_map": {
+        "RAB5A": "RAB5A",
+        "random": "RAB5A",
+        "nucleus_gradient": "RAB5A",
+        "membrane_gradient": "RAB5A",
+        "apical_gradient": "RAB5A"
+    },
+    "distance_measures": [
+        "nearest",
+        "pairwise"
+    ],
+    "filter_minimum_distance": -1,
+    "num_workers": 8,
+    "distribution_method": "kde",
+    "recalculate": {
+        "load_common_data": false
+    },
+    "distance_pdf_params": {
+        "bandwidth": 0.2,
+        "bin_width": 0.01,
+        "minimum_distance": -1
+    },
+    "distance_plot_params": {
+        "figure_size": [
+            2.7,
+            3.4
+        ],
+        "plot_individual_curves": false
+    },
+    "emd_plot_params": {
+        "figure_size": [
+            2.7,
+            3.4
+        ]
+    },
+    "envelope_test_params": {
+        "bin_width": 0.2,
+        "statistic": "intdev"
+    },
+    "envelope_plot_params": {
+        "per_dm_matrix_figsize": [
+            7,
+            3.5
+        ],
+        "per_dm_matrix_font_scale": 1.1,
+        "joint_matrix_figsize": [
+            4,
+            1.8
+        ],
+        "joint_matrix_font_scale": 1.1,
+        "rejection_bars_figsize": [
+            4,
+            1.8
+        ],
+        "rejection_bars_font_scale": 1.1,
+        "overlaid_figsize": [
+            3,
+            1.5
+        ]
+    },
+    "analysis_steps": [
+        "load_common_data",
+        "calculate_distances",
+        "plot_distance_distributions",
+        "run_emd_analysis",
+        "run_pairwise_envelope_test",
+        "run_ks_analysis"
+    ]
+}
