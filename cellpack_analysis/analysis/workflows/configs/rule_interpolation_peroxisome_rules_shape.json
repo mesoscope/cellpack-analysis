@@ -1,0 +1,52 @@
+{
+    "name": "rule_interpolation",
+    "structure_id": "SLC25A17",
+    "packing_id": "peroxisome",
+    "structure_name": "peroxisome",
+    "packing_output_folder": "packing_outputs/8d_sphere_data/rules_shape_with_seed/",
+    "output_path": "interpolation_analysis/rules_shape_with_seed",
+    "channel_map": {
+        "SLC25A17": "SLC25A17",
+        "random": "SLC25A17",
+        "nucleus_gradient": "SLC25A17",
+        "membrane_gradient": "SLC25A17",
+        "apical_gradient": "SLC25A17"
+    },
+    "distribution_method": "kde",
+    "occupancy_distance_measures": [
+        "nucleus",
+        "z"
+    ],
+    "occupancy_params": {
+        "nucleus": {
+            "xlim": 6,
+            "ylim": 3.2,
+            "bandwidth": 0.2
+        },
+        "z": {
+            "xlim": 8,
+            "ylim": 2,
+            "bandwidth": 0.2
+        }
+    },
+    "rule_interpolation_cv_params": {
+        "n_folds": 5,
+        "random_state": 42,
+        "grouping": "combined",
+        "generate_packing_configs": false
+    },
+    "base_packing_config_path": "cellpack_analysis/packing/configs/rules_shape_with_seed/peroxisome.json",
+    "mode_to_gradient_name": {
+        "random": "uniform",
+        "nucleus_gradient": "nucleus_gradient",
+        "membrane_gradient": "membrane_gradient",
+        "apical_gradient": "apical_gradient"
+    },
+    "recalculate": false,
+    "analysis_steps": [
+        "load_common_data",
+        "calculate_distances",
+        "run_occupancy_analysis",
+        "run_rule_interpolation_cv"
+    ]
+}
