@@ -240,7 +240,7 @@ fig, axs = visualization.plot_pairwise_envelope_matrix(
     pairwise_results=pairwise_results,
     distance_measure=None,
     figures_dir=csr_figures_dir,
-    figsize=(7, 3),
+    figure_size=(7, 3),
     suffix=suffix,
     save_format=save_format,
 )

@@ -16,11 +16,11 @@ from matplotlib.ticker import MaxNLocator
 from scipy.stats import gaussian_kde
 from statannotations.Annotator import Annotator
 
-from cellpack_analysis.analysis.rule_interpolation import CVResult
 from cellpack_analysis.lib import label_tables
 from cellpack_analysis.lib.default_values import PIXEL_SIZE_IN_UM
 from cellpack_analysis.lib.distance import get_scaled_structure_radius
 from cellpack_analysis.lib.occupancy import get_kde_occupancy_for_single_cell
+from cellpack_analysis.lib.rule_interpolation import CVResult
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +104,7 @@ def plot_distance_distributions(
     envelope_alpha: float = 0.05,
     production_mode: bool = False,
     overlay_mean_and_std: bool = False,
+    figure_size: tuple[float, float] | None = None,
 ) -> tuple[Figure, dict[str, dict[int, Axes]]]:
     """Plot distance distributions from pre-computed PDFs.
 
@@ -137,6 +138,9 @@ def plot_distance_distributions(
         If ``True``, use production-quality figure sizing and shared axis labels.
     overlay_mean_and_std
         If ``True``, annotate the weighted mean distance on each panel.
+    figure_size
+        Optional custom figure size (width, height in inches). Overrides default and
+        production sizes when provided.
 
     Returns
     -------
@@ -150,6 +154,8 @@ def plot_distance_distributions(
     num_rows = len(packing_modes)
     num_cols = len(distance_measures)
     figsize = (4.6, 2.25) if production_mode else (num_cols * 1.2, num_rows * 0.5)
+    if figure_size is not None:
+        figsize = figure_size
     fig, axs = plt.subplots(
         num_rows,
         num_cols,
@@ -1272,7 +1278,7 @@ def plot_rejection_bars_by_sign(
         pos_values,
         color=pos_colors,
         alpha=0.9,
-        label="(obs > sim mean)",
+        label="(ref > test)",
     )
 
     # Negative bars (downward) - use desaturated colors
@@ -1281,7 +1287,7 @@ def plot_rejection_bars_by_sign(
         -neg_values,
         color=neg_colors,
         alpha=0.9,
-        label="(obs < sim mean)",
+        label="(ref < test)",
     )
 
     ax.axhline(y=0, color="black", linewidth=0.8)
@@ -1614,7 +1620,7 @@ def _draw_offdiagonal_cell(
 def plot_pairwise_envelope_matrix(
     pairwise_results: dict[str, Any],
     distance_measure: str | None = None,
-    figsize: tuple[float, float] | None = None,
+    figure_size: tuple[float, float] | None = None,
     font_scale: float = 1.0,
     cmap_name: str = "Reds",
     figures_dir: Path | None = None,
@@ -1636,7 +1642,7 @@ def plot_pairwise_envelope_matrix(
     distance_measure
         Specific distance measure to plot.  If ``None``, uses the joint
         (all-distance-measures-concatenated) test results.
-    figsize
+    figure_size
         Figure size ``(width, height)`` in inches; auto-scaled if not given
     font_scale
         Multiplicative scale factor applied to all font sizes.  Values > 1
@@ -1665,10 +1671,10 @@ def plot_pairwise_envelope_matrix(
     else:
         result_dict = pairwise_results["joint"]
 
-    if figsize is None:
-        figsize = (n, n)
+    if figure_size is None:
+        figure_size = (n, n)
 
-    fig, axs = plt.subplots(n, n, figsize=figsize, dpi=300, squeeze=False)
+    fig, axs = plt.subplots(n, n, figsize=figure_size, dpi=300, squeeze=False)
 
     base_cmap = plt.get_cmap(cmap_name)
     cmap_colors = base_cmap(np.linspace(0, 1, 256))
@@ -1827,8 +1833,8 @@ def plot_per_dm_rejection_bars(
             )
 
         legend_handles = [
-            mpatches.Patch(color="gray", alpha=0.9, label="obs > sim mean"),
-            mpatches.Patch(color="gray", alpha=0.4, label="obs < sim mean"),
+            mpatches.Patch(color="gray", alpha=0.9, label="Test distances greater"),
+            mpatches.Patch(color="gray", alpha=0.4, label="Test distances smaller"),
         ]
         ax.legend(
             handles=legend_handles,
@@ -1882,8 +1888,8 @@ def plot_per_dm_rejection_bars(
             for dm in distance_measures
         ]
         sign_handles = [
-            mpatches.Patch(color="gray", alpha=0.9, label="obs > sim mean"),
-            mpatches.Patch(color="gray", alpha=0.4, label="obs < sim mean"),
+            mpatches.Patch(color="gray", alpha=0.9, label="Test distances greater"),
+            mpatches.Patch(color="gray", alpha=0.4, label="Test distances smaller"),
         ]
         ax.legend(
             handles=dm_handles + sign_handles,
@@ -2147,7 +2153,7 @@ def plot_pairwise_emd_matrix(
     xlim: float | None = None,
     ylim: float | None = None,
     envelope_alpha: float = 0.05,
-    figsize: tuple[float, float] | None = None,
+    figure_size: tuple[float, float] | None = None,
     font_scale: float = 1.0,
     figures_dir: Path | None = None,
     suffix: str = "",
@@ -2199,7 +2205,7 @@ def plot_pairwise_emd_matrix(
         Upper y-axis limit for occupancy ratio panels (occupancy mode only).
     envelope_alpha
         Significance level for pointwise envelope shading.
-    figsize
+    figure_size
         Figure size in inches; auto-scaled from *n* when ``None``.
     font_scale
         Multiplicative scale factor applied to all font sizes.  Values > 1
@@ -2228,11 +2234,11 @@ def plot_pairwise_emd_matrix(
 
     use_occupancy = binned_occupancy_dict is not None
     n = len(packing_modes)
-    if figsize is None:
-        figsize = (n * 1.8, n * 1.6)
+    if figure_size is None:
+        figure_size = (n * 1.8, n * 1.6)
 
     plt.rcParams.update({"font.size": 6 * font_scale})
-    fig, axs = plt.subplots(n, n, figsize=figsize, dpi=300, squeeze=False)
+    fig, axs = plt.subplots(n, n, figsize=figure_size, dpi=300, squeeze=False)
 
     dm_emd = df_emd.query(f"distance_measure == '{distance_measure}'")
     emd_xmax = dm_emd["emd"].quantile(0.99) * 1.1 if len(dm_emd) > 0 else 1.0

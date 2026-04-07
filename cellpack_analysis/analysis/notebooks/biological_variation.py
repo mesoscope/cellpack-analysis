@@ -213,7 +213,7 @@ for dm in distance_measures:
         normalization=normalization,
         figures_dir=emd_figures_dir,
         suffix=suffix,
-        figsize=(4.5, 3),
+        figure_size=(4.5, 3),
         font_scale=0.8,
         save_format=save_format,
     )
@@ -239,7 +239,7 @@ pairwise_results = pairwise_envelope_test(
     packing_modes=packing_modes,
     distance_measures=distance_measures,
     alpha=0.05,
-    bin_width=0.2,
+    bin_width=0.1,
     statistic="intdev",
 )
 # %% [markdown]
@@ -253,7 +253,7 @@ for dm in distance_measures:
         figures_dir=envelope_figures_dir,
         suffix=suffix,
         save_format=save_format,
-        figsize=(3.5, 2.5),
+        figure_size=(3.5, 2.5),
         font_scale=0.8,
     )
     # break
@@ -266,7 +266,7 @@ fig, axs = visualization.plot_pairwise_envelope_matrix(
     figures_dir=envelope_figures_dir,
     suffix=suffix,
     save_format=save_format,
-    figsize=(7, 3.5),
+    figure_size=(7, 3.5),
     font_scale=1.1,
 )
 # %% [markdown]

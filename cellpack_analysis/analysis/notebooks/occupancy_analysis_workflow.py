@@ -110,7 +110,7 @@ all_positions = get_position_data_from_outputs(
     results_dir=results_dir,
     packing_output_folder=packing_output_folder,
     ingredient_key=f"membrane_interior_{STRUCTURE_NAME}",
-    recalculate=False,
+    recalculate=True,
 )
 # %% [markdown]
 # ### Get mesh information
@@ -119,7 +119,7 @@ for structure_id in all_structures:
     mesh_information_dict = get_mesh_information_dict_for_structure(
         structure_id=structure_id,
         base_datadir=base_datadir,
-        recalculate=False,
+        recalculate=True,
     )
     combined_mesh_information_dict[structure_id] = mesh_information_dict
 # %% [markdown]
@@ -132,7 +132,7 @@ all_distance_dict_raw = distance.get_distance_dictionary(
     mesh_information_dict=combined_mesh_information_dict,
     channel_map=channel_map,
     results_dir=results_dir,
-    recalculate=False,
+    recalculate=True,
     num_workers=8,
 )
 all_distance_dict_filtered = distance.filter_invalids_from_distance_distribution_dict(
@@ -171,7 +171,7 @@ for dm in occupancy_distance_measures:
         mesh_information_dict=combined_mesh_information_dict,
         channel_map=channel_map,
         save_dir=results_dir,
-        recalculate=False,
+        recalculate=True,
         suffix=suffix,
         normalization=normalization,
         distance_measure=dm,
@@ -188,7 +188,7 @@ for dm in occupancy_distance_measures:
         distance_kde_dict=distance_kde_dict[dm],
         channel_map=channel_map,
         results_dir=results_dir,
-        recalculate=False,
+        recalculate=True,
         suffix=suffix,
         distance_measure=dm,
         bandwidth=occupancy_params[dm]["bandwidth"],
@@ -242,7 +242,7 @@ occupancy_emd_df = occupancy.get_occupancy_emd_df(
     packing_modes=packing_modes,
     distance_measures=occupancy_distance_measures,
     results_dir=results_dir,
-    recalculate=False,
+    recalculate=True,
     suffix=suffix,
 )
 # %% [markdown]
@@ -276,12 +276,6 @@ for dm in occupancy_distance_measures:
     )
 # %% [markdown]
 # ## Pairwise envelope test on occupancy ratios
-x_max_per_dm = {dm: float(occupancy_params[dm]["xlim"]) for dm in occupancy_distance_measures}
-# x_max_per_dm = occupancy.compute_x_max_per_dm(
-#     combined_occupancy_dict=combined_occupancy_dict,
-#     percentile=95,
-#     packing_modes=packing_modes,
-# )
 # %% [markdown]
 # ### Run pairwise envelope test on occupancy ratio curves
 occ_pairwise_results = occupancy.pairwise_envelope_test_occupancy(
@@ -290,7 +284,6 @@ occ_pairwise_results = occupancy.pairwise_envelope_test_occupancy(
     alpha=0.05,
     statistic="intdev",
     comparison_type="ecdf",
-    x_max_per_dm=x_max_per_dm,
 )
 # %% [markdown]
 # ### Plot pairwise occupancy envelope matrix per distance measure
@@ -303,7 +296,7 @@ for dm in occupancy_distance_measures:
         figures_dir=envelope_figures_dir,
         suffix=suffix,
         save_format=save_format,
-        figsize=(3.5, 2.5),
+        figure_size=(3.5, 2.5),
         font_scale=0.8,
     )
 # %% [markdown]
@@ -314,7 +307,7 @@ fig_env_joint, axs_env_joint = visualization.plot_pairwise_envelope_matrix(
     figures_dir=envelope_figures_dir,
     suffix=suffix,
     save_format=save_format,
-    figsize=(7, 3.5),
+    figure_size=(7, 3.5),
     font_scale=1.1,
 )
 # %% [markdown]
@@ -359,8 +352,7 @@ for ref_mode in packing_modes:
         baseline_mode=ref_mode,
         significance_level=ks_significance_level,
         save_dir=None,
-        recalculate=False,
-        x_max_per_dm=x_max_per_dm,
+        recalculate=True,
     )
     occ_ks_df["baseline_mode"] = ref_mode
     pairwise_occ_ks_dfs.append(occ_ks_df)

@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from cellpack_analysis.analysis.rule_interpolation import (
+from cellpack_analysis.lib.rule_interpolation import (
     CVResult,
     FitResult,
     _compute_mean_occupancy_from_cells,
@@ -326,21 +326,28 @@ class TestRunRuleInterpolationCV:
     def test_returns_cv_result(self):
         occ = _make_occupancy_dict("real", ["random", "nucleus"], n_baseline_cells=12)
         channel_map = _make_channel_map("real", ["random", "nucleus"])
-        cv = run_rule_interpolation_cv(occ, channel_map, "real", n_folds=3, random_state=42)
+        cv = run_rule_interpolation_cv(
+            occ, channel_map, "real", n_folds=3, n_repeats=1, random_state=42
+        )
         assert isinstance(cv, CVResult)
         assert cv.n_folds == 3
+        assert cv.n_repeats == 1
 
     def test_correct_number_of_folds(self):
         occ = _make_occupancy_dict("real", ["random"], n_baseline_cells=10)
         channel_map = _make_channel_map("real", ["random"])
-        cv = run_rule_interpolation_cv(occ, channel_map, "real", n_folds=4, random_state=0)
+        cv = run_rule_interpolation_cv(
+            occ, channel_map, "real", n_folds=4, n_repeats=1, random_state=0
+        )
         assert len(cv.folds) == 4
 
     def test_train_test_splits_partition_all_cells(self):
         n_cells = 15
         occ = _make_occupancy_dict("real", ["random"], n_baseline_cells=n_cells)
         channel_map = _make_channel_map("real", ["random"])
-        cv = run_rule_interpolation_cv(occ, channel_map, "real", n_folds=5, random_state=1)
+        cv = run_rule_interpolation_cv(
+            occ, channel_map, "real", n_folds=5, n_repeats=1, random_state=1
+        )
         all_cell_ids = _get_baseline_cell_ids(occ, "real")
         for fold in cv.folds:
             # Train + test = all cells
@@ -354,7 +361,9 @@ class TestRunRuleInterpolationCV:
             "real", ["random", "nucleus"], n_baseline_cells=10, distance_measures=["nucleus", "z"]
         )
         channel_map = _make_channel_map("real", ["random", "nucleus"])
-        cv = run_rule_interpolation_cv(occ, channel_map, "real", n_folds=3, random_state=5)
+        cv = run_rule_interpolation_cv(
+            occ, channel_map, "real", n_folds=3, n_repeats=1, random_state=5
+        )
         for dm in ["nucleus", "z"]:
             assert dm in cv.aggregated_coefficients_individual
             for mode in ["random", "nucleus"]:
@@ -369,17 +378,17 @@ class TestRunRuleInterpolationCV:
         occ = _make_occupancy_dict("real", ["random"], n_baseline_cells=3)
         channel_map = _make_channel_map("real", ["random"])
         with pytest.raises(ValueError, match="folds"):
-            run_rule_interpolation_cv(occ, channel_map, "real", n_folds=5)
+            run_rule_interpolation_cv(occ, channel_map, "real", n_folds=5, n_repeats=1)
 
     def test_cache_round_trip(self, tmp_path):
         occ = _make_occupancy_dict("real", ["random"], n_baseline_cells=10)
         channel_map = _make_channel_map("real", ["random"])
         cv1 = run_rule_interpolation_cv(
-            occ, channel_map, "real", n_folds=3, random_state=7, results_dir=tmp_path
+            occ, channel_map, "real", n_folds=3, n_repeats=1, random_state=7, results_dir=tmp_path
         )
         # Second call should load from cache
         cv2 = run_rule_interpolation_cv(
-            occ, channel_map, "real", n_folds=3, random_state=7, results_dir=tmp_path
+            occ, channel_map, "real", n_folds=3, n_repeats=1, random_state=7, results_dir=tmp_path
         )
         assert cv1.n_folds == cv2.n_folds
         assert cv1.baseline_mode == cv2.baseline_mode
@@ -388,7 +397,7 @@ class TestRunRuleInterpolationCV:
         occ = _make_occupancy_dict("real", ["random"], n_baseline_cells=10)
         channel_map = _make_channel_map("real", ["random"])
         _ = run_rule_interpolation_cv(
-            occ, channel_map, "real", n_folds=3, random_state=7, results_dir=tmp_path
+            occ, channel_map, "real", n_folds=3, n_repeats=1, random_state=7, results_dir=tmp_path
         )
         # Corrupt the cache
         cache_path = tmp_path / "rule_interpolation_cv.pkl"
@@ -399,6 +408,7 @@ class TestRunRuleInterpolationCV:
             channel_map,
             "real",
             n_folds=3,
+            n_repeats=1,
             random_state=7,
             results_dir=tmp_path,
             recalculate=True,
@@ -408,7 +418,9 @@ class TestRunRuleInterpolationCV:
     def test_test_mse_shape_matches_test_cell_count(self):
         occ = _make_occupancy_dict("real", ["random"], n_baseline_cells=12)
         channel_map = _make_channel_map("real", ["random"])
-        cv = run_rule_interpolation_cv(occ, channel_map, "real", n_folds=4, random_state=2)
+        cv = run_rule_interpolation_cv(
+            occ, channel_map, "real", n_folds=4, n_repeats=1, random_state=2
+        )
         for fold in cv.folds:
             n_test = len(fold.test_cell_ids)
             for scope in ("individual", "joint"):
@@ -421,11 +433,48 @@ class TestRunRuleInterpolationCV:
     def test_reproducibility_with_same_seed(self):
         occ = _make_occupancy_dict("real", ["random", "nucleus"], n_baseline_cells=12)
         channel_map = _make_channel_map("real", ["random", "nucleus"])
-        cv1 = run_rule_interpolation_cv(occ, channel_map, "real", n_folds=3, random_state=99)
-        cv2 = run_rule_interpolation_cv(occ, channel_map, "real", n_folds=3, random_state=99)
+        cv1 = run_rule_interpolation_cv(
+            occ, channel_map, "real", n_folds=3, n_repeats=1, random_state=99
+        )
+        cv2 = run_rule_interpolation_cv(
+            occ, channel_map, "real", n_folds=3, n_repeats=1, random_state=99
+        )
         for f1, f2 in zip(cv1.folds, cv2.folds, strict=True):
             assert f1.train_cell_ids == f2.train_cell_ids
             assert f1.test_cell_ids == f2.test_cell_ids
+
+    def test_n_repeats_produces_correct_fold_count(self):
+        occ = _make_occupancy_dict("real", ["random"], n_baseline_cells=12)
+        channel_map = _make_channel_map("real", ["random"])
+        cv = run_rule_interpolation_cv(
+            occ, channel_map, "real", n_folds=3, n_repeats=2, random_state=0
+        )
+        assert cv.n_repeats == 2
+        assert len(cv.folds) == 3 * 2
+
+    def test_repeat_idx_values(self):
+        occ = _make_occupancy_dict("real", ["random"], n_baseline_cells=12)
+        channel_map = _make_channel_map("real", ["random"])
+        n_repeats = 3
+        cv = run_rule_interpolation_cv(
+            occ, channel_map, "real", n_folds=2, n_repeats=n_repeats, random_state=1
+        )
+        for fold in cv.folds:
+            assert 0 <= fold.repeat_idx < n_repeats
+
+    def test_reproducibility_with_repeats(self):
+        occ = _make_occupancy_dict("real", ["random", "nucleus"], n_baseline_cells=12)
+        channel_map = _make_channel_map("real", ["random", "nucleus"])
+        cv1 = run_rule_interpolation_cv(
+            occ, channel_map, "real", n_folds=3, n_repeats=2, random_state=7
+        )
+        cv2 = run_rule_interpolation_cv(
+            occ, channel_map, "real", n_folds=3, n_repeats=2, random_state=7
+        )
+        for f1, f2 in zip(cv1.folds, cv2.folds, strict=True):
+            assert f1.train_cell_ids == f2.train_cell_ids
+            assert f1.test_cell_ids == f2.test_cell_ids
+            assert f1.repeat_idx == f2.repeat_idx
 
 
 # ---------------------------------------------------------------------------
@@ -437,22 +486,28 @@ class TestSummarizeCVResults:
     def test_returns_dataframe(self):
         occ = _make_occupancy_dict("real", ["random"], n_baseline_cells=10)
         channel_map = _make_channel_map("real", ["random"])
-        cv = run_rule_interpolation_cv(occ, channel_map, "real", n_folds=3, random_state=0)
+        cv = run_rule_interpolation_cv(
+            occ, channel_map, "real", n_folds=3, n_repeats=1, random_state=0
+        )
         df = summarize_cv_results(cv)
         assert isinstance(df, pd.DataFrame)
 
     def test_expected_columns(self):
         occ = _make_occupancy_dict("real", ["random"], n_baseline_cells=10)
         channel_map = _make_channel_map("real", ["random"])
-        cv = run_rule_interpolation_cv(occ, channel_map, "real", n_folds=3, random_state=0)
+        cv = run_rule_interpolation_cv(
+            occ, channel_map, "real", n_folds=3, n_repeats=1, random_state=0
+        )
         df = summarize_cv_results(cv)
-        for col in ("fold_idx", "scope", "distance_measure", "split", "mse"):
+        for col in ("repeat_idx", "fold_idx", "scope", "distance_measure", "split", "mse"):
             assert col in df.columns
 
     def test_contains_both_train_and_test_rows(self):
         occ = _make_occupancy_dict("real", ["random"], n_baseline_cells=10)
         channel_map = _make_channel_map("real", ["random"])
-        cv = run_rule_interpolation_cv(occ, channel_map, "real", n_folds=3, random_state=0)
+        cv = run_rule_interpolation_cv(
+            occ, channel_map, "real", n_folds=3, n_repeats=1, random_state=0
+        )
         df = summarize_cv_results(cv)
         assert "train" in df["split"].values
         assert "test" in df["split"].values
@@ -460,7 +515,9 @@ class TestSummarizeCVResults:
     def test_all_mse_nonneg(self):
         occ = _make_occupancy_dict("real", ["random", "nucleus"], n_baseline_cells=12)
         channel_map = _make_channel_map("real", ["random", "nucleus"])
-        cv = run_rule_interpolation_cv(occ, channel_map, "real", n_folds=3, random_state=3)
+        cv = run_rule_interpolation_cv(
+            occ, channel_map, "real", n_folds=3, n_repeats=1, random_state=3
+        )
         df = summarize_cv_results(cv)
         assert (df["mse"] >= 0).all()
 
@@ -491,7 +548,9 @@ class TestGenerateMixedRulePackingConfigs:
     def _make_cv_result(self) -> CVResult:
         occ = _make_occupancy_dict("real", ["nucleus_gradient", "random"], n_baseline_cells=10)
         channel_map = _make_channel_map("real", ["nucleus_gradient", "random"])
-        return run_rule_interpolation_cv(occ, channel_map, "real", n_folds=3, random_state=11)
+        return run_rule_interpolation_cv(
+            occ, channel_map, "real", n_folds=3, n_repeats=1, random_state=11
+        )
 
     def test_writes_one_config_per_fold_plus_aggregated(self, tmp_path):
         cv = self._make_cv_result()

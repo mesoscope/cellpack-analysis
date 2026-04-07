@@ -1,26 +1,28 @@
 {
     "name": "distance_analysis",
-    "structure_id": "SLC25A17",
-    "packing_id": "peroxisome",
-    "structure_name": "peroxisome",
+    "structure_id": "RAB5A",
+    "packing_id": "endosome",
+    "structure_name": "endosome",
     "packing_output_folder": "packing_outputs/8d_sphere_data/rules_shape_with_seed/",
-    "output_path": "rules_shape_with_seed/peroxisome/",
+    "output_path": "rules_shape_with_seed/endosome/",
+    "figures_dir": "figures/supp",
+    "logs_dir": "logs/supp",
     "channel_map": {
-        "SLC25A17": "SLC25A17",
-        "random": "SLC25A17",
-        "nucleus_gradient": "SLC25A17",
-        "membrane_gradient": "SLC25A17",
-        "apical_gradient": "SLC25A17"
+        "RAB5A": "RAB5A",
+        "random": "RAB5A",
+        "nucleus_gradient": "RAB5A",
+        "membrane_gradient": "RAB5A",
+        "apical_gradient": "RAB5A"
     },
     "distance_measures": [
-        "nucleus",
-        "z"
+        "nearest",
+        "pairwise"
     ],
     "filter_minimum_distance": -1,
     "num_workers": 8,
     "distribution_method": "kde",
     "recalculate": {
-        "load_common_data": true
+        "load_common_data": false
     },
     "distance_pdf_params": {
         "bandwidth": 0.2,
@@ -31,7 +33,8 @@
         "figure_size": [
             2.7,
             3.4
-        ]
+        ],
+        "plot_individual_curves": false
     },
     "emd_plot_params": {
         "figure_size": [

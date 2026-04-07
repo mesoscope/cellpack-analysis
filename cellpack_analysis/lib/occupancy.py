@@ -387,7 +387,6 @@ def get_occupancy_ks_test_df(
     significance_level: float = 0.05,
     save_dir: Path | None = None,
     recalculate: bool = True,
-    x_max_per_dm: dict[str, float] | None = None,
 ) -> pd.DataFrame:
     """
     Perform KS test between distance distributions of different packing modes and combine results.
@@ -408,14 +407,6 @@ def get_occupancy_ks_test_df(
         Directory to save the results
     recalculate
         Whether to recalculate even if results exist
-    x_max_per_dm
-        Optional per-distance-measure upper limit on the occupancy array used
-        for the KS test.  For each cell the per-cell ``xvals`` (from
-        ``individual[cell_id]["xvals"]``) are read and only occupancy values
-        at positions ``<= x_max`` are kept before calling ``ks_2samp``.  This
-        excludes the flat ECDF tail at large distances that reduces test power.
-        Build automatically with :func:`compute_x_max_per_dm`, or supply
-        ``{"nucleus": 6.0, "z": 8.0}`` directly.  ``None`` uses all bins.
 
     Returns
     -------
@@ -451,14 +442,6 @@ def get_occupancy_ks_test_df(
                 continue
             occupancy_1 = occupancy_dict[baseline_mode]["individual"][cell_id]["occupancy"]
             occupancy_2 = occupancy_dict[mode]["individual"][cell_id]["occupancy"]
-            if x_max_per_dm is not None and distance_measure in x_max_per_dm:
-                x_max = x_max_per_dm[distance_measure]
-                xvals_1 = occupancy_dict[baseline_mode]["individual"][cell_id].get("xvals")  # type: ignore[union-attr]
-                xvals_2 = occupancy_dict[mode]["individual"][cell_id].get("xvals")  # type: ignore[union-attr]
-                if xvals_1 is not None:
-                    occupancy_1 = occupancy_1[np.asarray(xvals_1) <= x_max]
-                if xvals_2 is not None:
-                    occupancy_2 = occupancy_2[np.asarray(xvals_2) <= x_max]
             ks_result = ks_2samp(occupancy_1, occupancy_2)
             ks_stat, p_value = ks_result.statistic, ks_result.pvalue  # type: ignore
             record_list.append(
@@ -1483,7 +1466,6 @@ def pairwise_envelope_test_occupancy(
     envelope_type: EnvelopeType = "pointwise",
     joint_r_grid_size: int | None = None,
     comparison_type: Literal["ratio", "ecdf"] = "ratio",
-    x_max_per_dm: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     """
     Run a pairwise Monte Carlo envelope test on per-cell occupancy ratio curves.
@@ -1531,13 +1513,6 @@ def pairwise_envelope_test_occupancy(
         space before comparison.  The ECDF treats the bin-wise ratio values as
         a 1-D sample and evaluates the cumulative distribution on a shared grid
         spanning the range of all ratio values for that distance measure.
-    x_max_per_dm
-        Optional per-distance-measure upper limit on the x-axis used for the
-        test.  Bins whose ``xvals`` exceed the limit are dropped before any
-        statistical comparison or envelope construction.  This prevents the
-        flat ECDF tail at large distances from diluting test power.
-        Build automatically with :func:`compute_x_max_per_dm`, or supply
-        ``{"nucleus": 6.0, "z": 8.0}`` directly.  ``None`` uses all bins.
 
     Returns
     -------
@@ -1589,13 +1564,6 @@ def pairwise_envelope_test_occupancy(
             # Replace NaN with 0 for stacking/envelope operations
             arr = np.where(np.isnan(arr), 0.0, arr)
 
-            # Trim to x_max before any envelope or test computation so the flat
-            # ECDF tail at large distances does not dilute statistical power.
-            if x_max_per_dm is not None and dm in x_max_per_dm:
-                mask = xvals <= x_max_per_dm[dm]
-                xvals = xvals[mask]
-                arr = arr[:, mask]
-
             mode_xvals[mode][dm] = xvals
             mode_curves[mode][dm] = arr
 
@@ -1628,9 +1596,7 @@ def pairwise_envelope_test_occupancy(
                 continue
             # Use the same number of grid points as the distance bins
             n_grid = len(mode_xvals[packing_modes[0]][dm])
-            ratio_grid = np.linspace(
-                np.nanmin(all_ratio_vals), np.nanmax(all_ratio_vals), max(n_grid, 2)
-            )
+            ratio_grid = np.linspace(0, np.nanpercentile(all_ratio_vals, 95), max(n_grid, 2))
             for mode in packing_modes:
                 arr = mode_curves[mode][dm]
                 if arr.shape[0] > 0:

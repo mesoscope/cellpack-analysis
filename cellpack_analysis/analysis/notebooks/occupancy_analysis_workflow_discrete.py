@@ -298,7 +298,7 @@ fig_env_joint, axs_env_joint = visualization.plot_pairwise_envelope_matrix(
     pairwise_results=occ_pairwise_results,
     distance_measure=None,
     figures_dir=envelope_figures_dir,
-    figsize=(5, 3),
+    figure_size=(5, 3),
     suffix=suffix,
     save_format=save_format,
 )

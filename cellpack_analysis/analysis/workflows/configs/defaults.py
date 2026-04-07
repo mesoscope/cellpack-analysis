@@ -16,10 +16,14 @@ SAVE_FORMAT = "pdf"
 BANDWIDTH = 0.2
 """Default bandwidth for KDE."""
 
-DISTRIBUTION_METHOD = "discrete"
+DISTRIBUTION_METHOD = "kde"
 """Default method for plotting distance distributions and occupancy.
 Options: "discrete" (histogram-based) or "kde" (kernel density estimate).
-Note: "discrete" is the default; set to "kde" in your config to use the old KDE behaviour."""
+Note: "kde" is the default; set to "discrete" in your config to use the histogram-based approach."""
+
+FILTER_MINIMUM_DISTANCE: float | None = None
+"""Minimum distance passed to ``filter_invalids_from_distance_distribution_dict``.
+Set to ``-1`` in configs that use KDE to allow small negative distances."""
 
 DISTANCE_MEASURES = [
     "nearest",
@@ -42,8 +46,8 @@ OCCUPANCY_DISTANCE_MEASURES = [
 ]
 """Default distance measures for occupancy analysis."""
 OCCUPANCY_PARAMS = {
-    "nucleus": {"xlim": 6, "ylim": 3, "bandwidth": 0.2},
-    "z": {"xlim": 8, "ylim": 2, "bandwidth": 0.2},
+    "nucleus": {"xlim": 6, "ylim": 3, "bandwidth": 0.2, "num_points": 250, "x_min": 0},
+    "z": {"xlim": 8, "ylim": 2, "bandwidth": 0.2, "num_points": 250, "x_min": 0},
     "fig_params": {"dpi": 300, "figsize": [3.5, 2.5]},
     "plot_individual": True,
     "show_legend": True,
@@ -86,6 +90,7 @@ RECALCULATE = {
     "run_occupancy_analysis": False,
     "run_occupancy_emd_analysis": False,
     "run_occupancy_pairwise_envelope_test": False,
+    "run_occupancy_ks_analysis": False,
     "run_occupancy_interpolation_analysis": False,
     "run_rule_interpolation_cv": False,
 }
@@ -93,7 +98,9 @@ RECALCULATE = {
 
 RULE_INTERPOLATION_CV_PARAMS: dict = {
     "n_folds": 5,
+    "n_repeats": 10,
     "random_state": None,
+    "grouping": "combined",
     "generate_packing_configs": False,
     "packing_config_scope": "joint",
     "cv_use_slurm": True,
@@ -102,3 +109,37 @@ RULE_INTERPOLATION_CV_PARAMS: dict = {
 
 NUM_WORKERS = 16
 """Default number of workers for parallel processing."""
+
+DISTANCE_PDF_PARAMS: dict = {
+    "bandwidth": 0.2,
+    "envelope_alpha": 0.05,
+    "bin_width": 0.01,
+}
+"""Extra kwargs forwarded to ``distance.compute_distance_pdfs``."""
+
+DISTANCE_PLOT_PARAMS: dict = {
+    "plot_individual_curves": False,
+    "envelope_alpha": 0.05,
+    "production_mode": False,
+    "overlay_mean_and_std": False,
+}
+"""Extra kwargs forwarded to ``visualization.plot_distance_distributions``."""
+
+EMD_PLOT_PARAMS: dict = {
+    "figure_size": [3.5, 3.5],
+    "minimum_distance": 0,
+}
+"""Extra kwargs forwarded to ``visualization.plot_pairwise_emd_matrix``."""
+
+ENVELOPE_PLOT_PARAMS: dict = {
+    "per_dm_matrix_figsize": [3.5, 2.5],
+    "per_dm_matrix_font_scale": 0.8,
+    "joint_matrix_figsize": [7, 3.5],
+    "joint_matrix_font_scale": 1.1,
+    "rejection_bars_figsize": [3.5, 2],
+    "rejection_bars_font_scale": 1.1,
+    "overlaid_figsize": [3, 1.5],
+}
+"""Figsize / font-scale kwargs for envelope-test visualizations.
+Shared by both ``_run_pairwise_envelope_test`` and
+``_run_occupancy_pairwise_envelope_test``."""

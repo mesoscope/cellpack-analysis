@@ -243,15 +243,14 @@ class TestGetKdeOccupancyDictUnifiedFormat:
             recalculate=True,
         )
         combined = result["real"]["combined"]
+        # KDE path produces mean-of-per-cell occupancy; pooled KDE and pooled
+        # PDFs are not computed (those live on the binned/discrete path).
         expected_keys = {
             "xvals",
             "occupancy",
-            "occupancy_pooled",
             "std_occupancy",
             "envelope_lo",
             "envelope_hi",
-            "pdf_occupied",
-            "pdf_available",
             "all_occupancy",
         }
         assert expected_keys == set(combined.keys())
@@ -270,7 +269,7 @@ class TestGetKdeOccupancyDictUnifiedFormat:
         assert combined["all_occupancy"].shape == (n_cells, n_points)
         assert len(combined["xvals"]) == n_points
 
-    def test_mean_occupancy_differs_from_pooled(self, mock_kde_inputs):
+    def test_mean_occupancy_matches_all_occupancy_nanmean(self, mock_kde_inputs):
         kde_dict, channel_map, n_cells, n_points = mock_kde_inputs
         result = get_kde_occupancy_dict(
             distance_kde_dict=kde_dict,
@@ -281,11 +280,10 @@ class TestGetKdeOccupancyDictUnifiedFormat:
             recalculate=True,
         )
         combined = result["real"]["combined"]
-        # Mean-of-per-cell and pooled KDE ratio are computed differently
-        assert not np.allclose(
-            np.nan_to_num(combined["occupancy"]),
-            np.nan_to_num(combined["occupancy_pooled"]),
-        )
+        # combined["occupancy"] is the nanmean of the per-cell curves stacked
+        # in combined["all_occupancy"] (shape: n_cells × n_points).
+        expected_mean = np.nanmean(combined["all_occupancy"], axis=0)
+        np.testing.assert_allclose(combined["occupancy"], expected_mean)
 
     def test_envelope_bounds_combined_mean(self, mock_kde_inputs):
         kde_dict, channel_map, n_cells, n_points = mock_kde_inputs

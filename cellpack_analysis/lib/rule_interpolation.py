@@ -201,7 +201,7 @@ class CVResult:
     std_test_mse: dict[str, dict[str, float]]
     n_folds: int
     baseline_mode: str
-    n_repeats: int = 1
+    n_repeats: int = 10
 
     @property
     def aggregated_coefficients_individual(self) -> dict[str, dict[str, tuple[float, float]]]:
@@ -847,7 +847,7 @@ def run_rule_interpolation_cv(
     channel_map: dict[str, str],
     baseline_mode: str,
     n_folds: int = 5,
-    n_repeats: int = 1,
+    n_repeats: int = 10,
     random_state: int | None = None,
     distance_measures: list[str] | None = None,
     results_dir: Path | None = None,
@@ -992,7 +992,7 @@ def _aggregate_cv_results(
     packing_modes: list[str],
     baseline_mode: str,
     n_folds: int,
-    n_repeats: int = 1,
+    n_repeats: int = 10,
 ) -> CVResult:
     """Aggregate per-fold FitResults into a CVResult."""
     # --- aggregated coefficients ---
@@ -1192,6 +1192,7 @@ def generate_mixed_rule_packing_configs(
     distance_measure: str | None = None,
     fold_idx: int | None = None,
     dry_run: bool = False,
+    aggregated_only: bool = False,
 ) -> list[Path]:
     """Generate cellPACK packing config files with the fitted mixed rule.
 
@@ -1225,6 +1226,9 @@ def generate_mixed_rule_packing_configs(
         coefficients (averaged across folds).
     dry_run
         If ``True``, print the configs but do not write files.
+    aggregated_only
+        If ``True`` and ``fold_idx`` is ``None``, generate only the aggregated
+        config (mean coefficients across folds) and skip per-fold configs.
 
     Returns
     -------
@@ -1247,6 +1251,8 @@ def generate_mixed_rule_packing_configs(
     fold_indices: list[int | None]
     if fold_idx is not None:
         fold_indices = [fold_idx]
+    elif aggregated_only:
+        fold_indices = [None]
     else:
         # One config per fold (using that fold's fitted coefficients) plus
         # one aggregated config

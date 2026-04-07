@@ -10,14 +10,15 @@ packing configurations for held-out cells.
 ## Workflow steps:
 1. Load positions and mesh information
 2. Compute distance dictionaries and normalize → ``all_distance_dict``
-3. Compute binned occupancy ratios directly from distance arrays
-   → ``combined_binned_occupancy_dict``
-4. Fit rule interpolation on all baseline cells → ``fit_result``
-5. Plot fit overlay on occupancy ratio curves per distance measure
-6. Run k-fold cross-validation → ``cv_result``
-7. Plot CV MSE summary and coefficient stability across folds
-8. (Optional) Generate mixed-rule packing configs for held-out cells
-9. (Optional) Validate mixed-rule packings against observed data
+3. Compute distance KDE dictionary → ``distance_kde_dict``
+4. Compute KDE occupancy ratios from distance KDE dictionary
+   → ``combined_kde_occupancy_dict``
+5. Fit rule interpolation on all baseline cells → ``fit_result``
+6. Plot fit overlay on occupancy ratio curves per distance measure
+7. Run k-fold cross-validation → ``cv_result``
+8. Plot CV MSE summary and coefficient stability across folds
+9. (Optional) Generate mixed-rule packing configs for held-out cells
+10. (Optional) Validate mixed-rule packings against observed data
 """
 
 # %% [markdown]
@@ -26,8 +27,7 @@ import time
 
 from IPython.display import display
 
-from cellpack_analysis.analysis import rule_interpolation
-from cellpack_analysis.lib import distance, occupancy, visualization
+from cellpack_analysis.lib import distance, occupancy, rule_interpolation, visualization
 from cellpack_analysis.lib.file_io import get_project_root, make_dir
 from cellpack_analysis.lib.load_data import get_position_data_from_outputs
 from cellpack_analysis.lib.mesh_tools import get_mesh_information_dict_for_structure
@@ -58,8 +58,11 @@ STRUCTURE_NAME = "peroxisome"
 CONDITION = "rules_shape_with_seed"
 """Experimental condition / packing output subfolder."""
 
-RESULT_SUBFOLDER = "interpolation_analysis/rules_shape_with_seed_test"
+RESULT_SUBFOLDER = f"{CONDITION}/{PACKING_ID}"
 """Subfolder within results/ to save outputs for this workflow."""
+
+FIGURE_SUBFOLDER = "figures/rule_interpolation"
+"""Subfolder within data subfolder to save figures for this workflow."""
 # %% [markdown]
 # ### Set packing modes and channel map
 save_format = "pdf"
@@ -88,7 +91,7 @@ base_results_dir = project_root / "results"
 
 results_dir = make_dir(base_results_dir / RESULT_SUBFOLDER)
 
-figures_dir = make_dir(results_dir / "figures")
+figures_dir = make_dir(results_dir / FIGURE_SUBFOLDER)
 # %% [markdown]
 # ### Distance measures to use
 # Options: "nucleus", "z", "scaled_nucleus", "membrane"
@@ -106,21 +109,20 @@ suffix = ""
 if normalization is not None:
     suffix = f"_normalized_{normalization}"
 # %% [markdown]
-# ### Set binning parameters per distance measure
-bin_width_map: dict[str, float] = {
-    "nucleus": 0.2,
-    "z": 0.2,
-}
+# ### Set occupancy parameters per distance measure
 occupancy_params: dict[str, dict] = {
-    "nucleus": {"xlim": 6, "ylim": 3},
-    "z": {"xlim": 8, "ylim": 2},
-    # "scaled_nucleus": {"xlim": 1.0, "ylim": 3},
-    # "scaled_z": {"xlim": 1.0, "ylim": 2},
+    "nucleus": {"xlim": 6, "ylim": 3.2, "bandwidth": 0.2},
+    "z": {"xlim": 8, "ylim": 2, "bandwidth": 0.2},
+    # "scaled_nucleus": {"xlim": 1.0, "ylim": 3, "bandwidth": 0.2},
+    # "scaled_z": {"xlim": 1.0, "ylim": 2, "bandwidth": 0.2},
 }
 # %% [markdown]
 # ### Set rule interpolation parameters
 n_folds = 5
 """Number of cross-validation folds."""
+
+n_repeats = 10
+"""Number of times to repeat the full k-fold CV procedure with independent random splits."""
 
 random_state = 42
 """Random seed for CV fold splitting (None = non-deterministic)."""
@@ -184,9 +186,10 @@ all_distance_dict = distance.get_distance_dictionary(
 )
 # %% [markdown]
 # ### Filter invalid distances
+minimum_distance = -1  # allowance for small negative distances
 all_distance_dict_filtered = distance.filter_invalids_from_distance_distribution_dict(
     distance_distribution_dict=all_distance_dict,
-    minimum_distance=0,
+    minimum_distance=minimum_distance,
 )
 # %% [markdown]
 # ### Normalize distances
@@ -197,31 +200,47 @@ all_distance_dict_normalized = distance.normalize_distance_dictionary(
     normalization=normalization,
 )
 # %% [markdown]
-# ## Build discrete occupancy dictionaries
+# ## Build KDE occupancy dictionaries
 # %% [markdown]
-# ### Compute binned occupancy ratio for each distance measure
-combined_binned_occupancy_dict: dict = {}
+# ### Calculate distance KDE dictionary
+distance_kde_dict: dict = {}
 for dm in occupancy_distance_measures:
-    logger.info("Computing binned occupancy for distance measure: %s", dm)
-    combined_binned_occupancy_dict[dm] = occupancy.get_binned_occupancy_dict_from_distance_dict(
+    distance_kde_dict[dm] = distance.get_distance_distribution_kde(
         all_distance_dict=all_distance_dict_normalized,
-        combined_mesh_information_dict=combined_mesh_information_dict,
+        mesh_information_dict=combined_mesh_information_dict,
         channel_map=channel_map,
-        distance_measure=dm,
-        bin_width=bin_width_map.get(dm, 0.4),
-        x_min=0.0,
-        results_dir=results_dir,
-        pseudocount=1e-10,
-        min_count=5,
+        save_dir=results_dir,
         recalculate=False,
         suffix=suffix,
+        normalization=normalization,
+        distance_measure=dm,
+        minimum_distance=minimum_distance,
+    )
+# %% [markdown]
+# ### Compute KDE occupancy ratio for each distance measure
+combined_kde_occupancy_dict: dict = {}
+for dm in occupancy_distance_measures:
+    logger.info("Computing KDE occupancy for distance measure: %s", dm)
+    combined_kde_occupancy_dict[dm] = occupancy.get_kde_occupancy_dict(
+        distance_kde_dict=distance_kde_dict[dm],
+        channel_map=channel_map,
+        results_dir=results_dir,
+        recalculate=False,
+        suffix=suffix,
+        distance_measure=dm,
+        bandwidth=occupancy_params[dm]["bandwidth"],
+        num_points=1000,
+        x_min=0,
+        x_max=occupancy_params[dm]["xlim"],
+        num_workers=8,
     )
 # %% [markdown]
 # ### Visualize occupancy curves
 for dm in occupancy_distance_measures:
     occ_fig = visualization.plot_occupancy_ratio(
-        occupancy_dict=combined_binned_occupancy_dict[dm],
+        occupancy_dict=combined_kde_occupancy_dict[dm],
         channel_map=channel_map,
+        baseline_mode=baseline_mode,
         figures_dir=figures_dir,
         normalization=normalization,
         suffix=suffix,
@@ -231,13 +250,12 @@ for dm in occupancy_distance_measures:
         save_format=save_format,
         fig_params={"dpi": 300, "figsize": (3.5, 2.5)},
     )
-    display(occ_fig)
 # %% [markdown]
 # ## Full-data rule interpolation fit
 # %% [markdown]
 # ### Fit NNLS interpolation on all baseline cells
 fit_result = rule_interpolation.fit_rule_interpolation(
-    occupancy_dict=combined_binned_occupancy_dict,
+    occupancy_dict=combined_kde_occupancy_dict,
     channel_map=channel_map,
     baseline_mode=baseline_mode,
     distance_measures=occupancy_distance_measures,
@@ -245,12 +263,11 @@ fit_result = rule_interpolation.fit_rule_interpolation(
 # %% [markdown]
 # ### Plot fit overlay per distance measure
 for dm in occupancy_distance_measures:
-    interp_figures_dir = figures_dir / dm
-    interp_figures_dir.mkdir(exist_ok=True, parents=True)
+    interp_figures_dir = make_dir(figures_dir / dm)
     for plot_type in ("individual", "joint"):
         fig_fit, ax_fit = visualization.plot_rule_interpolation_fit(
             fit_result=fit_result,
-            occupancy_dict=combined_binned_occupancy_dict,
+            occupancy_dict=combined_kde_occupancy_dict,
             channel_map=channel_map,
             baseline_mode=baseline_mode,
             distance_measure=dm,
@@ -274,10 +291,11 @@ rule_interpolation.log_rule_interpolation_coeffs(
 # %% [markdown]
 # ### Run k-fold cross-validation on baseline cell IDs
 cv_result = rule_interpolation.run_rule_interpolation_cv(
-    occupancy_dict=combined_binned_occupancy_dict,
+    occupancy_dict=combined_kde_occupancy_dict,
     channel_map=channel_map,
     baseline_mode=baseline_mode,
     n_folds=n_folds,
+    n_repeats=n_repeats,
     random_state=random_state,
     distance_measures=occupancy_distance_measures,
     results_dir=results_dir,
@@ -291,8 +309,7 @@ cv_df = rule_interpolation.summarize_cv_results(cv_result)
 display(cv_df.groupby(["scope", "distance_measure", "split"])["mse"].describe())
 # %% [markdown]
 # ### Plot CV MSE summary (train vs. test per distance measure)
-cv_figures_dir = figures_dir / "cross_validation"
-cv_figures_dir.mkdir(exist_ok=True, parents=True)
+cv_figures_dir = make_dir(figures_dir / "cross_validation")
 
 fig_mse, axs_mse = visualization.plot_cv_mse_summary(
     cv_df=cv_df,
@@ -317,6 +334,36 @@ rule_interpolation.log_cv_summary(
     file_path=results_dir / f"{STRUCTURE_NAME}_rule_interpolation_cv_summary{suffix}.log",
 )
 # %% [markdown]
+# ### Plot CV mean-coefficient fit overlay
+# Reconstruct a FitResult from the mean CV coefficients and plot the overlay
+# in the same style as the full-data fit above.
+cv_fit_result = rule_interpolation.fit_result_from_cv(
+    cv_result=cv_result,
+    occupancy_dict=combined_kde_occupancy_dict,
+    channel_map=channel_map,
+    baseline_mode=baseline_mode,
+    distance_measures=occupancy_distance_measures,
+)
+# %%
+cv_fit_figures_dir = make_dir(figures_dir / "cv_fit_overlay")
+for dm in occupancy_distance_measures:
+    dm_cv_figures_dir = make_dir(cv_fit_figures_dir / dm)
+    for plot_type in ("individual", "joint"):
+        fig_cv_fit, ax_cv_fit = visualization.plot_rule_interpolation_fit(
+            fit_result=cv_fit_result,
+            occupancy_dict=combined_kde_occupancy_dict,
+            channel_map=channel_map,
+            baseline_mode=baseline_mode,
+            distance_measure=dm,
+            plot_type=plot_type,
+            figures_dir=dm_cv_figures_dir,
+            xlim=occupancy_params[dm]["xlim"],
+            ylim=occupancy_params[dm]["ylim"],
+            suffix=f"{suffix}_cv_mean",
+            save_format=save_format,
+        )
+        # display(fig_cv_fit)
+# %% [markdown]
 # ## (Optional) Generate mixed-rule packing configurations
 # Set ``generate_configs = True`` and provide ``base_packing_config_path``
 # and ``mode_to_gradient_name`` in the parameters section above to activate.
@@ -324,7 +371,7 @@ rule_interpolation.log_cv_summary(
 if generate_configs:
     if base_packing_config_path is None:
         raise ValueError("Set base_packing_config_path to use generate_mixed_rule_packing_configs.")
-    output_config_dir = results_dir / "mixed_rule_configs"
+    output_config_dir = make_dir(results_dir / "mixed_rule_configs")
     config_paths = rule_interpolation.generate_mixed_rule_packing_configs(
         cv_result=cv_result,
         base_config_path=base_packing_config_path,
@@ -343,7 +390,7 @@ if generate_configs:
 mixed_rule_results_dir = results_dir / "mixed_rule_packings"
 if mixed_rule_results_dir.exists():
     validation_result = rule_interpolation.run_mixed_rule_validation(
-        combined_occupancy_dict=combined_binned_occupancy_dict,
+        combined_occupancy_dict=combined_kde_occupancy_dict,
         channel_map=channel_map,
         baseline_mode=baseline_mode,
         packing_modes=packing_modes,

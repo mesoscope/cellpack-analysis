@@ -63,8 +63,11 @@ STRUCTURE_NAME = "peroxisome"
 CONDITION = "rules_shape_with_seed"
 """This is the experimental condition or packing output subfolder to analyze"""
 
-RESULT_SUBFOLDER = "distance_analysis/rules_shape_with_seed/nucleus_z_distance"
+RESULTS_SUBFOLDER = f"{CONDITION}/{PACKING_ID}"
 """Subfolder within results/ to save outputs for this workflow."""
+
+FIGURE_SUBFOLDER = "figures/distance_analysis/nuc_z"
+"""Subfolder within results subfolder to save figures for this workflow."""
 # %% [markdown]
 # ### Set packing modes to analyze
 save_format = "pdf"
@@ -90,9 +93,9 @@ project_root = get_project_root()
 base_datadir = project_root / "data"
 base_results_dir = project_root / "results"
 
-results_dir = make_dir(base_results_dir / RESULT_SUBFOLDER)
+results_dir = make_dir(base_results_dir / RESULTS_SUBFOLDER)
 
-figures_dir = make_dir(results_dir / "figures/")
+figures_dir = make_dir(results_dir / FIGURE_SUBFOLDER)
 # %% [markdown]
 # ### Distance measures to use
 distance_measures = [
@@ -147,7 +150,7 @@ all_distance_dict_raw = distance.get_distance_dictionary(
 )
 
 all_distance_dict_filtered = distance.filter_invalids_from_distance_distribution_dict(
-    distance_distribution_dict=all_distance_dict_raw, minimum_distance=None
+    distance_distribution_dict=all_distance_dict_raw, minimum_distance=-1
 )
 
 all_distance_dict = distance.normalize_distance_dictionary(
@@ -167,10 +170,13 @@ distance_pdf_dict = distance.compute_distance_pdfs(
     distance_measures=distance_measures,
     packing_modes=packing_modes,
     method="kde",
-    bin_width=0.2,
+    bin_width=0.01,
     bandwidth=0.2,
     distance_limits=DISTANCE_LIMITS,
-    minimum_distance=0,
+    minimum_distance=-1,
+    # n_grid=1000,
+    results_dir=results_dir,
+    recalculate=False,
 )
 # %% [markdown]
 # ### plot distance distributions
@@ -182,6 +188,8 @@ fig, axs = visualization.plot_distance_distributions(
     suffix=suffix,
     normalization=normalization,
     save_format=save_format,
+    figure_size=(2.7, 3.4),
+    # production_mode=True,
 )
 # %% [markdown]
 # ### log central tendencies for distance distributions
@@ -232,7 +240,7 @@ for dm in distance_measures:
         packing_modes=packing_modes,
         distance_measure=dm,
         normalization=normalization,
-        figsize=(3.5, 3.5),
+        figure_size=(3.5, 3.5),
         figures_dir=emd_figures_dir,
         suffix=suffix,
         save_format=save_format,
@@ -264,54 +272,40 @@ pairwise_results = pairwise_envelope_test(
     statistic="intdev",
 )
 # %% [markdown]
-# ### Plot pairwise envelope matrix per distance measure
-# %%
+# ### Plot pairwise envelope matrix
 envelope_figures_dir = make_dir(figures_dir / "envelope_tests/")
-
-for dm in distance_measures:
+# %%
+# for dm in [*distance_measures, None]:
+for dm in [None]:
     fig, axs = visualization.plot_pairwise_envelope_matrix(
         pairwise_results=pairwise_results,
         distance_measure=dm,
         figures_dir=envelope_figures_dir,
         suffix=suffix,
         save_format=save_format,
-        figsize=(3.5, 2.5),
-        font_scale=0.8,
+        figure_size=(7, 3.5),
+        font_scale=1.1,
     )
 # %% [markdown]
-# ### Plot pairwise envelope matrix - joint test
-# %%
-fig, axs = visualization.plot_pairwise_envelope_matrix(
-    pairwise_results=pairwise_results,
-    distance_measure=None,
-    figures_dir=envelope_figures_dir,
-    suffix=suffix,
-    save_format=save_format,
-    figsize=(7, 3.5),
-    font_scale=1.1,
-)
-# %% [markdown]
-# ### Per distance measure rejection bars (per reference mode)
-# %%
-for ref_mode in packing_modes:
-    for joint_test in [False, True]:
-        fig, axs = visualization.plot_per_dm_rejection_bars(
-            pairwise_results=pairwise_results,
-            reference_mode=ref_mode,
-            joint_test=joint_test,
-            figures_dir=envelope_figures_dir,
-            figsize=(3.5, 2),
-            suffix=suffix,
-            save_format=save_format,
-        )
+# ### Plot rejection bars
+for joint_test in [False, True]:
+    fig, axs = visualization.plot_per_dm_rejection_bars(
+        pairwise_results=pairwise_results,
+        reference_mode=baseline_mode,
+        joint_test=joint_test,
+        figures_dir=envelope_figures_dir,
+        figsize=(4, 1.8),
+        font_scale=1.1,
+        suffix=suffix,
+        save_format=save_format,
+    )
 # %% [markdown]
 # ### Per distance measure envelope overlays
-# %%
 fig, axs = visualization.plot_per_dm_envelopes_overlaid(
     pairwise_results=pairwise_results,
     figures_dir=envelope_figures_dir,
     suffix=suffix,
-    figsize=(6, 1.5),
+    figsize=(3, 1.5),
     save_format=save_format,
 )
 # %% [markdown]

@@ -243,7 +243,7 @@ for dm in distance_measures:
         packing_modes=packing_modes,
         distance_measure=dm,
         normalization=normalization,
-        figsize=(3.5, 3.5),
+        figure_size=(3.5, 3.5),
         figures_dir=emd_figures_dir,
         suffix=suffix,
         save_format=save_format,
@@ -295,7 +295,7 @@ fig, axs = visualization.plot_pairwise_envelope_matrix(
     pairwise_results=pairwise_results,
     distance_measure=None,
     figures_dir=envelope_figures_dir,
-    figsize=(5, 3),
+    figure_size=(5, 3),
     suffix=suffix,
     save_format=save_format,
 )

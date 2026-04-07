@@ -26,8 +26,7 @@ import time
 
 from IPython.display import display
 
-from cellpack_analysis.analysis import rule_interpolation
-from cellpack_analysis.lib import distance, occupancy, visualization
+from cellpack_analysis.lib import distance, occupancy, rule_interpolation, visualization
 from cellpack_analysis.lib.file_io import get_project_root
 from cellpack_analysis.lib.load_data import get_position_data_from_outputs
 from cellpack_analysis.lib.mesh_tools import get_mesh_information_dict_for_structure
