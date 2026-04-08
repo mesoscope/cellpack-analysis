@@ -38,6 +38,7 @@ from scipy.optimize import nnls
 from cellpack_analysis.lib import distance, occupancy
 from cellpack_analysis.lib.file_io import (
     add_file_handler_to_logger,
+    get_project_root,
     remove_file_handler_from_logger,
 )
 
@@ -1362,7 +1363,9 @@ def trigger_packing_workflow(
 
     if use_slurm:
         if slurm_script is None:
-            slurm_script = Path(__file__).parents[1] / "packing" / "submit_packing_slurm.sh"
+            slurm_script = (
+                get_project_root() / "cellpack_analysis" / "packing" / "submit_packing_slurm.sh"
+            )
         if not slurm_script.exists():
             raise FileNotFoundError(f"SLURM launcher not found: {slurm_script}")
 
@@ -1446,7 +1449,7 @@ def run_mixed_rule_validation(
         packing_modes=packing_modes,
         combined_occupancy_dict=combined_occupancy_dict,
         baseline_mode=baseline_mode,
-        save_dir=results_dir,
+        results_dir=results_dir,
         recalculate=recalculate,
     )
 

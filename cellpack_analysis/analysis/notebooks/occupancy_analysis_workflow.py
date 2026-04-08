@@ -85,6 +85,8 @@ base_results_dir = project_root / "results"
 results_dir = make_dir(base_results_dir / RESULT_SUBFOLDER)
 
 figures_dir = make_dir(results_dir / "figures/")
+
+log_dir = make_dir(results_dir / "logs/")
 # %% [markdown]
 # ### Distance measures to use
 # Options: "nucleus", "z", "scaled_nucleus", "membrane"
@@ -351,7 +353,7 @@ for ref_mode in packing_modes:
         combined_occupancy_dict=combined_occupancy_dict,
         baseline_mode=ref_mode,
         significance_level=ks_significance_level,
-        save_dir=None,
+        results_dir=None,
         recalculate=True,
     )
     occ_ks_df["baseline_mode"] = ref_mode
@@ -388,7 +390,7 @@ for ref_mode in packing_modes:
 # %% [markdown]
 # ### Log pairwise KS central tendencies
 pairwise_ks_log_file_path = (
-    results_dir / f"{STRUCTURE_NAME}_pairwise_occupancy_ks_central_tendencies{suffix}.log"
+    log_dir / f"{STRUCTURE_NAME}_pairwise_occupancy_ks_central_tendencies{suffix}.log"
 )
 for _ref_mode in packing_modes:
     ref_boot_df = pairwise_occ_ks_bootstrap_df.query("baseline_mode == @_ref_mode")

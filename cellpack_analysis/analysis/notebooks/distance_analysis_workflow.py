@@ -47,17 +47,17 @@ start_time = time.time()
 # RAB5A: early endosomes
 # SEC61B: ER
 # ST6GAL1: Golgi
-PUNCTATE_STRUCTURE_ID = "SLC25A17"
+PUNCTATE_STRUCTURE_ID = "RAB5A"
 """This is the ID for the packed structure, it is used as the packing mode for observed data"""
 
-CELL_STRUCTURE_ID = "SLC25A17"
+CELL_STRUCTURE_ID = "RAB5A"
 """This is the ID for the cell shapes used for packing"""
 
-PACKING_ID = "peroxisome"
+PACKING_ID = "endosome"
 """This is the ID for the overall packing configuration,
 it is used for naming outputs and folders"""
 
-STRUCTURE_NAME = "peroxisome"
+STRUCTURE_NAME = "endosome"
 """This is the name of the structure being analyzed, it is used in cellPACK output files"""
 
 CONDITION = "rules_shape_with_seed"
@@ -66,7 +66,7 @@ CONDITION = "rules_shape_with_seed"
 RESULTS_SUBFOLDER = f"{CONDITION}/{PACKING_ID}"
 """Subfolder within results/ to save outputs for this workflow."""
 
-FIGURE_SUBFOLDER = "figures/distance_analysis/nuc_z"
+FIGURE_SUBFOLDER = "figures/distance_analysis/"
 """Subfolder within results subfolder to save figures for this workflow."""
 # %% [markdown]
 # ### Set packing modes to analyze
@@ -96,6 +96,8 @@ base_results_dir = project_root / "results"
 results_dir = make_dir(base_results_dir / RESULTS_SUBFOLDER)
 
 figures_dir = make_dir(results_dir / FIGURE_SUBFOLDER)
+
+log_dir = make_dir(results_dir / "logs")
 # %% [markdown]
 # ### Distance measures to use
 distance_measures = [
@@ -176,7 +178,7 @@ distance_pdf_dict = distance.compute_distance_pdfs(
     minimum_distance=-1,
     # n_grid=1000,
     results_dir=results_dir,
-    recalculate=False,
+    recalculate=True,
 )
 # %% [markdown]
 # ### plot distance distributions
@@ -193,9 +195,7 @@ fig, axs = visualization.plot_distance_distributions(
 )
 # %% [markdown]
 # ### log central tendencies for distance distributions
-log_file_path = (
-    results_dir / f"{STRUCTURE_NAME}_distance_distribution_central_tendencies{suffix}.log"
-)
+log_file_path = log_dir / f"{STRUCTURE_NAME}_distance_distribution_central_tendencies{suffix}.log"
 distance.log_central_tendencies_for_distance_distributions(
     all_distance_dict=all_distance_dict,
     distance_measures=distance_measures,
@@ -214,7 +214,7 @@ df_emd = distance.get_distance_distribution_emd_df(
     packing_modes=packing_modes,
     distance_measures=distance_measures,
     results_dir=results_dir,
-    recalculate=False,
+    recalculate=True,
     suffix=suffix,
     num_workers=8,
 )
@@ -240,16 +240,15 @@ for dm in distance_measures:
         packing_modes=packing_modes,
         distance_measure=dm,
         normalization=normalization,
-        figure_size=(3.5, 3.5),
+        figure_size=(6, 4.5),
         figures_dir=emd_figures_dir,
         suffix=suffix,
+        # font_scale=0.6,
         save_format=save_format,
     )
 # %% [markdown]
 # ### Log pairwise EMD central tendencies
-emd_pairwise_log_file_path = (
-    results_dir / f"{PACKING_ID}_emd_pairwise_central_tendencies{suffix}.log"
-)
+emd_pairwise_log_file_path = log_dir / f"{PACKING_ID}_emd_pairwise_central_tendencies{suffix}.log"
 distance.log_pairwise_emd_central_tendencies(
     df_emd=df_emd,
     distance_measures=distance_measures,
@@ -365,9 +364,7 @@ for ref_mode in packing_modes:
     )
 # %% [markdown]
 # ### Log pairwise KS central tendencies
-pairwise_ks_log_file_path = (
-    results_dir / f"{STRUCTURE_NAME}_pairwise_ks_central_tendencies{suffix}.log"
-)
+pairwise_ks_log_file_path = log_dir / f"{STRUCTURE_NAME}_pairwise_ks_central_tendencies{suffix}.log"
 for ref_mode in packing_modes:  # noqa:B007
     ref_boot_df = pairwise_ks_bootstrap_df.query("baseline_mode == @ref_mode")
     distance.log_central_tendencies_for_ks(

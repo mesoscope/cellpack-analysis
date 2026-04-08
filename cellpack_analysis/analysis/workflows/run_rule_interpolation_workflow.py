@@ -75,12 +75,13 @@ _DEFAULT_VALIDATION_STEPS = [
     "run_occupancy_pairwise_envelope_test",
 ]
 
-_DEFAULT_VALIDATION_DISTANCE_MEASURES = ["nearest", "pairwise", "nucleus", "z"]
+_DEFAULT_VALIDATION_DISTANCE_MEASURES = ["nucleus", "z"]
 
 
 # ---------------------------------------------------------------------------
 # Config helpers
 # ---------------------------------------------------------------------------
+
 
 def _load_e2e_config(config_path: str | Path) -> dict[str, Any]:
     """Load and return the raw JSON config dict."""
@@ -116,6 +117,7 @@ def _validation_config_path(results_dir: Path) -> Path:
 # ---------------------------------------------------------------------------
 # Fit phase
 # ---------------------------------------------------------------------------
+
 
 def _build_fit_config_dict(raw_config: dict[str, Any]) -> dict[str, Any]:
     """Build a transient config dict for the fit phase AnalysisRunner.
@@ -262,6 +264,7 @@ def fit(config_path: str, dry_run: bool = False) -> None:
 # Pack phase
 # ---------------------------------------------------------------------------
 
+
 def pack(
     config_path: str,
     local: bool = False,
@@ -310,6 +313,7 @@ def pack(
 # Validate phase
 # ---------------------------------------------------------------------------
 
+
 def validate(config_path: str) -> None:
     """Phase 3: Validate mixed-rule packings with orthogonal comparisons.
 
@@ -323,8 +327,7 @@ def validate(config_path: str) -> None:
     val_config_path = _validation_config_path(results_dir)
     if not val_config_path.exists():
         raise FileNotFoundError(
-            f"Validation config not found: {val_config_path}\n"
-            "Run --phase fit first to generate it."
+            f"Validation config not found: {val_config_path}\nRun --phase fit first to generate it."
         )
 
     logger.info("=== Phase 3: Validate ===")
@@ -353,9 +356,7 @@ def validate(config_path: str) -> None:
             distance_measures=occupancy_dm,
             mixed_rule_distance_dict=all_distance_dict,
             results_dir=results_dir,
-            recalculate=val_analysis_config.recalculate.get(
-                "run_rule_interpolation_cv", False
-            ),
+            recalculate=val_analysis_config.recalculate.get("run_rule_interpolation_cv", False),
         )
 
         # Log summary
@@ -399,7 +400,8 @@ Examples:
         """,
     )
     parser.add_argument(
-        "--config_file", "-c",
+        "--config_file",
+        "-c",
         type=str,
         required=True,
         help="Path to the unified e2e JSON config file.",

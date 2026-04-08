@@ -75,6 +75,7 @@ base_results_dir = project_root / "results"
 
 results_dir = make_dir(base_results_dir / RESULT_SUBFOLDER)
 figures_dir = make_dir(results_dir / "figures")
+log_dir = make_dir(results_dir / "logs")
 
 # %% [markdown]
 # ### Distance measures to use
@@ -164,9 +165,7 @@ fig, axs = visualization.plot_distance_distributions(
 )
 # %% [markdown]
 # ### log central tendencies for distance distributions
-log_file_path = (
-    results_dir / f"{STRUCTURE_NAME}_distance_distribution_central_tendencies{suffix}.log"
-)
+log_file_path = log_dir / f"{STRUCTURE_NAME}_distance_distribution_central_tendencies{suffix}.log"
 distance.log_central_tendencies_for_distance_distributions(
     all_distance_dict=all_distance_dict,
     distance_measures=distance_measures,
@@ -219,7 +218,7 @@ for dm in distance_measures:
     )
 # %% [markdown]
 # ### Log statistics for EMD comparisons
-emd_log_file_path = results_dir / f"{STRUCTURE_NAME}_emd_pairwise_central_tendencies{suffix}.log"
+emd_log_file_path = log_dir / f"{STRUCTURE_NAME}_emd_pairwise_central_tendencies{suffix}.log"
 distance.log_pairwise_emd_central_tendencies(
     df_emd=df_emd,
     distance_measures=distance_measures,

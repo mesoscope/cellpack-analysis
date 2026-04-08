@@ -385,7 +385,7 @@ def get_occupancy_ks_test_df(
     combined_occupancy_dict: dict[str, dict[str, dict[str, dict[str, np.ndarray]]]],
     baseline_mode: str = "SLC25A17",
     significance_level: float = 0.05,
-    save_dir: Path | None = None,
+    results_dir: Path | None = None,
     recalculate: bool = True,
 ) -> pd.DataFrame:
     """
@@ -403,7 +403,7 @@ def get_occupancy_ks_test_df(
         The packing mode to use as the baseline for comparison
     significance_level
         Significance level for the KS test
-    save_dir
+    results_dir
         Directory to save the results
     recalculate
         Whether to recalculate even if results exist
@@ -415,8 +415,8 @@ def get_occupancy_ks_test_df(
         packing_mode, and ks_observed
     """
     file_name = "occupancy_ks_observed_combined_df.parquet"
-    if not recalculate and save_dir is not None:
-        file_path = save_dir / file_name
+    if not recalculate and results_dir is not None:
+        file_path = results_dir / file_name
         if file_path.exists():
             logger.info(f"Loading saved KS DataFrame from {file_path.relative_to(PROJECT_ROOT)}")
             return pd.read_parquet(file_path)
@@ -456,8 +456,8 @@ def get_occupancy_ks_test_df(
                 }
             )
     ks_test_df = pd.DataFrame.from_records(record_list)
-    if save_dir is not None:
-        file_path = save_dir / file_name
+    if results_dir is not None:
+        file_path = results_dir / file_name
         ks_test_df.to_parquet(file_path, index=False)
         logger.info(f"Saved KS observed DataFrame to {file_path.relative_to(PROJECT_ROOT)}")
 

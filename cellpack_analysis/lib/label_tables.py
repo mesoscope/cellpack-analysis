@@ -73,7 +73,7 @@ MODE_LABELS = {
     "variable_size": "Size",
     "variable_count": "Count",
     "variable_count_and_size": "Count and size",
-    "random": "Random",
+    "random": "Unbiased",
     "shape": "Shape",
     "interpolated": "Interpolated",
     "nucleus_moderate": "Nucleus",

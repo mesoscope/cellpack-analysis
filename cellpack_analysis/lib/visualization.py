@@ -2266,7 +2266,7 @@ def plot_pairwise_emd_matrix(
                 all_distance_dict,
                 [distance_measure],
                 packing_modes,
-                method="histogram",
+                method="kde",
                 bin_width=bin_width,
                 distance_limits=distance_limits,
                 minimum_distance=minimum_distance,

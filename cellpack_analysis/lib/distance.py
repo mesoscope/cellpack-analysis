@@ -1479,84 +1479,6 @@ def get_scaled_structure_radius(
     return avg_radius, std_radius
 
 
-def log_central_tendencies_for_emd(
-    df_emd: pd.DataFrame,
-    distance_measures: list[str],
-    packing_modes: list[str],
-    baseline_mode: str = "baseline",
-    comparison_type: str = "intra_mode",
-    log_file_path: Path | None = None,
-) -> None:
-    """
-    Log central tendencies of EMD values for within-rule and baseline comparisons.
-
-    Parameters
-    ----------
-    df_emd
-        DataFrame containing EMD values with columns for distance_measure, packing_mode_1,
-        packing_mode_2, and emd
-    distance_measures
-        List of distance measures to analyze
-    packing_modes
-        List of packing modes to analyze
-    baseline_mode
-        The packing mode to use as the baseline for comparisons
-    comparison_type
-        Type of comparison: 'intra_mode' or 'baseline'
-    log_file_path
-        Optional file path to save the log output
-    """
-    if log_file_path is not None:
-        emd_logger = add_file_handler_to_logger(logger, log_file_path)
-    else:
-        emd_logger = logger
-
-    emd_logger.info("Comparison type: %s", comparison_type)
-    for distance_measure in distance_measures:
-        emd_logger.info(f"Distance measure: {distance_measure}")
-        for packing_mode in packing_modes:
-            if comparison_type == "baseline":
-                if packing_mode == baseline_mode:
-                    continue
-                label = f"{baseline_mode} vs {packing_mode}"
-                sub_df = df_emd.loc[
-                    (df_emd["distance_measure"] == distance_measure)
-                    & (
-                        (
-                            (df_emd["packing_mode_1"] == baseline_mode)
-                            & (df_emd["packing_mode_2"] == packing_mode)
-                        )
-                        | (
-                            (df_emd["packing_mode_1"] == packing_mode)
-                            & (df_emd["packing_mode_2"] == baseline_mode)
-                        )
-                    ),
-                    "emd",
-                ]
-            elif comparison_type == "intra_mode":
-                label = packing_mode
-                sub_df = df_emd.loc[
-                    (df_emd["distance_measure"] == distance_measure)
-                    & (df_emd["packing_mode_1"] == packing_mode)
-                    & (df_emd["packing_mode_2"] == packing_mode),
-                    "emd",
-                ]
-            else:
-                raise ValueError(f"Invalid comparison type: {comparison_type}")
-
-            mean = sub_df.mean()
-            std = sub_df.std()
-            median = sub_df.median()
-            lower = sub_df.quantile(0.025)
-            upper = sub_df.quantile(0.975)
-            emd_logger.info(
-                f"{label}: {mean:.2f} ± {std:.2f} "
-                f"(median: {median:.2f}, 95% CI: {lower:.2f}, {upper:.2f})"
-            )
-
-    remove_file_handler_from_logger(emd_logger, log_file_path)
-
-
 def log_pairwise_emd_central_tendencies(
     df_emd: pd.DataFrame,
     distance_measures: list[str],
@@ -1676,7 +1598,7 @@ def log_central_tendencies_for_ks(
             median = mode_df["similar_fraction"].median()
             lower = mode_df["similar_fraction"].quantile(0.025)
             upper = mode_df["similar_fraction"].quantile(0.975)
-            logger.info(
+            ks_logger.info(
                 f"{packing_mode}: {mean:.2f} ± {std:.2f} "
                 f"(median: {median:.2f}, 95% CI: {lower:.2f}, {upper:.2f})"
             )
@@ -1849,7 +1771,10 @@ def compute_distance_pdfs(
         result[dm] = {}
         for mode in packing_modes:
             curves: list[np.ndarray] = []
-            for seed_dict in tqdm(distance_dict[mode].values(), desc=f"Mode: {mode}"):
+            for seed_dict in tqdm(
+                distance_dict[mode].values(),
+                desc=f"Calculating PDF for mode: {mode}, distance measure: {dm}",
+            ):
                 for distances in seed_dict.values():
                     filtered = filter_invalid_distances(
                         np.asarray(distances), minimum_distance=minimum_distance
