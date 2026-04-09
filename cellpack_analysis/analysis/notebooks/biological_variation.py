@@ -74,7 +74,7 @@ base_datadir = project_root / "data"
 base_results_dir = project_root / "results"
 
 results_dir = make_dir(base_results_dir / RESULT_SUBFOLDER)
-figures_dir = make_dir(results_dir / "figures")
+figures_dir = make_dir(results_dir / "figures/test_mode")
 log_dir = make_dir(results_dir / "logs")
 
 # %% [markdown]

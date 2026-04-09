@@ -54,7 +54,7 @@ STRUCTURE_NAME = "endosome"
 CONDITION = "rules_shape_with_seed"
 """Experimental condition / packing output subfolder."""
 
-RESULT_SUBFOLDER = "rules_shape_with_seed/endosome/occupancy_kde_test/"
+RESULT_SUBFOLDER = "rules_shape_with_seed/endosome/occupancy_old_grid/"
 """Subfolder within results/ to save outputs for this workflow."""
 # %% [markdown]
 # ### Set packing modes and channel map
@@ -121,7 +121,7 @@ for structure_id in all_structures:
     mesh_information_dict = get_mesh_information_dict_for_structure(
         structure_id=structure_id,
         base_datadir=base_datadir,
-        recalculate=False,
+        recalculate=True,
     )
     combined_mesh_information_dict[structure_id] = mesh_information_dict
 # %% [markdown]
@@ -162,7 +162,6 @@ occupancy_axes_dict = {}
 minimum_distance = -1  # allowance for small negative distances
 occupancy_figures_dir = {}
 for dm in occupancy_distance_measures:
-    logger.info(f"Starting occupancy analysis for distance measure: {dm}")
     occupancy_figures_dir[dm] = make_dir(figures_dir / dm)
 # %% [markdown]
 # ### Calculate distance kde dictionary
@@ -181,8 +180,6 @@ for dm in occupancy_distance_measures:
     )
 
 # %% [markdown]
-
-# %% [markdown]
 # ### Calculate occupancy ratio
 combined_occupancy_dict = {}
 for dm in occupancy_distance_measures:
@@ -190,13 +187,13 @@ for dm in occupancy_distance_measures:
         distance_kde_dict=distance_kde_dict[dm],
         channel_map=channel_map,
         results_dir=results_dir,
-        recalculate=False,
+        recalculate=True,
         suffix=suffix,
         distance_measure=dm,
         bandwidth=occupancy_params[dm]["bandwidth"],
         # bandwidth="scott",
         # num_cells=5,
-        num_points=1000,
+        num_points=250,
         x_min=0,
         x_max=occupancy_params[dm]["xlim"],
         num_workers=16,
@@ -213,7 +210,7 @@ for dm in occupancy_distance_measures:
         distance_measure=dm,
         normalization=normalization,
         cell_id_or_index=25,
-        num_points=1000,
+        num_points=250,
         bandwidth=0.4,
         save_format=save_format,
         xlim=occupancy_params[dm]["xlim"],

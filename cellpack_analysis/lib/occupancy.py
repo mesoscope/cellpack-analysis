@@ -62,7 +62,7 @@ def get_cell_id_map_from_distance_kde_dict(
     return cell_id_map
 
 
-def _load_cached_kde_occupancy(
+def _load_cached_occupancy(
     save_path: Path,
     channel_map: dict[str, str],
 ) -> dict[str, dict[str, dict[str, Any]]] | None:
@@ -76,8 +76,8 @@ def _load_cached_kde_occupancy(
         return None
     try:
         with open(save_path, "rb") as f:
-            kde_occupancy_dict = pickle.load(f)
-        cached_modes = set(kde_occupancy_dict.keys())
+            occupancy_dict = pickle.load(f)
+        cached_modes = set(occupancy_dict.keys())
         requested_modes = set(channel_map.keys())
         if cached_modes != requested_modes:
             logger.warning(
@@ -86,9 +86,9 @@ def _load_cached_kde_occupancy(
             )
             return None
         first_mode = next(iter(cached_modes))
-        if "all_occupancy" in kde_occupancy_dict.get(first_mode, {}).get("combined", {}):
+        if "all_occupancy" in occupancy_dict.get(first_mode, {}).get("combined", {}):
             logger.info(f"Successfully loaded cached occupancy data from {save_path}")
-            return kde_occupancy_dict
+            return occupancy_dict
         logger.warning("Cached occupancy data is missing unified format keys — recalculating.")
         return None
     except Exception as e:
@@ -130,6 +130,49 @@ def _build_combined_available_kde(
         #     np.concatenate(combined_available_distances), bw_method=bandwidth
         # )
     return combined_available_kde, float(x_min_calc), float(x_max_calc)
+
+
+def _get_available_distance_range(
+    distance_kde_dict: dict[str, dict[str, gaussian_kde]],
+    cell_id_map: dict[str, list[str]],
+) -> tuple[float, float]:
+    """
+    Infer the global min and max of available-space distances across all cells and modes.
+
+    Parameters
+    ----------
+    distance_kde_dict
+        Dictionary with cell IDs as keys and mode-specific KDEs as values
+    cell_id_map
+        Mapping from structure IDs to lists of cell IDs
+
+    Returns
+    -------
+    :
+        ``(x_min_calc, x_max_calc)`` where the floats are the global min/max
+        of all occupied-distance datasets across all modes and cells.
+    """
+    x_min_calc = np.inf
+    x_max_calc = -np.inf
+    for _, cell_ids in cell_id_map.items():
+        for cell_id in cell_ids:
+            available_distance_kde = distance_kde_dict[cell_id].get("available")
+            if available_distance_kde is None:
+                logger.warning(
+                    f"Cell ID {cell_id} is missing 'available' KDE, skipping for range calculation"
+                )
+                continue
+            available_distances = np.asarray(available_distance_kde.dataset, dtype=float)
+            available_distances = available_distances[np.isfinite(available_distances)]
+            if len(available_distances) == 0:
+                logger.warning(
+                    f"Cell ID {cell_id} has no finite available distances, "
+                    "skipping for range calculation"
+                )
+                continue
+            x_min_calc = min(x_min_calc, float(np.min(available_distances)))
+            x_max_calc = max(x_max_calc, float(np.max(available_distances)))
+    return float(x_min_calc), float(x_max_calc)
 
 
 def get_kde_occupancy_for_single_cell(
@@ -336,7 +379,7 @@ def get_kde_occupancy_dict(
     )
 
     if not recalculate and save_path is not None:
-        cached = _load_cached_kde_occupancy(save_path, channel_map)
+        cached = _load_cached_occupancy(save_path, channel_map)
         if cached is not None:
             return cached
 
@@ -348,14 +391,17 @@ def get_kde_occupancy_dict(
                     cell_ids, size=num_cells, replace=False
                 ).tolist()
 
-    _, x_min_calc, x_max_calc = _build_combined_available_kde(
-        distance_kde_dict, cell_id_map, channel_map, bandwidth
-    )
+    # _, x_min_calc, x_max_calc = _build_combined_available_kde(
+    #     distance_kde_dict, cell_id_map, channel_map, bandwidth
+    # )
+    x_min_calc, x_max_calc = _get_available_distance_range(distance_kde_dict, cell_id_map)
     x_vals = np.linspace(
         x_min if x_min is not None else x_min_calc,
         x_max if x_max is not None else x_max_calc,
         num_points,
     )
+
+    # x_vals = con
 
     kde_occupancy_dict = {
         mode: _compute_mode_kde_occupancy(
