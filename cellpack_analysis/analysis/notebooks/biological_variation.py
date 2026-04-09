@@ -269,13 +269,13 @@ fig, axs = visualization.plot_pairwise_envelope_matrix(
     font_scale=1.1,
 )
 # %% [markdown]
-# ### Per distance measure rejection bars (per reference mode)
+# ### Per distance measure rejection bars (per test mode)
 # %%
 rej_dict = {}
-for ref_mode in packing_modes:
-    rej_dict[ref_mode] = visualization.plot_per_dm_rejection_bars(
+for test_mode in packing_modes:
+    rej_dict[test_mode] = visualization.plot_per_dm_rejection_bars(
         pairwise_results=pairwise_results,
-        reference_mode=ref_mode,
+        test_mode=test_mode,
         joint_test=True,
         figures_dir=envelope_figures_dir,
         figsize=(3.5, 2),

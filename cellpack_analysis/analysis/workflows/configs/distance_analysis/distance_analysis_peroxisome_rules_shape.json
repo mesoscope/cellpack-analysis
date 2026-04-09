@@ -17,14 +17,9 @@
         "z"
     ],
     "recalculate": {
-        "load_common_data": false
+        "pairwise_envelope_test": true
     },
     "analysis_steps": [
-        "load_common_data",
-        "calculate_distances",
-        "plot_distance_distributions",
-        "run_emd_analysis",
-        "run_pairwise_envelope_test",
-        "run_ks_analysis"
+        "run_pairwise_envelope_test"
     ]
 }

@@ -47,17 +47,17 @@ start_time = time.time()
 # RAB5A: early endosomes
 # SEC61B: ER
 # ST6GAL1: Golgi
-PUNCTATE_STRUCTURE_ID = "RAB5A"
+PUNCTATE_STRUCTURE_ID = "SLC25A17"
 """This is the ID for the packed structure, it is used as the packing mode for observed data"""
 
-CELL_STRUCTURE_ID = "RAB5A"
+CELL_STRUCTURE_ID = "SLC25A17"
 """This is the ID for the cell shapes used for packing"""
 
-PACKING_ID = "endosome"
+PACKING_ID = "peroxisome"
 """This is the ID for the overall packing configuration,
 it is used for naming outputs and folders"""
 
-STRUCTURE_NAME = "endosome"
+STRUCTURE_NAME = "peroxisome"
 """This is the name of the structure being analyzed, it is used in cellPACK output files"""
 
 CONDITION = "rules_shape_with_seed"
@@ -66,7 +66,7 @@ CONDITION = "rules_shape_with_seed"
 RESULTS_SUBFOLDER = f"{CONDITION}/{PACKING_ID}"
 """Subfolder within results/ to save outputs for this workflow."""
 
-FIGURE_SUBFOLDER = "figures/distance_analysis/"
+FIGURE_SUBFOLDER = "figures/test"
 """Subfolder within results subfolder to save figures for this workflow."""
 # %% [markdown]
 # ### Set packing modes to analyze
@@ -178,7 +178,7 @@ distance_pdf_dict = distance.compute_distance_pdfs(
     minimum_distance=-1,
     # n_grid=1000,
     results_dir=results_dir,
-    recalculate=True,
+    recalculate=False,
 )
 # %% [markdown]
 # ### plot distance distributions
@@ -214,7 +214,7 @@ df_emd = distance.get_distance_distribution_emd_df(
     packing_modes=packing_modes,
     distance_measures=distance_measures,
     results_dir=results_dir,
-    recalculate=True,
+    recalculate=False,
     suffix=suffix,
     num_workers=8,
 )
@@ -290,7 +290,7 @@ for dm in [None]:
 for joint_test in [False, True]:
     fig, axs = visualization.plot_per_dm_rejection_bars(
         pairwise_results=pairwise_results,
-        reference_mode=baseline_mode,
+        test_mode=baseline_mode,
         joint_test=joint_test,
         figures_dir=envelope_figures_dir,
         figsize=(4, 1.8),

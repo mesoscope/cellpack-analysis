@@ -4,9 +4,7 @@
     "packing_id": "peroxisome",
     "structure_name": "peroxisome",
     "packing_output_folder": "packing_outputs/8d_sphere_data/rules_shape_with_seed/",
-    "output_path": "rules_shape_with_seed/peroxisome/",
-    "figures_dir": "figures/supp",
-    "logs_dir": "logs/supp",
+    "output_path": "rules_shape_with_seed/peroxisome/supp",
     "channel_map": {
         "SLC25A17": "SLC25A17",
         "random": "SLC25A17",
@@ -18,11 +16,10 @@
         "nearest",
         "pairwise"
     ],
-    "recalculate": {
-        "load_common_data": false,
-        "run_emd_analysis": true
-    },
     "analysis_steps": [
-        "run_emd_analysis"
+        "plot_distance_distributions",
+        "run_emd_analysis",
+        "run_ks_analysis",
+        "run_pairwise_envelope_test"
     ]
 }

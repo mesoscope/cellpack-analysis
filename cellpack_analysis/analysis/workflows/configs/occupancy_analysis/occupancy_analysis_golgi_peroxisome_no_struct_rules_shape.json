@@ -1,16 +1,16 @@
 {
     "name": "occupancy_analysis",
     "structure_id": "SLC25A17",
-    "packing_id": "peroxisome",
+    "packing_id": "golgi_peroxisome_no_struct",
     "structure_name": "peroxisome",
     "packing_output_folder": "packing_outputs/8d_sphere_data/rules_shape_with_seed/",
-    "output_path": "occupancy_analysis/rules_shape_with_seed",
+    "output_path": "occupancy_analysis/rules_shape_with_seed/golgi_peroxisome_no_struct",
     "channel_map": {
         "SLC25A17": "SLC25A17",
-        "random": "SLC25A17",
-        "nucleus_gradient": "SLC25A17",
-        "membrane_gradient": "SLC25A17",
-        "apical_gradient": "SLC25A17"
+        "random": "ST6GAL1",
+        "nucleus_gradient": "ST6GAL1",
+        "membrane_gradient": "ST6GAL1",
+        "apical_gradient": "ST6GAL1"
     },
     "distribution_method": "kde",
     "occupancy_distance_measures": [

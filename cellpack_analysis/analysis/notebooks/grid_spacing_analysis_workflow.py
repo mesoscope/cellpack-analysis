@@ -280,12 +280,12 @@ fig, axs = visualization.plot_pairwise_envelope_matrix(
     save_format=save_format,
 )
 # %% [markdown]
-# ### Per distance measure rejection bars (per reference mode)
+# ### Per distance measure rejection bars (per test mode)
 # %%
-for ref_mode in packing_modes:
+for test_mode in packing_modes:
     fig, axs = visualization.plot_per_dm_rejection_bars(
         pairwise_results=pairwise_results,
-        reference_mode=ref_mode,
+        test_mode=test_mode,
         figures_dir=envelope_figures_dir,
         suffix=suffix,
         save_format=save_format,

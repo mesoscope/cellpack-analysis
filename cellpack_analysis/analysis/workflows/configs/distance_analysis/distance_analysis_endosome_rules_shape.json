@@ -16,15 +16,10 @@
         "nucleus",
         "z"
     ],
-    "recalculate": false,
-    "distance_pdf_bin_width": 0.01,
-    "emd_plot_params": {
-        "figure_size": [
-            6,
-            4.5
-        ]
+    "recalculate": {
+        "pairwise_envelope_test": true
     },
     "analysis_steps": [
-        "run_emd_analysis"
+        "run_pairwise_envelope_test"
     ]
 }

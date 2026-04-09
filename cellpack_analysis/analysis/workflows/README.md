@@ -177,7 +177,6 @@ Config files are JSON files in `cellpack_analysis/analysis/workflows/configs/`.
 |---|---|---|
 | `bandwidth` | KDE bandwidth (KDE mode only) | `0.2` |
 | `bin_width_map` | Dict of per-distance-measure histogram bin widths (discrete mode) | `{"nucleus": 0.2, "z": 0.2, ...}` |
-| `distance_pdf_bin_width` | Bin width for distance PDF computation only; overrides `bin_width_map` for that step (occupancy bin widths are unaffected). Scalar applies to all measures; dict overrides per measure. | falls back to `bin_width_map` |
 
 ### KS test parameters
 

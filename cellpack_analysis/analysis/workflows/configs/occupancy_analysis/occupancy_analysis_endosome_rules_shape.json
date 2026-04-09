@@ -24,7 +24,7 @@
             "bandwidth": 0.2
         },
         "z": {
-            "xlim": 8,
+            "xlim": 7,
             "ylim": 2,
             "bandwidth": 0.2
         }

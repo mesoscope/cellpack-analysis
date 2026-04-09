@@ -51,6 +51,10 @@ from cellpack_analysis.analysis.workflows.run_analysis_workflow import (
 from cellpack_analysis.lib import rule_interpolation
 from cellpack_analysis.lib.file_io import get_project_root
 from cellpack_analysis.lib.io import format_time
+from cellpack_analysis.lib.visualization import (
+    plot_aic_model_weights,
+    plot_rule_interpolation_validation_summary,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -347,7 +351,17 @@ def validate(config_path: str) -> None:
         occupancy_dm = val_analysis_config.occupancy_distance_measures
         baseline_mode = val_analysis_config.baseline_mode
 
-        logger.info("Running unified mixed-rule validation (occupancy + distance)")
+        # Fit from validation occupancy data for AIC/BIC comparison.
+        # The fit-phase FitResult is not persisted across phases, so we
+        # refit on the full dataset here.
+        fit_result = rule_interpolation.fit_rule_interpolation(
+            occupancy_dict=occupancy_dict,
+            channel_map=val_analysis_config.channel_map,
+            baseline_mode=baseline_mode,
+            distance_measures=occupancy_dm,
+        )
+
+        logger.info("Running unified mixed-rule validation (occupancy + distance + AIC/BIC)")
         validation_result = rule_interpolation.run_mixed_rule_validation(
             combined_occupancy_dict=occupancy_dict,
             channel_map=val_analysis_config.channel_map,
@@ -357,16 +371,78 @@ def validate(config_path: str) -> None:
             mixed_rule_distance_dict=all_distance_dict,
             results_dir=results_dir,
             recalculate=val_analysis_config.recalculate.get("run_rule_interpolation_cv", False),
+            fit_result=fit_result,
         )
 
-        # Log summary
-        logger.info("Occupancy EMD summary:\n%s", validation_result.emd_df.to_string())
-        logger.info("Occupancy KS test summary:\n%s", validation_result.ks_df.to_string())
-        if validation_result.distance_emd_df is not None:
-            logger.info(
-                "Distance EMD summary:\n%s",
-                validation_result.distance_emd_df.to_string(),
+        # Summary plot comparing mixed rule to individual rules
+        figures_dir = results_dir / "figures"
+        plot_rule_interpolation_validation_summary(
+            validation_result=validation_result,
+            packing_modes=packing_modes,
+            baseline_mode=baseline_mode,
+            distance_measures=occupancy_dm,
+            figures_dir=figures_dir,
+            suffix=val_analysis_config.suffix,
+            save_format=val_analysis_config.save_format,
+        )
+
+        # AIC/BIC model weights as a separate figure
+        if validation_result.aic_result is not None:
+            plot_aic_model_weights(
+                aic_result=validation_result.aic_result,
+                figures_dir=figures_dir,
+                suffix=val_analysis_config.suffix,
+                save_format=val_analysis_config.save_format,
             )
+
+        # Log summary (aggregated)
+        def _emd_summary(df: Any, label: str) -> None:
+            agg = (
+                df.groupby(["distance_measure", "packing_mode_1", "packing_mode_2"])["emd"]
+                .mean()
+                .reset_index()
+                .rename(columns={"emd": "mean_emd"})
+            )
+            lines = "  " + agg.to_string(index=False).replace("\n", "\n  ")
+            logger.info("%s (mean EMD per pair):\n%s", label, lines)
+
+        def _ks_summary(df: Any, label: str) -> None:
+            agg = (
+                df.groupby(["distance_measure", "packing_mode"])["similar"]
+                .mean()
+                .reset_index()
+                .rename(columns={"similar": "frac_similar"})
+            )
+            lines = "  " + agg.to_string(index=False).replace("\n", "\n  ")
+            logger.info("%s (fraction similar per mode):\n%s", label, lines)
+
+        _emd_summary(validation_result.emd_df, "Occupancy EMD")
+        _ks_summary(validation_result.ks_df, "Occupancy KS")
+        if validation_result.distance_emd_df is not None:
+            _emd_summary(validation_result.distance_emd_df, "Distance EMD")
+        if validation_result.distance_ks_df is not None:
+            _ks_summary(validation_result.distance_ks_df, "Distance KS")
+
+        # AIC/BIC summary and evidence ratio log file
+        if validation_result.aic_result is not None:
+            aic_result = validation_result.aic_result
+            joint_aic_w = aic_result.akaike_weights.get("joint", {}).get("joint", {})
+            joint_bic_w = aic_result.bic_weights.get("joint", {}).get("joint", {})
+            weight_lines = "\n".join(
+                f"  {m}: w_aic={joint_aic_w.get(m, 0.0):.3f}, w_bic={joint_bic_w.get(m, 0.0):.3f}"
+                for m in joint_aic_w
+            )
+            logger.info("AIC/BIC joint model weights:\n%s", weight_lines)
+
+            structure_name = val_analysis_config.structure_name
+            logs_dir = results_dir / "logs"
+            logs_dir.mkdir(parents=True, exist_ok=True)
+            er_log_path = logs_dir / f"{structure_name}_aic_bic_evidence_ratios.log"
+            rule_interpolation.log_evidence_ratios(
+                result=validation_result.aic_result,
+                file_path=er_log_path,
+            )
+            logger.info("Evidence ratios written to: %s", er_log_path)
 
     logger.info("")
     logger.info("Validation complete. Results saved to: %s", results_dir)

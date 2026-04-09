@@ -107,9 +107,8 @@ for structure_id in all_structures:
 
 # %% [markdown]
 # ## Read emd data
-df_list = []
+df_list: list[pd.DataFrame] = []
 for packing_id, mode_dict in distance_dict.items():
-
     mode_results_dir = base_results_dir / f"distance_analysis/{packing_id}/"
     mode_results_dir.mkdir(exist_ok=True, parents=True)
 
@@ -159,7 +158,7 @@ for packing_id, mode_dict in distance_dict.items():
     )
     df_emd["packing_id"] = packing_id
     df_plot = (
-        df_emd.query("packing_mode_1 == @structure_id" " and packing_mode_2 != @structure_id")
+        df_emd.query("packing_mode_1 == @structure_id and packing_mode_2 != @structure_id")
         .copy()
         .reset_index(drop=True)
     )

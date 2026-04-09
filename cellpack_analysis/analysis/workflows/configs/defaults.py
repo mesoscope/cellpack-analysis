@@ -74,7 +74,6 @@ DISCRETE_OCCUPANCY_PARAMS = {
 
 ENVELOPE_TEST_PARAMS = {
     "alpha": 0.05,
-    "r_grid_size": 150,
     "bin_width": 0.2,
     "statistic": "intdev",
 }
@@ -132,9 +131,9 @@ EMD_PLOT_PARAMS: dict = {
 """Extra kwargs forwarded to ``visualization.plot_pairwise_emd_matrix``."""
 
 ENVELOPE_PLOT_PARAMS: dict = {
-    "per_dm_matrix_figsize": [7, 3.5],
+    "per_dm_matrix_figsize": [7, 4],
     "per_dm_matrix_font_scale": 1.1,
-    "joint_matrix_figsize": [4, 1.8],
+    "joint_matrix_figsize": [7, 4],
     "joint_matrix_font_scale": 1.1,
     "rejection_bars_figsize": [4, 1.8],
     "rejection_bars_font_scale": 1.1,

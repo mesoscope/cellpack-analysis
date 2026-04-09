@@ -1,0 +1,28 @@
+{
+    "name": "distance_analysis",
+    "structure_id": "SLC25A17",
+    "packing_id": "golgi_peroxisome",
+    "structure_name": "peroxisome",
+    "packing_output_folder": "packing_outputs/8d_sphere_data/rules_shape_with_seed/",
+    "output_path": "rules_shape_with_seed/golgi_peroxisome/",
+    "channel_map": {
+        "SLC25A17": "SLC25A17",
+        "random": "ST6GAL1",
+        "nucleus_gradient": "ST6GAL1",
+        "membrane_gradient": "ST6GAL1",
+        "apical_gradient": "ST6GAL1",
+        "struct_gradient_weak": "ST6GAL1"
+    },
+    "distance_measures": [
+        "nucleus",
+        "z"
+    ],
+    "analysis_steps": [
+        "load_common_data",
+        "calculate_distances",
+        "plot_distance_distributions",
+        "run_emd_analysis",
+        "run_pairwise_envelope_test",
+        "run_ks_analysis"
+    ]
+}

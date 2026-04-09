@@ -98,7 +98,7 @@ while [[ $# -gt 0 ]]; do
         -t|--time)         TIME="$2";          shift 2 ;;
         -m|--mem)          MEM="$2";           shift 2 ;;
         --cpus)            CPUS="$2";          shift 2 ;;
-        --job-name)        JOB_NAME="$2";      shift 2 ;;
+        -n|--job-name)        JOB_NAME="$2";      shift 2 ;;
         --orch-time)       ORCH_TIME="$2";     shift 2 ;;
         --orch-mem)        ORCH_MEM="$2";      shift 2 ;;
         --orch-partition)  ORCH_PARTITION="$2"; shift 2 ;;

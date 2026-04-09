@@ -158,14 +158,6 @@ class AnalysisConfig:
         # Merge user-provided bin_width_map over defaults
         self.bin_width_map: dict[str, float] = defaults.BIN_WIDTH_MAP.copy()
         self.bin_width_map.update(self.config.get("bin_width_map", {}))
-        # Separate bin width map for distance PDF computation; falls back to bin_width_map.
-        # Accepts a scalar (applied to all measures) or a per-measure dict in the config.
-        self.distance_pdf_bin_width: dict[str, float] = self.bin_width_map.copy()
-        _pdf_bw = self.config.get("distance_pdf_bin_width")
-        if isinstance(_pdf_bw, (int, float)):
-            self.distance_pdf_bin_width = {dm: float(_pdf_bw) for dm in self.distance_measures}
-        elif isinstance(_pdf_bw, dict):
-            self.distance_pdf_bin_width.update(_pdf_bw)
         # analysis_steps is the primary driver of execution
         self.analysis_steps: list[str] = self.config["analysis_steps"]
         self.filter_minimum_distance: float | None = self.config.get(
@@ -392,20 +384,16 @@ class AnalysisRunner:
             self._calculate_distances(config)
 
         logger.info(f"Plotting distance distributions ({config.distribution_method})")
-        distance_figures_dir = config.figures_dir / "distance_distributions"
+        distance_figures_dir = config.figures_dir / "distance" / "distributions"
         distance_figures_dir.mkdir(exist_ok=True, parents=True)
 
         method = config.distribution_method
-        bin_width: dict[str, float] = {
-            dm: config.distance_pdf_bin_width.get(dm, 0.2) for dm in config.distance_measures
-        }
         pdf_kwargs: dict = {
             "all_distance_dict": self.shared_data["all_distance_dict"],
             "distance_measures": config.distance_measures,
             "packing_modes": config.packing_modes,
             "method": method,
             "distance_limits": DISTANCE_LIMITS,
-            "bin_width": bin_width,
             "results_dir": config.results_dir,
             "recalculate": config.recalculate["plot_distance_distributions"],
             "minimum_distance": config.filter_minimum_distance,
@@ -443,7 +431,7 @@ class AnalysisRunner:
             self._calculate_distances(config)
 
         logger.info("Running EMD analysis")
-        emd_figures_dir = config.figures_dir / "emd"
+        emd_figures_dir = config.figures_dir / "distance" / "emd"
         emd_figures_dir.mkdir(exist_ok=True, parents=True)
 
         df_emd = distance.get_distance_distribution_emd_df(
@@ -487,7 +475,7 @@ class AnalysisRunner:
             else:
                 emd_matrix_kwargs["all_distance_dict"] = self.shared_data["all_distance_dict"]
                 emd_matrix_kwargs["distance_limits"] = DISTANCE_LIMITS
-                emd_matrix_kwargs["bin_width"] = config.distance_pdf_bin_width.get(dm, 0.2)
+                emd_matrix_kwargs["bin_width"] = config.distance_pdf_params.get("bin_width", 0.01)
             _ = visualization.plot_pairwise_emd_matrix(**emd_matrix_kwargs)
 
         pairwise_emd_log_file_path = (
@@ -510,7 +498,7 @@ class AnalysisRunner:
             self._calculate_distances(config)
 
         logger.info("Running pairwise KS test analysis")
-        ks_figures_dir = config.figures_dir / "pairwise_ks_test"
+        ks_figures_dir = config.figures_dir / "distance" / "ks_test"
         ks_figures_dir.mkdir(exist_ok=True, parents=True)
 
         # Collect per-ref-mode KS results
@@ -572,7 +560,7 @@ class AnalysisRunner:
             self._calculate_distances(config)
 
         logger.info("Running pairwise envelope test")
-        envelope_figures_dir = config.figures_dir / "pairwise_envelope"
+        envelope_figures_dir = config.figures_dir / "distance" / "pairwise_envelope"
         envelope_figures_dir.mkdir(exist_ok=True, parents=True)
 
         pairwise_results = pairwise_envelope_test(
@@ -605,12 +593,12 @@ class AnalysisRunner:
             font_scale=ep["joint_matrix_font_scale"],
         )
 
-        # Per-DM rejection bars (per reference mode)
-        for ref_mode in config.packing_modes:
+        # Per-DM rejection bars (per test mode)
+        for test_mode in config.packing_modes:
             for joint_test in [False, True]:
                 _ = visualization.plot_per_dm_rejection_bars(
                     pairwise_results=pairwise_results,
-                    reference_mode=ref_mode,
+                    test_mode=test_mode,
                     joint_test=joint_test,
                     figures_dir=envelope_figures_dir,
                     figsize=tuple(ep["rejection_bars_figsize"]),
@@ -723,7 +711,7 @@ class AnalysisRunner:
             f"Running occupancy analysis for distance measure: {occupancy_distance_measure}"
         )
 
-        occupancy_figures_dir = config.figures_dir / occupancy_distance_measure
+        occupancy_figures_dir = config.figures_dir / "occupancy" / occupancy_distance_measure
         occupancy_figures_dir.mkdir(exist_ok=True, parents=True)
 
         # Create KDE dictionary
@@ -749,7 +737,7 @@ class AnalysisRunner:
             suffix=config.suffix,
             distance_measure=occupancy_distance_measure,
             bandwidth=config.occupancy_params[occupancy_distance_measure]["bandwidth"],
-            num_points=250,
+            num_points=1000,
             x_min=0,
             x_max=config.occupancy_params[occupancy_distance_measure]["xlim"],
             num_workers=config.num_workers,
@@ -794,7 +782,7 @@ class AnalysisRunner:
             self._run_occupancy_analysis(config)
 
         logger.info("Running occupancy EMD analysis")
-        occupancy_emd_figures_dir = config.figures_dir / "occupancy_emd"
+        occupancy_emd_figures_dir = config.figures_dir / "occupancy" / "emd"
         occupancy_emd_figures_dir.mkdir(exist_ok=True, parents=True)
 
         occupancy_emd_df = occupancy.get_occupancy_emd_df(
@@ -829,7 +817,7 @@ class AnalysisRunner:
 
         # Pairwise occupancy EMD matrix per distance measure
         for dm in config.occupancy_distance_measures:
-            dm_figures_dir = config.figures_dir / dm
+            dm_figures_dir = config.figures_dir / "occupancy" / dm
             dm_figures_dir.mkdir(exist_ok=True, parents=True)
             xlim = config.occupancy_params.get(dm, {}).get("xlim", 8)
             ylim = config.occupancy_params.get(dm, {}).get("ylim", 3)
@@ -855,7 +843,7 @@ class AnalysisRunner:
             self._run_occupancy_analysis(config)
 
         logger.info("Running occupancy pairwise envelope test")
-        envelope_figures_dir = config.figures_dir / "pairwise_envelope"
+        envelope_figures_dir = config.figures_dir / "occupancy" / "pairwise_envelope"
         envelope_figures_dir.mkdir(exist_ok=True, parents=True)
 
         occ_pairwise_results = occupancy.pairwise_envelope_test_occupancy(
@@ -889,12 +877,12 @@ class AnalysisRunner:
             font_scale=ep["joint_matrix_font_scale"],
         )
 
-        # Per-DM rejection bars (per reference mode)
-        for ref_mode in config.packing_modes:
+        # Per-DM rejection bars (per test mode)
+        for test_mode in config.packing_modes:
             for joint_test in [False, True]:
                 _ = visualization.plot_per_dm_rejection_bars(
                     pairwise_results=occ_pairwise_results,
-                    reference_mode=ref_mode,
+                    test_mode=test_mode,
                     joint_test=joint_test,
                     figures_dir=envelope_figures_dir,
                     figsize=tuple(ep["rejection_bars_figsize"]),
@@ -1029,7 +1017,7 @@ class AnalysisRunner:
             self._run_occupancy_analysis(config)
 
         logger.info("Running pairwise occupancy KS test analysis")
-        ks_figures_dir = config.figures_dir / "pairwise_ks_test"
+        ks_figures_dir = config.figures_dir / "occupancy" / "ks_test"
         ks_figures_dir.mkdir(exist_ok=True, parents=True)
 
         # Collect per-ref-mode KS results

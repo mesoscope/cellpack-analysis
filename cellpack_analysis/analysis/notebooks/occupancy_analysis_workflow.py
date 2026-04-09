@@ -39,22 +39,22 @@ start_time = time.time()
 # RAB5A: early endosomes
 # SEC61B: ER
 # ST6GAL1: Golgi
-STRUCTURE_ID = "SLC25A17"
+STRUCTURE_ID = "RAB5A"
 """ID for the packed punctate structure; used as packing mode for observed data."""
 
-CELL_STRUCTURE_ID = "SLC25A17"
+CELL_STRUCTURE_ID = "RAB5A"
 """ID of the cell shapes used for packing (used for mesh lookup for simulated modes)."""
 
-PACKING_ID = "peroxisome"
+PACKING_ID = "endosome"
 """Packing configuration ID — used for naming outputs and folders."""
 
-STRUCTURE_NAME = "peroxisome"
+STRUCTURE_NAME = "endosome"
 """Name of the packed punctate structure in cellPACK output files."""
 
 CONDITION = "rules_shape_with_seed"
 """Experimental condition / packing output subfolder."""
 
-RESULT_SUBFOLDER = "occupancy_analysis/rules_shape_with_seed"
+RESULT_SUBFOLDER = "rules_shape_with_seed/endosome/occupancy_kde_test/"
 """Subfolder within results/ to save outputs for this workflow."""
 # %% [markdown]
 # ### Set packing modes and channel map
@@ -112,7 +112,7 @@ all_positions = get_position_data_from_outputs(
     results_dir=results_dir,
     packing_output_folder=packing_output_folder,
     ingredient_key=f"membrane_interior_{STRUCTURE_NAME}",
-    recalculate=True,
+    recalculate=False,
 )
 # %% [markdown]
 # ### Get mesh information
@@ -121,7 +121,7 @@ for structure_id in all_structures:
     mesh_information_dict = get_mesh_information_dict_for_structure(
         structure_id=structure_id,
         base_datadir=base_datadir,
-        recalculate=True,
+        recalculate=False,
     )
     combined_mesh_information_dict[structure_id] = mesh_information_dict
 # %% [markdown]
@@ -134,7 +134,7 @@ all_distance_dict_raw = distance.get_distance_dictionary(
     mesh_information_dict=combined_mesh_information_dict,
     channel_map=channel_map,
     results_dir=results_dir,
-    recalculate=True,
+    recalculate=False,
     num_workers=8,
 )
 all_distance_dict_filtered = distance.filter_invalids_from_distance_distribution_dict(
@@ -173,7 +173,7 @@ for dm in occupancy_distance_measures:
         mesh_information_dict=combined_mesh_information_dict,
         channel_map=channel_map,
         save_dir=results_dir,
-        recalculate=True,
+        recalculate=False,
         suffix=suffix,
         normalization=normalization,
         distance_measure=dm,
@@ -190,16 +190,16 @@ for dm in occupancy_distance_measures:
         distance_kde_dict=distance_kde_dict[dm],
         channel_map=channel_map,
         results_dir=results_dir,
-        recalculate=True,
+        recalculate=False,
         suffix=suffix,
         distance_measure=dm,
         bandwidth=occupancy_params[dm]["bandwidth"],
         # bandwidth="scott",
         # num_cells=5,
-        num_points=250,
+        num_points=1000,
         x_min=0,
         x_max=occupancy_params[dm]["xlim"],
-        num_workers=8,
+        num_workers=16,
     )
 
 # %% [markdown]
@@ -213,7 +213,7 @@ for dm in occupancy_distance_measures:
         distance_measure=dm,
         normalization=normalization,
         cell_id_or_index=25,
-        num_points=250,
+        num_points=1000,
         bandwidth=0.4,
         save_format=save_format,
         xlim=occupancy_params[dm]["xlim"],
@@ -238,13 +238,12 @@ for dm in occupancy_distance_measures:
 
 # %% [markdown]
 # ## Calculate occupancy EMD
-# TODO: use combined grid evaluated occupancy
 occupancy_emd_df = occupancy.get_occupancy_emd_df(
     combined_occupancy_dict=combined_occupancy_dict,
     packing_modes=packing_modes,
     distance_measures=occupancy_distance_measures,
     results_dir=results_dir,
-    recalculate=True,
+    recalculate=False,
     suffix=suffix,
 )
 # %% [markdown]
@@ -313,13 +312,13 @@ fig_env_joint, axs_env_joint = visualization.plot_pairwise_envelope_matrix(
     font_scale=1.1,
 )
 # %% [markdown]
-# ### Per distance measure rejection bars (per reference mode)
+# ### Per distance measure rejection bars (per test mode)
 # %%
-for ref_mode in packing_modes:
+for test_mode in packing_modes:
     for joint_test in [False, True]:
         fig_env, axs_env = visualization.plot_per_dm_rejection_bars(
             pairwise_results=occ_pairwise_results,
-            reference_mode=ref_mode,
+            test_mode=test_mode,
             joint_test=joint_test,
             figures_dir=envelope_figures_dir,
             figsize=(3.5, 2),
@@ -354,7 +353,7 @@ for ref_mode in packing_modes:
         baseline_mode=ref_mode,
         significance_level=ks_significance_level,
         results_dir=None,
-        recalculate=True,
+        recalculate=False,
     )
     occ_ks_df["baseline_mode"] = ref_mode
     pairwise_occ_ks_dfs.append(occ_ks_df)
