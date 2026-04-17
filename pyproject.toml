@@ -101,7 +101,7 @@ source-exclude = [
 ]
 
 [tool.uv.sources]
-cellpack = { git = "https://github.com/mesoscope/cellpack", rev = "60d1be4e318b9ed8b7861e57f0e03de7a6527f74" }
+cellpack = { git = "https://github.com/mesoscope/cellpack", rev = "f8b5500f8422d9999e6797fcc4b7a009ceb3582b" }
 
 [tool.black]
 line-length = 100
