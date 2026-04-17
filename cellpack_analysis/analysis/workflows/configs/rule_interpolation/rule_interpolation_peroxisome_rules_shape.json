@@ -1,6 +1,7 @@
 {
     "name": "rule_interpolation",
     "structure_id": "SLC25A17",
+    "simulated_structure_id": "SLC25A17",
     "packing_id": "peroxisome",
     "structure_name": "peroxisome",
     "packing_output_folder": "packing_outputs/8d_sphere_data/rules_shape_with_seed/",
@@ -24,7 +25,7 @@
             "bandwidth": 0.2
         },
         "z": {
-            "xlim": 7,
+            "xlim": 8,
             "ylim": 2,
             "bandwidth": 0.2
         }

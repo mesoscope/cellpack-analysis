@@ -37,18 +37,6 @@
             "gradients": [
                 "struct_gradient_weak"
             ]
-        },
-        "interpolated": {
-            "gradients": [
-                "nucleus_gradient",
-                "membrane_gradient",
-                "struct_gradient_weak"
-            ],
-            "gradient_weights": {
-                "nucleus_gradient": 0.3393,
-                "membrane_gradient": 0.4269,
-                "struct_gradient_weak": 0.2338
-            }
         }
     },
     "packings_to_run": {

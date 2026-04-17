@@ -285,7 +285,7 @@ fig, axs = visualization.plot_pairwise_envelope_matrix(
 for test_mode in packing_modes:
     fig, axs = visualization.plot_per_dm_rejection_bars(
         pairwise_results=pairwise_results,
-        test_mode=test_mode,
+        compare_mode=test_mode,
         figures_dir=envelope_figures_dir,
         suffix=suffix,
         save_format=save_format,

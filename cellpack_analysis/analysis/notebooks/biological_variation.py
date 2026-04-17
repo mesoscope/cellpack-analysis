@@ -245,44 +245,31 @@ pairwise_results = pairwise_envelope_test(
 # ### Plot pairwise envelope matrix per distance measure
 envelope_figures_dir = make_dir(figures_dir / "envelope_tests/")
 # %%
-for dm in distance_measures:
+for dm in [*distance_measures, None]:  # include joint test (None)
     fig, axs = visualization.plot_pairwise_envelope_matrix(
         pairwise_results=pairwise_results,
         distance_measure=dm,
         figures_dir=envelope_figures_dir,
         suffix=suffix,
         save_format=save_format,
-        figure_size=(3.5, 2.5),
-        font_scale=0.8,
+        figure_size=(7, 3.5),
+        font_scale=1.1,
     )
     # break
 # %% [markdown]
-# ### Plot pairwise envelope matrix - joint test
-# %%
-fig, axs = visualization.plot_pairwise_envelope_matrix(
-    pairwise_results=pairwise_results,
-    distance_measure=None,
-    figures_dir=envelope_figures_dir,
-    suffix=suffix,
-    save_format=save_format,
-    figure_size=(7, 3.5),
-    font_scale=1.1,
-)
-# %% [markdown]
-# ### Per distance measure rejection bars (per test mode)
-# %%
-rej_dict = {}
-for test_mode in packing_modes:
-    rej_dict[test_mode] = visualization.plot_per_dm_rejection_bars(
-        pairwise_results=pairwise_results,
-        test_mode=test_mode,
-        joint_test=True,
-        figures_dir=envelope_figures_dir,
-        figsize=(3.5, 2),
-        suffix=suffix,
-        save_format=save_format,
-    )
-    break
+# ### Plot rejection bars
+for joint_test in [False, True]:
+    for envelope_from_compare in [False, True]:
+        _ = visualization.plot_per_dm_rejection_bars(
+            pairwise_results=pairwise_results,
+            compare_mode=baseline_mode,
+            joint_test=joint_test,
+            envelope_from_compare=envelope_from_compare,
+            figures_dir=envelope_figures_dir,
+            figsize=(3.5, 2),
+            suffix=suffix,
+            save_format=save_format,
+        )
 # %% [markdown]
 # ### Per distance measure envelope overlays
 # %%

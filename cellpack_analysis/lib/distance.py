@@ -720,6 +720,12 @@ def get_distance_dictionary(
                 if cell_dict is None:
                     logger.debug(f"Cache miss (invalid data): {dm}/{mode}")
                     continue
+                logger.info(
+                    "Loaded %d cells for %s/%s from cache",
+                    len(cell_dict),
+                    dm,
+                    mode,
+                )
 
                 all_distance_dict[dm][mode] = cell_dict
                 modes_to_calculate[dm].discard(mode)
@@ -938,11 +944,13 @@ def bootstrap_ks_tests(
 
     for exp_num in tqdm(range(n_bootstrap), desc="Bootstrapping KS tests"):
         sampled_cell_ids = np.random.choice(cell_ids, size=n_cells, replace=True)
-        # Build a boolean mask once for all (distance_measure, packing_mode) combos.
-        # Using isin handles the case where a cell_id appears multiple times in
-        # the resample (multiple seeds, or the same cell drawn more than once).
-        mask = ks_test_df["cell_id"].isin(sampled_cell_ids)
-        sampled_df = ks_test_df.loc[mask]
+        # Concatenate rows for each drawn cell_id, preserving duplicates so that
+        # a cell drawn k times contributes k copies of its rows. isin() would
+        # silently deduplicate repeated draws, underestimating variance.
+        chunks: list[pd.DataFrame] = [
+            ks_test_df[ks_test_df["cell_id"] == cid] for cid in sampled_cell_ids
+        ]
+        sampled_df = pd.concat(chunks, ignore_index=True)
         for distance_measure in distance_measures:
             for packing_mode in packing_modes:
                 mode_df = sampled_df.loc[
@@ -1036,7 +1044,7 @@ def get_distance_distribution_emd_df(
     :
         DataFrame containing pairwise EMD for each distance measure
     """
-    file_name = f"pairwise_emd{suffix}.parquet"
+    file_name = f"distance_pairwise_emd{suffix}.parquet"
     if results_dir is not None:
         file_path = results_dir / file_name
         cached_df = _load_parquet_if_exists(

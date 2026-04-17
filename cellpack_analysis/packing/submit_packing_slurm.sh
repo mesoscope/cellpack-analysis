@@ -68,15 +68,15 @@ set -euo pipefail
 
 # ----------------------------  defaults  ------------------------------------
 BATCH_SIZE=8
-PARTITION=""
+PARTITION="aics"
 TIME="00:30:00"
-MEM="16G"
+MEM="24G"
 CPUS="4"
 JOB_NAME="cellpack"
 ORCH_TIME="1-00:00:00"
 ORCH_CPUS="4"
 ORCH_MEM="16G"
-ORCH_PARTITION=""
+ORCH_PARTITION="aics"
 CONFIG=""
 VENV=""
 DRY_RUN=""

@@ -1,14 +1,16 @@
 # %% [markdown]
 """
-# Structure size and count distribution histograms
+# Structure size and count distribution histograms.
 
-Visualize the distributions of puncta count, volume, and equivalent spherical radius for structures of interest, loaded from the pre-computed structure_stats.parquet file.
+Visualize the distributions of puncta count, volume, and equivalent spherical radius for structures
+of interest, loaded from the pre-computed structure_stats.parquet file.
 
 Workflow steps:
 1. Load the pre-computed structure stats dataframe.
 2. Define the structures of interest and the measurements to visualize.
 3. For each structure and measurement, plot histograms of the measurement values across cells.
 """
+
 import matplotlib.pyplot as plt
 import seaborn as sns
 from matplotlib.ticker import MaxNLocator
@@ -27,8 +29,8 @@ structures_of_interest = ["SLC25A17", "RAB5A"]
 
 measurement_tuples = [
     ("count", "Number of puncta", 10),
-    ("volume", "Puncta volume (µm³)", 10),
-    ("radius", "Equivalent spherical puncta radius (µm)", 0.1),
+    ("volume", "Puncta volume (µm³)", 10 * 0.1**3),
+    ("radius", "Equivalent spherical puncta radius (µm)", 0.01),
 ]
 
 # %% [markdown]

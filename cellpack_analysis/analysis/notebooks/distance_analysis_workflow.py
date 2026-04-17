@@ -50,10 +50,10 @@ start_time = time.time()
 PUNCTATE_STRUCTURE_ID = "SLC25A17"
 """This is the ID for the packed structure, it is used as the packing mode for observed data"""
 
-CELL_STRUCTURE_ID = "SLC25A17"
+CELL_STRUCTURE_ID = "SEC61B"
 """This is the ID for the cell shapes used for packing"""
 
-PACKING_ID = "peroxisome"
+PACKING_ID = "ER_peroxisome"
 """This is the ID for the overall packing configuration,
 it is used for naming outputs and folders"""
 
@@ -274,8 +274,8 @@ pairwise_results = pairwise_envelope_test(
 # ### Plot pairwise envelope matrix
 envelope_figures_dir = make_dir(figures_dir / "envelope_tests/")
 # %%
-# for dm in [*distance_measures, None]:
-for dm in [None]:
+for dm in [*distance_measures, None]:
+    # for dm in [None]:
     fig, axs = visualization.plot_pairwise_envelope_matrix(
         pairwise_results=pairwise_results,
         distance_measure=dm,
@@ -288,16 +288,18 @@ for dm in [None]:
 # %% [markdown]
 # ### Plot rejection bars
 for joint_test in [False, True]:
-    fig, axs = visualization.plot_per_dm_rejection_bars(
-        pairwise_results=pairwise_results,
-        test_mode=baseline_mode,
-        joint_test=joint_test,
-        figures_dir=envelope_figures_dir,
-        figsize=(4, 1.8),
-        font_scale=1.1,
-        suffix=suffix,
-        save_format=save_format,
-    )
+    for envelope_from_compare in [True, False]:
+        fig, axs = visualization.plot_per_dm_rejection_bars(
+            pairwise_results=pairwise_results,
+            compare_mode=baseline_mode,
+            envelope_from_compare=envelope_from_compare,
+            joint_test=joint_test,
+            figures_dir=envelope_figures_dir,
+            figsize=(4, 1.8),
+            font_scale=1.1,
+            suffix=suffix,
+            save_format=save_format,
+        )
 # %% [markdown]
 # ### Per distance measure envelope overlays
 fig, axs = visualization.plot_per_dm_envelopes_overlaid(

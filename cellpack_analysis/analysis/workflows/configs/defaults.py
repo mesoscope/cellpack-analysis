@@ -49,7 +49,7 @@ OCCUPANCY_PARAMS = {
     "nucleus": {"xlim": 6, "ylim": 3, "bandwidth": 0.2, "num_points": 250, "x_min": 0},
     "z": {"xlim": 8, "ylim": 2, "bandwidth": 0.2, "num_points": 250, "x_min": 0},
     "fig_params": {"dpi": 300, "figsize": [3.5, 2.5]},
-    "plot_individual": True,
+    "plot_individual": False,
     "show_legend": True,
 }
 """Default occupancy analysis parameters (used for both KDE and discrete methods)."""
@@ -125,7 +125,7 @@ DISTANCE_PLOT_PARAMS: dict = {
 """Extra kwargs forwarded to ``visualization.plot_distance_distributions``."""
 
 EMD_PLOT_PARAMS: dict = {
-    "figure_size": [2.7, 3.4],
+    "figure_size": [7, 7],
     "minimum_distance": -1,
 }
 """Extra kwargs forwarded to ``visualization.plot_pairwise_emd_matrix``."""

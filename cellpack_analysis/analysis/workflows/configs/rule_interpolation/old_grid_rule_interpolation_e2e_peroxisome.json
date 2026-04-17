@@ -1,16 +1,16 @@
 {
-    "name": "rule_interpolation_e2e",
-    "structure_id": "RAB5A",
-    "simulated_structure_id": "RAB5A",
-    "packing_id": "endosome",
-    "structure_name": "endosome",
+    "name": "rule_interpolation_e2e_old_grid",
+    "structure_id": "SLC25A17",
+    "simulated_structure_id": "SLC25A17",
+    "packing_id": "peroxisome",
+    "structure_name": "peroxisome",
     "packing_output_folder": "packing_outputs/8d_sphere_data/rules_shape_with_seed/",
     "channel_map": {
-        "RAB5A": "RAB5A",
-        "random": "RAB5A",
-        "nucleus_gradient": "RAB5A",
-        "membrane_gradient": "RAB5A",
-        "apical_gradient": "RAB5A"
+        "SLC25A17": "SLC25A17",
+        "random": "SLC25A17",
+        "nucleus_gradient": "SLC25A17",
+        "membrane_gradient": "SLC25A17",
+        "apical_gradient": "SLC25A17"
     },
     "distribution_method": "kde",
     "occupancy_distance_measures": [
@@ -35,7 +35,7 @@
         "random_state": 42,
         "grouping": "combined"
     },
-    "base_packing_config_path": "cellpack_analysis/packing/configs/rules_shape_with_seed/endosome.json",
+    "base_packing_config_path": "cellpack_analysis/packing/configs/rules_shape_with_seed/peroxisome.json",
     "mode_to_gradient_name": {
         "random": "uniform",
         "nucleus_gradient": "nucleus_gradient",
@@ -45,7 +45,7 @@
     "packing_config_scope": "joint",
     "slurm_kwargs": {
         "p": "aics_gpu",
-        "n": "cellPACK_endosome"
+        "n": "cellPACK_peroxisome"
     },
     "validation_distance_measures": [
         "nucleus",
@@ -54,6 +54,6 @@
     "validation_analysis_steps": [
         "run_occupancy_analysis"
     ],
-    "skip_mixed_rule_validation": true,
-    "recalculate": false
+    "skip_mixed_rule_validation": false,
+    "recalculate": true
 }

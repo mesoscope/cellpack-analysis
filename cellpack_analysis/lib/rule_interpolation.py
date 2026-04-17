@@ -232,10 +232,6 @@ class ValidationResult:
     ----------
     emd_df
         Pairwise Earth Mover's Distance on occupancy curves.
-    ks_df
-        Kolmogorov-Smirnov test results vs the baseline mode.
-    envelope_test
-        Pairwise Monte Carlo rank-envelope test on occupancy curves.
     distance_emd_df
         Pairwise EMD on distance distributions (only if packings were run).
     distance_envelope_test
@@ -248,8 +244,8 @@ class ValidationResult:
     """
 
     emd_df: pd.DataFrame
-    ks_df: pd.DataFrame
-    envelope_test: dict[str, Any]
+    ks_df: pd.DataFrame | None = None
+    envelope_test: dict[str, Any] | None = None
     distance_emd_df: pd.DataFrame | None = None
     distance_envelope_test: dict[str, Any] | None = None
     distance_ks_df: pd.DataFrame | None = None
@@ -1179,6 +1175,7 @@ def summarize_cv_results(cv_result: CVResult) -> pd.DataFrame:
 def log_cv_summary(
     cv_result: CVResult,
     file_path: Path | None = None,
+    reconstruction_fit_result: FitResult | None = None,
 ) -> None:
     """Log a human-readable summary of cross-validation results.
 
@@ -1188,6 +1185,12 @@ def log_cv_summary(
         Output from :func:`run_rule_interpolation_cv`.
     file_path
         Optional path to write the log to a file.
+    reconstruction_fit_result
+        Optional :class:`FitResult` from :func:`fit_result_from_cv`.  When
+        provided, a second table is appended showing the full reconstruction
+        MSE — i.e. the mean CV coefficients applied to the combined occupancy
+        curve of **all** baseline cells.  This is distinct from the aggregate
+        training MSE (mean over per-fold fits on cell subsets).
     """
     if file_path is not None:
         cv_logger = add_file_handler_to_logger(logger, file_path)
@@ -1206,16 +1209,40 @@ def log_cv_summary(
         mean, std = data["joint"]
         cv_logger.info(f"  {mode:<30s}  {mean:.4f} ± {std:.4f}")
 
-    cv_logger.info("\nMSE summary (mean across folds):")
-    cv_logger.info("-" * 80)
-    cv_logger.info(
-        f"  {'Distance measure':<20s}  {'Scope':<12s}  {'Train MSE':>12s}  {'Test MSE':>12s}"
+    packing_modes = list(cv_result.aggregated_coefficients.keys())
+    mean_joint_coeffs = np.array(
+        [cv_result.aggregated_coefficients[mode]["joint"][0] for mode in packing_modes]
     )
+    _, rel_joint = _normalize_coefficients(mean_joint_coeffs, packing_modes)
+    cv_logger.info("\nAggregated joint relative contributions (normalised mean coefficients):")
+    cv_logger.info("-" * 80)
+    for mode in packing_modes:
+        cv_logger.info(f"  {mode:<30s}  {rel_joint[mode]:.4f}")
+
+    cv_logger.info("\nAggregate training MSE (mean ± std across folds):")
+    cv_logger.info("-" * 80)
+    header = (
+        f"  {'Distance measure':<20s}  {'Scope':<12s}"
+        f"  {'Aggregate Train MSE (mean ± std)':>33s}  {'Test MSE':>12s}"
+    )
+    cv_logger.info(header)
     for scope in ("individual", "joint"):
         for dm in cv_result.mean_train_mse.get(scope, {}):
-            train_mse = cv_result.mean_train_mse[scope][dm]
+            train_mean = cv_result.mean_train_mse[scope][dm]
+            train_std = cv_result.std_train_mse[scope][dm]
             test_mse = cv_result.mean_test_mse[scope][dm]
-            cv_logger.info(f"  {dm:<20s}  {scope:<12s}  {train_mse:>12.6f}  {test_mse:>12.6f}")
+            train_cell = f"{train_mean:.6f} ± {train_std:.6f}"
+            cv_logger.info(f"  {dm:<20s}  {scope:<12s}  {train_cell:>33s}  {test_mse:>12.6f}")
+
+    if reconstruction_fit_result is not None:
+        cv_logger.info("\nFull reconstruction MSE (mean CV coefficients applied to full data):")
+        cv_logger.info("-" * 80)
+        cv_logger.info(f"  {'Distance measure':<20s}  {'Scope':<12s}  {'Reconstruction MSE':>20s}")
+        for scope in ("individual", "joint"):
+            for dm in reconstruction_fit_result.distance_measures:
+                recon_mse = reconstruction_fit_result.train_mse.get(scope, {}).get(dm)
+                if recon_mse is not None:
+                    cv_logger.info(f"  {dm:<20s}  {scope:<12s}  {recon_mse:>20.6f}")
 
     remove_file_handler_from_logger(cv_logger, file_path)
 
@@ -1892,6 +1919,9 @@ def run_mixed_rule_validation(
     results_dir: Path | None = None,
     recalculate: bool = False,
     fit_result: FitResult | None = None,
+    occupancy_emd_df: "pd.DataFrame | None" = None,
+    distance_emd_df: "pd.DataFrame | None" = None,
+    distance_envelope_test_result: dict[str, Any] | None = None,
 ) -> ValidationResult:
     """Run orthogonal validation checks for the mixed packing rule.
 
@@ -1917,7 +1947,8 @@ def run_mixed_rule_validation(
     mixed_rule_distance_dict
         Raw distance data from mixed-rule packings in the same format as
         ``all_distance_dict`` used by the distance analysis workflow.
-        If ``None``, only occupancy-based tests are run.
+        If ``None``, only occupancy-based tests are run (unless
+        ``distance_emd_df`` / ``distance_envelope_test_result`` are supplied).
     results_dir
         Directory for saving intermediate results.
     recalculate
@@ -1926,47 +1957,31 @@ def run_mixed_rule_validation(
         Pre-computed :class:`FitResult` from :func:`fit_rule_interpolation`.
         When provided, AIC/BIC model comparison is computed and attached to
         the returned :class:`ValidationResult`.
+    occupancy_emd_df
+        Pre-computed pairwise occupancy EMD dataframe (e.g. from a prior
+        ``run_occupancy_emd_analysis`` step).  When provided the internal
+        ``occupancy.get_occupancy_emd_df`` call is skipped.
+    distance_emd_df
+        Pre-computed pairwise distance EMD dataframe (e.g. from a prior
+        ``run_emd_analysis`` step).  When provided the internal
+        ``distance.get_distance_distribution_emd_df`` call is skipped.
+    distance_envelope_test_result
+        Pre-computed pairwise envelope test result dict (e.g. from a prior
+        ``run_pairwise_envelope_test`` step).  When provided the internal
+        ``pairwise_envelope_test`` call is skipped.
 
     Returns
     -------
     :
         :class:`ValidationResult` bundling all test outputs.
     """
-    logger.info("Running mixed-rule occupancy EMD analysis")
-    emd_df = occupancy.get_occupancy_emd_df(
-        combined_occupancy_dict=combined_occupancy_dict,
-        packing_modes=packing_modes,
-        distance_measures=distance_measures,
-        results_dir=results_dir,
-        recalculate=recalculate,
-        suffix="_mixed_rule_validation",
-    )
-
-    logger.info("Running mixed-rule occupancy KS test")
-    ks_df = occupancy.get_occupancy_ks_test_df(
-        distance_measures=distance_measures,
-        packing_modes=packing_modes,
-        combined_occupancy_dict=combined_occupancy_dict,
-        baseline_mode=baseline_mode,
-        results_dir=results_dir,
-        recalculate=recalculate,
-    )
-
-    logger.info("Running mixed-rule occupancy pairwise envelope test")
-    envelope_test = occupancy.pairwise_envelope_test_occupancy(
-        combined_occupancy_dict=combined_occupancy_dict,
-        packing_modes=packing_modes,
-    )
-
-    distance_emd_df: pd.DataFrame | None = None
-    distance_envelope_test: dict[str, Any] | None = None
-    distance_ks_df: pd.DataFrame | None = None
-    distance_ks_bootstrap_df: pd.DataFrame | None = None
-
-    if mixed_rule_distance_dict is not None:
-        logger.info("Running mixed-rule distance EMD analysis")
-        distance_emd_df = distance.get_distance_distribution_emd_df(
-            all_distance_dict=mixed_rule_distance_dict,
+    if occupancy_emd_df is not None:
+        logger.info("Reusing pre-computed occupancy EMD (skipping recomputation)")
+        emd_df = occupancy_emd_df
+    else:
+        logger.info("Running mixed-rule occupancy EMD analysis")
+        emd_df = occupancy.get_occupancy_emd_df(
+            combined_occupancy_dict=combined_occupancy_dict,
             packing_modes=packing_modes,
             distance_measures=distance_measures,
             results_dir=results_dir,
@@ -1974,30 +1989,61 @@ def run_mixed_rule_validation(
             suffix="_mixed_rule_validation",
         )
 
-        from cellpack_analysis.lib.stats import pairwise_envelope_test
+    _computed_distance_emd_df: pd.DataFrame | None = distance_emd_df
+    distance_envelope_test: dict[str, Any] | None = distance_envelope_test_result
+    distance_ks_df: pd.DataFrame | None = None
+    distance_ks_bootstrap_df: pd.DataFrame | None = None
 
-        logger.info("Running mixed-rule distance pairwise envelope test")
-        distance_envelope_test = pairwise_envelope_test(
-            all_distance_dict=mixed_rule_distance_dict,
-            packing_modes=packing_modes,
-            distance_measures=distance_measures,
-        )
+    _has_distance_data = mixed_rule_distance_dict is not None
+    _has_precomputed_distance = (
+        distance_emd_df is not None or distance_envelope_test_result is not None
+    )
+    _has_mixed_structures = len(set(channel_map.values())) > 1
 
-        logger.info("Running mixed-rule distance KS test")
-        distance_ks_df = distance.get_ks_test_df(
-            distance_measures=distance_measures,
-            packing_modes=packing_modes,
-            all_distance_dict=mixed_rule_distance_dict,
-            baseline_mode=baseline_mode,
-        )
+    if _has_distance_data or _has_precomputed_distance:
+        if _computed_distance_emd_df is not None:
+            logger.info("Reusing pre-computed distance EMD (skipping recomputation)")
+        elif mixed_rule_distance_dict is not None:
+            logger.info("Running mixed-rule distance EMD analysis")
+            _computed_distance_emd_df = distance.get_distance_distribution_emd_df(
+                all_distance_dict=mixed_rule_distance_dict,
+                packing_modes=packing_modes,
+                distance_measures=distance_measures,
+                results_dir=results_dir,
+                recalculate=recalculate,
+                suffix="_mixed_rule_validation",
+            )
 
-        logger.info("Running mixed-rule distance KS bootstrap")
-        non_baseline_modes = [m for m in packing_modes if m != baseline_mode]
-        distance_ks_bootstrap_df = distance.bootstrap_ks_tests(
-            ks_test_df=distance_ks_df,
-            distance_measures=distance_measures,
-            packing_modes=non_baseline_modes,
-        )
+        if distance_envelope_test is not None:
+            logger.info("Reusing pre-computed distance envelope test (skipping recomputation)")
+        elif mixed_rule_distance_dict is not None:
+            from cellpack_analysis.lib.stats import pairwise_envelope_test
+
+            logger.info("Running mixed-rule distance pairwise envelope test")
+            distance_envelope_test = pairwise_envelope_test(
+                all_distance_dict=mixed_rule_distance_dict,
+                packing_modes=packing_modes,
+                distance_measures=distance_measures,
+            )
+
+        if mixed_rule_distance_dict is not None and not _has_mixed_structures:
+            logger.info("Running mixed-rule distance KS test")
+            distance_ks_df = distance.get_ks_test_df(
+                distance_measures=distance_measures,
+                packing_modes=packing_modes,
+                all_distance_dict=mixed_rule_distance_dict,
+                baseline_mode=baseline_mode,
+            )
+
+            logger.info("Running mixed-rule distance KS bootstrap")
+            non_baseline_modes = [m for m in packing_modes if m != baseline_mode]
+            distance_ks_bootstrap_df = distance.bootstrap_ks_tests(
+                ks_test_df=distance_ks_df,
+                distance_measures=distance_measures,
+                packing_modes=non_baseline_modes,
+            )
+
+    distance_emd_df = _computed_distance_emd_df
 
     # AIC/BIC model comparison
     aic_result: AICComparisonResult | None = None
@@ -2013,8 +2059,6 @@ def run_mixed_rule_validation(
 
     return ValidationResult(
         emd_df=emd_df,
-        ks_df=ks_df,
-        envelope_test=envelope_test,
         distance_emd_df=distance_emd_df,
         distance_envelope_test=distance_envelope_test,
         distance_ks_df=distance_ks_df,

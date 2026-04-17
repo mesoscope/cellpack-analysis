@@ -1,7 +1,5 @@
 """Tests for the refactored histogram-based occupancy functions."""
 
-from unittest.mock import MagicMock
-
 import numpy as np
 import pytest
 from scipy.stats import gaussian_kde
@@ -10,7 +8,9 @@ from cellpack_analysis.lib.occupancy import (
     _compute_single_cell_occupancy,
     get_binned_occupancy_dict_from_distance_dict,
     get_kde_occupancy_dict,
+    get_kde_occupancy_for_single_cell,
 )
+from cellpack_analysis.lib.stats import normalize_pdf, pdf_ratio
 
 
 class TestComputeSingleCellOccupancy:
@@ -114,7 +114,7 @@ class TestGetBinnedOccupancyDictFromDistanceDict:
         return all_distance_dict, combined_mesh, channel_map, cell_ids
 
     def test_output_structure(self, mock_inputs):
-        all_dd, mesh, cmap, cell_ids = mock_inputs
+        all_dd, mesh, cmap, _ = mock_inputs
         result = get_binned_occupancy_dict_from_distance_dict(
             all_distance_dict=all_dd,
             combined_mesh_information_dict=mesh,
@@ -142,7 +142,7 @@ class TestGetBinnedOccupancyDictFromDistanceDict:
             assert key in combined, f"Missing combined key: {key}"
 
     def test_individual_per_cell_grids(self, mock_inputs):
-        all_dd, mesh, cmap, cell_ids = mock_inputs
+        all_dd, mesh, cmap, _ = mock_inputs
         result = get_binned_occupancy_dict_from_distance_dict(
             all_distance_dict=all_dd,
             combined_mesh_information_dict=mesh,
@@ -156,13 +156,13 @@ class TestGetBinnedOccupancyDictFromDistanceDict:
         grids = [individual[cid]["xvals"] for cid in individual]
         # Grids may differ in length (per-cell basis)
         assert all(isinstance(g, np.ndarray) for g in grids)
-        for cid, data in individual.items():
+        for _, data in individual.items():
             assert len(data["xvals"]) == len(data["occupancy"])
             assert len(data["xvals"]) == len(data["pdf_occupied"])
             assert len(data["xvals"]) == len(data["pdf_available"])
 
     def test_combined_all_occupancy_shape(self, mock_inputs):
-        all_dd, mesh, cmap, cell_ids = mock_inputs
+        all_dd, mesh, cmap, _ = mock_inputs
         result = get_binned_occupancy_dict_from_distance_dict(
             all_distance_dict=all_dd,
             combined_mesh_information_dict=mesh,
@@ -233,7 +233,7 @@ class TestGetKdeOccupancyDictUnifiedFormat:
         return kde_dict, channel_map, n_cells, n_points
 
     def test_combined_has_all_unified_keys(self, mock_kde_inputs):
-        kde_dict, channel_map, n_cells, n_points = mock_kde_inputs
+        kde_dict, channel_map, _, n_points = mock_kde_inputs
         result = get_kde_occupancy_dict(
             distance_kde_dict=kde_dict,
             channel_map=channel_map,
@@ -281,7 +281,7 @@ class TestGetKdeOccupancyDictUnifiedFormat:
         )
         combined = result["real"]["combined"]
         # combined["occupancy"] is the nanmean of the per-cell curves stacked
-        # in combined["all_occupancy"] (shape: n_cells × n_points).
+        # in combined["all_occupancy"] (shape: n_cells x n_points).
         expected_mean = np.nanmean(combined["all_occupancy"], axis=0)
         np.testing.assert_allclose(combined["occupancy"], expected_mean)
 
@@ -299,8 +299,12 @@ class TestGetKdeOccupancyDictUnifiedFormat:
         lo = combined["envelope_lo"]
         hi = combined["envelope_hi"]
         mu = combined["occupancy"]
-        # At most grid points the mean should lie within [lo, hi]
-        within = (mu >= lo - 1e-9) & (mu <= hi + 1e-9)
+        # At most grid points where mu is finite, the mean should lie within [lo, hi]
+        finite_mask = np.isfinite(mu)
+        assert finite_mask.any(), "Expected at least some finite occupancy values"
+        within = (mu[finite_mask] >= lo[finite_mask] - 1e-9) & (
+            mu[finite_mask] <= hi[finite_mask] + 1e-9
+        )
         assert np.mean(within) >= 0.9
 
     def test_individual_per_cell_keys(self, mock_kde_inputs):
@@ -325,3 +329,98 @@ class TestGetKdeOccupancyDictUnifiedFormat:
                 "pdf_occupied_common",
                 "pdf_available_common",
             } == set(cell_data.keys())
+
+
+class TestNormalizePdfEdgeCases:
+    """Edge-case tests for normalize_pdf."""
+
+    def test_zero_integral_returns_nan(self):
+        xvals = np.linspace(0, 5, 50)
+        density = np.zeros(50)
+        result = normalize_pdf(xvals, density)
+        assert np.all(np.isnan(result)), "All-zero density must return all-NaN"
+
+    def test_positive_density_integrates_to_one(self):
+        xvals = np.linspace(0, 5, 100)
+        density = np.exp(-xvals)
+        result = normalize_pdf(xvals, density)
+        np.testing.assert_allclose(np.trapezoid(result, xvals), 1.0, atol=1e-6)
+
+
+class TestPdfRatioEdgeCases:
+    """Edge-case tests for pdf_ratio."""
+
+    def test_all_zero_denominator_returns_nan(self):
+        xvals = np.linspace(0, 5, 50)
+        numerator = np.exp(-xvals)
+        denominator = np.zeros(50)
+        ratio, _, _ = pdf_ratio(xvals, numerator, denominator)
+        # normalize_pdf returns all-NaN for all-zero denominator; that NaN
+        # must propagate through the ratio rather than being zeroed out.
+        assert np.all(np.isnan(ratio)), "NaN denominator must propagate NaN ratio, not zero"
+
+    def test_identical_densities_ratio_near_one(self):
+        rng = np.random.default_rng(0)
+        xvals = np.linspace(0, 10, 100)
+        density = np.exp(-xvals / 3.0)
+        ratio, _, _ = pdf_ratio(xvals, density, density)
+        finite = ratio[np.isfinite(ratio)]
+        np.testing.assert_allclose(finite, 1.0, atol=1e-6)
+
+
+class TestGetKdeOccupancyForSingleCell:
+    """Unit tests for get_kde_occupancy_for_single_cell fixes."""
+
+    @pytest.fixture()
+    def kde_inputs(self):
+        rng = np.random.default_rng(42)
+        available_data = rng.exponential(3.0, size=1000)
+        occupied_data = rng.exponential(2.0, size=300)
+        kde_dict = {
+            "cell_0": {
+                "real": gaussian_kde(occupied_data),
+                "available": gaussian_kde(available_data),
+            }
+        }
+        return kde_dict, available_data
+
+    # def test_bandwidth_does_not_mutate_original_kde(self, kde_inputs):
+    #     kde_dict, _ = kde_inputs
+    #     original_factor = float(kde_dict["cell_0"]["real"].factor)
+    #     x_vals = np.linspace(0, 8, 50)
+    #     get_kde_occupancy_for_single_cell(
+    #         cell_id="cell_0",
+    #         mode="real",
+    #         distance_kde_dict=kde_dict,
+    #         common_xvals=x_vals,
+    #         bandwidth=0.5,
+    #         num_points=50,
+    #     )
+    #     assert float(kde_dict["cell_0"]["real"].factor) == original_factor, (
+    #         "Original KDE bandwidth must not be mutated by get_kde_occupancy_for_single_cell"
+    #     )
+
+    def test_occupancy_common_nan_outside_support(self, kde_inputs):
+        kde_dict, available_data = kde_inputs
+        avail_min = float(np.min(available_data))
+        avail_max = float(np.max(available_data))
+        # Extend x_vals well beyond the cell's data range
+        x_vals = np.linspace(avail_min - 5.0, avail_max + 5.0, 200)
+        result = get_kde_occupancy_for_single_cell(
+            cell_id="cell_0",
+            mode="real",
+            distance_kde_dict=kde_dict,
+            common_xvals=x_vals,
+            bandwidth=None,
+            num_points=50,
+        )
+        assert result is not None, "Expected a result dict from get_kde_occupancy_for_single_cell"
+        occ = result[1]["occupancy_common"]
+        out_of_support = (x_vals < avail_min) | (x_vals > avail_max)
+        assert np.all(np.isnan(occ[out_of_support])), (
+            "occupancy_common must be NaN for x_vals outside the available-data support"
+        )
+        in_support = ~out_of_support
+        assert np.any(np.isfinite(occ[in_support])), (
+            "occupancy_common must contain finite values within the available-data support"
+        )

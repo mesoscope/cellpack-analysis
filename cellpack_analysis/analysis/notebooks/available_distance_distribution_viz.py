@@ -1,11 +1,14 @@
 # %% [markdown]
 """
-# Visualize Available Distance Distribution
+# Visualize Available Distance Distribution.
 
-This notebook visualizes the distribution of available distances (grid distances) for different distance measures (e.g., nucleus, z) across different structures. It also calculates and logs the radius of gyration for each distance measure.
- 
+This notebook visualizes the distribution of available distances (grid distances) for different
+distance measures (e.g., nucleus, z) across different structures. It also calculates and logs the
+radius of gyration for each distance measure.
+
 See `cell_metrics_viz.py` for cell-level metric logging and distribution plots.
 """
+
 import logging
 
 import matplotlib.pyplot as plt
@@ -32,8 +35,9 @@ logger = logging.getLogger(__name__)
 # %% [markdown]
 # ## Set parameters and file paths
 all_structures = [
-    "SLC25A17",  # peroxisomes
-    "RAB5A",  # early endosomes
+    # "SLC25A17",  # peroxisomes
+    # "RAB5A",  # early endosomes
+    "SEC61B"
 ]
 
 distance_measures = ["nucleus", "z"]
@@ -50,7 +54,7 @@ project_root = get_project_root()
 base_datadir = project_root / "data"
 base_results_dir = project_root / "results"
 
-figures_dir = base_results_dir / "occupancy_analysis/available_space"
+figures_dir = base_results_dir / "test_avspace"
 figures_dir.mkdir(exist_ok=True, parents=True)
 
 # %% [markdown]
@@ -151,3 +155,5 @@ for distance_measure in distance_measures:
         np.mean(np.array(combined_distances[distance_measure]) ** 2)
     ).item()
     logger.info(f"Radius of gyration for {distance_measure}: {radius_of_gyration:.2f} \u03bcm")
+
+# %%

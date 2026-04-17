@@ -39,22 +39,22 @@ start_time = time.time()
 # RAB5A: early endosomes
 # SEC61B: ER
 # ST6GAL1: Golgi
-STRUCTURE_ID = "RAB5A"
+STRUCTURE_ID = "SLC25A17"
 """ID for the packed punctate structure; used as packing mode for observed data."""
 
-CELL_STRUCTURE_ID = "RAB5A"
+CELL_STRUCTURE_ID = "SEC61B"
 """ID of the cell shapes used for packing (used for mesh lookup for simulated modes)."""
 
-PACKING_ID = "endosome"
+PACKING_ID = "ER_peroxisome"
 """Packing configuration ID — used for naming outputs and folders."""
 
-STRUCTURE_NAME = "endosome"
+STRUCTURE_NAME = "peroxisome"
 """Name of the packed punctate structure in cellPACK output files."""
 
-CONDITION = "rules_shape_with_seed"
+CONDITION = "test_mixed_rule"
 """Experimental condition / packing output subfolder."""
 
-RESULT_SUBFOLDER = "rules_shape_with_seed/endosome/occupancy_old_grid/"
+RESULT_SUBFOLDER = f"{CONDITION}/{PACKING_ID}"
 """Subfolder within results/ to save outputs for this workflow."""
 # %% [markdown]
 # ### Set packing modes and channel map
@@ -64,11 +64,12 @@ baseline_mode = STRUCTURE_ID
 
 channel_map = {
     STRUCTURE_ID: STRUCTURE_ID,
-    "random": CELL_STRUCTURE_ID,
+    # "random": CELL_STRUCTURE_ID,
     "nucleus_gradient": CELL_STRUCTURE_ID,
-    "membrane_gradient": CELL_STRUCTURE_ID,
-    "apical_gradient": CELL_STRUCTURE_ID,
-    # "struct_gradient": CELL_STRUCTURE_ID,
+    # "membrane_gradient": CELL_STRUCTURE_ID,
+    # "apical_gradient": CELL_STRUCTURE_ID,
+    "struct_gradient": CELL_STRUCTURE_ID,
+    "interpolated": CELL_STRUCTURE_ID,
 }
 
 # relative path to packing outputs
@@ -121,7 +122,7 @@ for structure_id in all_structures:
     mesh_information_dict = get_mesh_information_dict_for_structure(
         structure_id=structure_id,
         base_datadir=base_datadir,
-        recalculate=True,
+        recalculate=False,
     )
     combined_mesh_information_dict[structure_id] = mesh_information_dict
 # %% [markdown]
@@ -152,7 +153,7 @@ all_distance_dict = distance.normalize_distance_dictionary(
 # %% [markdown]
 # ### Set limits and bandwidths for plotting
 occupancy_params = {
-    "nucleus": {"xlim": 6, "ylim": 3.2, "bandwidth": 0.2},
+    "nucleus": {"xlim": 6, "ylim": 3, "bandwidth": 0.2},
     "z": {"xlim": 8, "ylim": 2, "bandwidth": 0.2},
 }
 # %% [markdown]
@@ -180,6 +181,24 @@ for dm in occupancy_distance_measures:
     )
 
 # %% [markdown]
+# ### Plot illustration for one example cell
+# for dm in occupancy_distance_measures:
+#     fig_ill, axs_ill = visualization.plot_occupancy_illustration(
+#         distance_kde_dict=distance_kde_dict[dm],
+#         packing_mode="random",
+#         figures_dir=occupancy_figures_dir[dm],
+#         suffix=suffix,
+#         distance_measure=dm,
+#         normalization=normalization,
+#         cell_id_or_index=25,
+#         num_points=250,
+#         # bandwidth=0.4,
+#         save_format=save_format,
+#         ylim_ratio=2,
+#         xlim=occupancy_params[dm]["xlim"],
+#     )
+
+# %% [markdown]
 # ### Calculate occupancy ratio
 combined_occupancy_dict = {}
 for dm in occupancy_distance_measures:
@@ -196,24 +215,7 @@ for dm in occupancy_distance_measures:
         num_points=250,
         x_min=0,
         x_max=occupancy_params[dm]["xlim"],
-        num_workers=16,
-    )
-
-# %% [markdown]
-# ### Plot illustration for one example cell
-for dm in occupancy_distance_measures:
-    fig_ill, axs_ill = visualization.plot_occupancy_illustration(
-        distance_kde_dict=distance_kde_dict[dm],
-        packing_mode="random",
-        figures_dir=occupancy_figures_dir[dm],
-        suffix=suffix,
-        distance_measure=dm,
-        normalization=normalization,
-        cell_id_or_index=25,
-        num_points=250,
-        bandwidth=0.4,
-        save_format=save_format,
-        xlim=occupancy_params[dm]["xlim"],
+        num_workers=8,
     )
 
 # %% [markdown]
@@ -228,7 +230,7 @@ for dm in occupancy_distance_measures:
         normalization=normalization,
         distance_measure=dm,
         save_format=save_format,
-        xlim=occupancy_params[dm]["xlim"],
+        # xlim=occupancy_params[dm]["xlim"],
         ylim=occupancy_params[dm]["ylim"],
         fig_params={"dpi": 300, "figsize": (3.5, 2.5)},
     )
@@ -315,7 +317,7 @@ for test_mode in packing_modes:
     for joint_test in [False, True]:
         fig_env, axs_env = visualization.plot_per_dm_rejection_bars(
             pairwise_results=occ_pairwise_results,
-            test_mode=test_mode,
+            compare_mode=test_mode,
             joint_test=joint_test,
             figures_dir=envelope_figures_dir,
             figsize=(3.5, 2),

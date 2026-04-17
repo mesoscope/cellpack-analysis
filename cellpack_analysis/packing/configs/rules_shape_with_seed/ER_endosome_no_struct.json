@@ -32,23 +32,6 @@
             "gradients": [
                 "apical_gradient"
             ]
-        },
-        "uniform": {
-            "gradients": [
-                "uniform"
-            ]
-        },
-        "interpolated": {
-            "gradients": [
-                "uniform",
-                "nucleus_gradient",
-                "apical_gradient"
-            ],
-            "gradient_weights": {
-                "uniform": 0.6948,
-                "nucleus_gradient": 0.2696,
-                "apical_gradient": 0.0356
-            }
         }
     },
     "packings_to_run": {

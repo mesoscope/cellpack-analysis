@@ -1,11 +1,11 @@
 {
     "packing_id": "ER_peroxisome",
     "structure_id": "SEC61B",
-    "condition": "rules_shape_with_seed",
+    "condition": "test_mixed_rule",
     "generate_recipes": true,
     "generate_configs": true,
-    "recipe_template_path": "data/templates/recipes/rules_shape_with_seed/ER_peroxisome_recipe_template.json",
-    "config_template_path": "data/templates/configs/rules_shape_with_seed/ER_peroxisome_config_template.json",
+    "recipe_template_path": "data/templates/recipes/test_mixed_rule/ER_peroxisome_recipe_template.json",
+    "config_template_path": "data/templates/configs/test_mixed_rule/ER_peroxisome_config_template.json",
     "use_additional_struct": true,
     "use_mean_cell": false,
     "use_cells_in_8d_sphere": true,
@@ -37,15 +37,23 @@
             "gradients": [
                 "struct_gradient"
             ]
+        },
+        "interpolated": {
+            "gradients": [
+                "nucleus_gradient",
+                "struct_gradient"
+            ],
+            "gradient_weights": {
+                "nucleus_gradient": 0.01,
+                "struct_gradient": 0.99
+            }
         }
     },
     "packings_to_run": {
         "rules": [
-            "random",
             "nucleus_gradient",
-            "membrane_gradient",
-            "apical_gradient",
-            "struct_gradient"
+            "struct_gradient",
+            "interpolated"
         ]
     }
 }

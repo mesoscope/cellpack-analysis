@@ -2,202 +2,408 @@
 # # Workflow to analyze multi-structure colocalization
 #
 # Compare colocalization of endosomes and peroxisomes with the ER and Golgi
-import itertools
+# using the following packing modes:
+#   1. interpolated with structure (K=5)
+#   2. interpolated without structure (K=4)
+
 import logging
 import pickle
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 import seaborn as sns
-from scipy.stats import wasserstein_distance
+from matplotlib.ticker import MaxNLocator
 from statannotations.Annotator import Annotator
-from tqdm import tqdm
 
-from cellpack_analysis.lib import distance
-from cellpack_analysis.lib.file_io import get_project_root
+from cellpack_analysis.lib.file_io import (
+    add_file_handler_to_logger,
+    get_project_root,
+    make_dir,
+    remove_file_handler_from_logger,
+)
 from cellpack_analysis.lib.label_tables import COLOR_PALETTE
-from cellpack_analysis.lib.load_data import get_position_data_from_outputs
-from cellpack_analysis.lib.mesh_tools import get_mesh_information_dict_for_structure
+from cellpack_analysis.lib.stats import calculate_emd_effect_size, calculate_model_comparison
+
+plt.rcParams["font.size"] = 8
 
 logger = logging.getLogger(__name__)
+
+
+def _interpret_effect(d: float) -> str:
+    abs_d = abs(d)
+    if abs_d >= 0.8:
+        return "Large"
+    elif abs_d >= 0.5:
+        return "Medium"
+    elif abs_d >= 0.2:
+        return "Small"
+    return "Negligible"
+
+
+def _fmt_p(p: float) -> str:
+    return f"{p:.3f}" if p >= 0.001 else "<0.001"
+
+
 # %% [markdown]
 # ## Set up parameters
 save_format = "pdf"
-distance_measures = [
-    "nucleus",
-    "z",
-]
 
-distance_dict = {
-    "peroxisome": {
-        "structure_id": "SLC25A17",
-        "packing_mode": "SLC25A17",
-        "ingredient_key": "membrane_interior_peroxisome",
-        "distances": {dm: {} for dm in distance_measures},
-    },
-    "endosome": {
-        "structure_id": "RAB5A",
-        "packing_mode": "RAB5A",
-        "ingredient_key": "membrane_interior_endosome",
-        "distances": {dm: {} for dm in distance_measures},
-    },
-    "ER_peroxisome": {
-        "structure_id": "SEC61B",
-        "packing_mode": "struct_gradient",
-        "ingredient_key": "membrane_interior_peroxisome",
-        "distances": {dm: {} for dm in distance_measures},
-    },
-    "golgi_peroxisome": {
-        "structure_id": "ST6GAL1",
-        "packing_mode": "struct_gradient_weak",
-        "ingredient_key": "membrane_interior_peroxisome",
-        "distances": {dm: {} for dm in distance_measures},
-    },
-    "ER_endosome": {
-        "structure_id": "SEC61B",
-        "packing_mode": "struct_gradient",
-        "ingredient_key": "membrane_interior_endosome",
-        "distances": {dm: {} for dm in distance_measures},
-    },
-    "golgi_endosome": {
-        "structure_id": "ST6GAL1",
-        "packing_mode": "struct_gradient_weak",
-        "ingredient_key": "membrane_interior_endosome",
-        "distances": {dm: {} for dm in distance_measures},
-    },
+mode_config = {
+    "ER_peroxisome": {"baseline": "SLC25A17", "interpolated": "SEC61B"},
+    "golgi_peroxisome": {"baseline": "SLC25A17", "interpolated": "ST6GAL1"},
+    "ER_endosome": {"baseline": "RAB5A", "interpolated": "SEC61B"},
+    "golgi_endosome": {"baseline": "RAB5A", "interpolated": "ST6GAL1"},
+    "ER_peroxisome_no_struct": {"baseline": "SLC25A17", "interpolated": "SEC61B"},
+    "golgi_peroxisome_no_struct": {"baseline": "SLC25A17", "interpolated": "ST6GAL1"},
+    "ER_endosome_no_struct": {"baseline": "RAB5A", "interpolated": "SEC61B"},
+    "golgi_endosome_no_struct": {"baseline": "RAB5A", "interpolated": "ST6GAL1"},
 }
-all_structures = list({v["structure_id"] for v in distance_dict.values()})
-row_modes = ["peroxisome", "endosome"]
-col_modes = ["ER", "golgi"]
+base_conditions = ["ER_peroxisome", "golgi_peroxisome", "ER_endosome", "golgi_endosome"]
+occupancy_distance_measures = ["nucleus", "z"]
+
+# %%
+# Model complexity parameters (number of free parameters excluding error variance)
+K_INTERPOLATED_WITH = 5
+K_INTERPOLATED_NO = 4
 
 # %% [markdown]
 # ### Set file paths and setup parameters
-packing_output_folder = "packing_outputs/8d_sphere_data/rules_shape/"
 project_root = get_project_root()
-base_datadir = project_root / "data"
 base_results_dir = project_root / "results"
 
-results_dir = base_results_dir / "multi_structure_colocalization"
-results_dir.mkdir(exist_ok=True, parents=True)
+output_dir = base_results_dir / "rule_interpolation_e2e_validation"
 
-figures_dir = results_dir / "figures/"
-figures_dir.mkdir(exist_ok=True, parents=True)
+results_dir = make_dir(base_results_dir / "multi_structure_colocalization")
+
+figures_dir = make_dir(results_dir / "figures")
+
+log_path = results_dir / "multi_structure_colocalization.log"
+
 # %% [markdown]
-# ### Set normalziation
-normalization = None
-suffix = ""
+# ### Load data
+
+occupancy_emd_df_list: list[pd.DataFrame] = []
+distance_emd_df_list: list[pd.DataFrame] = []
+occupancy_dict = {packing_id: {} for packing_id in mode_config.keys()}
+
+for packing_id, config_dict in mode_config.items():
+    logger.info(f"Loading data for packing id: {packing_id}")
+    baseline_mode = config_dict["baseline"]
+
+    for dm in occupancy_distance_measures:
+        occupancy_path = output_dir / packing_id / f"{dm}_occupancy.dat"
+        with open(occupancy_path, "rb") as f:
+            dm_occupancy_dict = pickle.load(f)
+        occupancy_dict[packing_id][dm] = {
+            mode: dm_occupancy_dict[mode] for mode in [baseline_mode, "interpolated"]
+        }
+
+    for emd_type, emd_list in zip(
+        ["occupancy_emd", "distance_pairwise_emd"],
+        [occupancy_emd_df_list, distance_emd_df_list],
+        strict=True,
+    ):
+        emd_df_path = output_dir / packing_id / f"{emd_type}.parquet"
+        emd_df = pd.read_parquet(emd_df_path)
+        condition = packing_id.split("_no_struct")[0]
+
+        tmp = emd_df.query(
+            "packing_mode_1 == @baseline_mode and packing_mode_2 == 'interpolated'"
+        ).copy()
+        tmp = tmp.groupby("cell_id_1")["emd"].mean().reset_index()
+        tmp["mode_category"] = (
+            "interpolated_no" if "no_struct" in packing_id else "interpolated_with"
+        )
+        tmp["packing_id"] = packing_id
+        tmp["condition"] = condition
+        emd_list.append(tmp)
+
+occupancy_emd_df = pd.concat(occupancy_emd_df_list, ignore_index=True)
+distance_emd_df = pd.concat(distance_emd_df_list, ignore_index=True)
 # %% [markdown]
-# ### Get combined mesh dictionary
-combined_mesh_dict = {}
-for structure_id in all_structures:
-    mesh_information_dict = get_mesh_information_dict_for_structure(
-        structure_id=structure_id,
-        base_datadir=base_datadir,
-        recalculate=False,
+# ## Plot occupancy ratio
+color_palette_adjusted = {
+    "SLC25A17": COLOR_PALETTE["SLC25A17"],
+    "RAB5A": COLOR_PALETTE["RAB5A"],
+    "interpolated_no_struct": "gray",
+    "interpolated_with_struct": "black",
+}
+ylims = {"nucleus": (0, 2), "z": (0, 1.5)}
+plt.rcParams["font.size"] = 6
+for condition in base_conditions:
+    baseline_mode = mode_config[condition]["baseline"]
+    for dm in occupancy_distance_measures:
+        fig, ax = plt.subplots(figsize=(1.5, 1), dpi=300)
+
+        for mode in [baseline_mode, "interpolated", "no_struct"]:
+            condition_key = condition if mode != "no_struct" else f"{condition}_no_struct"
+            color_key = (
+                mode
+                if mode == baseline_mode
+                else f"interpolated_{'with_struct' if 'no_struct' not in condition_key else 'no_struct'}"
+            )
+            mode_key = mode if mode != "no_struct" else "interpolated"
+            zorder = 3 if mode == baseline_mode else 2
+            alpha = 1.0 if mode == baseline_mode else 0.8
+            xvals = occupancy_dict[condition_key][dm][mode_key]["combined"]["xvals"]
+            yvals = occupancy_dict[condition_key][dm][mode_key]["combined"]["occupancy"]
+            envelope_hi = occupancy_dict[condition_key][dm][mode_key]["combined"]["envelope_hi"]
+            envelope_lo = occupancy_dict[condition_key][dm][mode_key]["combined"]["envelope_lo"]
+            ax.plot(
+                xvals,
+                yvals,
+                color=color_palette_adjusted[color_key],
+                linewidth=1.5,
+                label=color_key.replace("_", " ").title(),
+                zorder=zorder,
+                alpha=alpha,
+            )
+            ax.fill_between(
+                xvals,
+                envelope_lo,
+                envelope_hi,
+                color=color_palette_adjusted[color_key],
+                linewidth=0,
+                alpha=0.1,
+                zorder=1,
+            )
+            xlim = (0, max(xvals))
+            ax.set_xlim(xlim)
+            ax.set_ylim(ylims[dm])
+            # ax.set_xlabel(DISTANCE_MEASURE_LABELS[dm])
+            ax.set_ylabel("Occupancy Ratio")
+            ax.xaxis.set_major_locator(MaxNLocator(4, integer=True))
+            ax.yaxis.set_major_locator(MaxNLocator(3, integer=True))
+            ax.axhline(y=1, color="gray", linestyle="--", linewidth=0.5, alpha=0.7, zorder=1)
+            sns.despine(ax=ax)
+            plt.tight_layout()
+            fig_path = figures_dir / f"combined_occupancy_{condition}_{dm}.{save_format}"
+            plt.savefig(fig_path, bbox_inches="tight")
+            logger.info(f"Saved figure to {fig_path}")
+
+
+# %% [markdown]
+# ## Bar plot comparisons
+#
+# For each organelle group (peroxisome, endosome), plot EMD comparisons.
+# Pairwise Wilcoxon annotations with and without struct
+organelle_groups: dict[str, list[str]] = {
+    "peroxisome": ["ER_peroxisome", "golgi_peroxisome"],
+    "endosome": ["ER_endosome", "golgi_endosome"],
+}
+
+hue_order = ["interpolated_with", "interpolated_no"]
+hue_color_mapping = {
+    "interpolated_with": color_palette_adjusted["interpolated_with_struct"],
+    "interpolated_no": color_palette_adjusted["interpolated_no_struct"],
+}
+
+for organelle, conditions in organelle_groups.items():
+    for emd_type, emd_df in zip(
+        ["Occupancy EMD", "Distance EMD"], [occupancy_emd_df, distance_emd_df], strict=True
+    ):
+        logger.info(f"Plotting {emd_type} for {organelle}")
+        data_df = emd_df[emd_df["condition"].isin(conditions)].copy()
+
+        pairs = []
+        for cond in conditions:
+            pairs.append(((cond, "interpolated_with"), (cond, "interpolated_no")))
+
+        fig, ax = plt.subplots(figsize=(3.5, 2.5), dpi=300)
+        plot_params = {
+            "data": data_df,
+            "x": "condition",
+            "y": "emd",
+            "hue": "mode_category",
+            "hue_order": hue_order,
+            "whis": [2.5, 97.5],
+            "showfliers": False,
+            "palette": hue_color_mapping,
+        }
+        sns.boxplot(**plot_params, ax=ax, linewidth=0.1)
+        # ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha="right")
+        ax.set_ylabel("EMD")
+        ax.set_title(f"{organelle.capitalize()} colocalization, {emd_type}")
+
+        annotator = Annotator(ax, pairs, plot="boxplot", **plot_params)
+        annotator.configure(test="Wilcoxon", text_format="star", loc="inside")
+        # annotator.configure(test="Mann-Whitney", text_format="star", loc="inside")
+        annotator.apply_and_annotate()
+
+        sns.despine(ax=ax)
+        plt.tight_layout()
+        fig_path = (
+            figures_dir
+            / f"average_{'_'.join(emd_type.split()).lower()}_comparison_{organelle}.{save_format}"
+        )
+        fig.savefig(fig_path, bbox_inches="tight")
+        logger.info(f"Saved figure to {fig_path}")
+
+# %% [markdown]
+# ## Model Comparison and Effect Size Analysis
+#
+# For each base condition and each EMD type, compare interpolated_with (K=5) vs interpolated_no (K=4)
+analysis_results = []
+
+for emd_type, emd_df in zip(
+    ["occupancy", "distance"], [occupancy_emd_df, distance_emd_df], strict=True
+):
+    for condition in base_conditions:
+        logger.info(f"Analyzing condition: {condition}, EMD type: {emd_type}")
+
+        emd_iw = np.array(
+            emd_df.loc[
+                (emd_df["condition"] == condition)
+                & (emd_df["mode_category"] == "interpolated_with"),
+                "emd",
+            ].values
+        )
+        emd_no = np.array(
+            emd_df.loc[
+                (emd_df["condition"] == condition) & (emd_df["mode_category"] == "interpolated_no"),
+                "emd",
+            ].values
+        )
+
+        if any(len(x) == 0 for x in [emd_iw, emd_no]):
+            logger.warning(f"Missing data for condition {condition} ({emd_type}), skipping")
+            continue
+
+        mc = calculate_model_comparison(emd_iw, emd_no, K_INTERPOLATED_WITH, K_INTERPOLATED_NO)
+        cohens_d, p_value, test_statistic, r = calculate_emd_effect_size(
+            emd_iw, emd_no, test="wilcoxon"
+        )
+
+        result = {
+            "emd_type": emd_type,
+            "condition": condition,
+            "mean_emd_iw": np.mean(emd_iw),
+            "mean_emd_no": np.mean(emd_no),
+            "n_iw": len(emd_iw),
+            "n_no": len(emd_no),
+            "aic_with": mc["aic_with"],
+            "aic_without": mc["aic_without"],
+            "w_aic_with": mc["w_aic_with"],
+            "w_aic_without": mc["w_aic_without"],
+            "er_aic": mc["er_aic"],
+            "best_model_aic": mc["best_model_aic"],
+            "delta_aic_interpretation": mc["delta_aic_interpretation"],
+            "cohens_d": cohens_d,
+            "effect_interpretation": _interpret_effect(cohens_d),
+            "p_value": p_value,
+            "test_statistic": test_statistic,
+            "r_effect": r,
+            "emd_mean_diff": np.mean(emd_iw) - np.mean(emd_no),
+        }
+        analysis_results.append(result)
+
+        logger.info(
+            f"  interpolated_with vs interpolated_no ({emd_type}): "
+            f"w_AIC={mc['w_aic_with']:.3f}/{mc['w_aic_without']:.3f}, "
+            f"d={cohens_d:.3f}, p={p_value:.4f}"
+        )
+
+results_df = pd.DataFrame(analysis_results)
+
+# %% [markdown]
+# ## Results Summary
+add_file_handler_to_logger(logger, log_path)
+logger.info(
+    "=== Model Comparison & Effect Size Analysis (interpolated_with vs interpolated_no) ==="
+)
+for _, row in results_df.iterrows():
+    logger.info(f"{row['condition']} ({row['emd_type']} EMD):")
+    logger.info(f"      Best model (AIC): {row['best_model_aic']}")
+    logger.info(
+        f"      Akaike weights: with={row['w_aic_with']:.3f}, without={row['w_aic_without']:.3f}"
     )
-    combined_mesh_dict[structure_id] = mesh_information_dict
+    logger.info(
+        f"      Evidence ratio: {row['er_aic']:.1g}x  |  ΔAIC: {row['delta_aic_interpretation']}"
+    )
+    logger.info(
+        f"      Cohen's d={row['cohens_d']:.3f} ({row['effect_interpretation']}), "
+        f"p={row['p_value']:.4f}"
+    )
+remove_file_handler_from_logger(logger, log_path)
+results_df.to_csv(results_dir / "model_comparison_effect_size.csv", index=False)
+logger.info(f"Results saved to {results_dir / 'model_comparison_effect_size.csv'}")
 
 # %% [markdown]
-# ## Read position and distance data
-for packing_id, mode_dict in distance_dict.items():
+# ## AIC Weights and Cohen's d
 
-    packing_mode = mode_dict["packing_mode"]
-    structure_id = mode_dict["structure_id"]
+emd_types = ["occupancy", "distance"]
+bar_w = 0.35
 
-    logger.info(f"Processing {packing_id} - {packing_mode} - {structure_id}")
+for emd_type in emd_types:
+    fig, axes = plt.subplots(1, 2, figsize=(7, 3.5), dpi=300)
 
-    mode_results_dir = results_dir / packing_id
-    mode_results_dir.mkdir(exist_ok=True, parents=True)
+    # Akaike weights
+    ax = axes[0]
+    df_sub = results_df[results_df["emd_type"] == emd_type].reset_index(drop=True)
+    condition_labels = [c.replace("_", "\n") for c in df_sub["condition"]]
+    x_pos = np.arange(len(df_sub))
 
-    mode_positions = get_position_data_from_outputs(
-        structure_id=structure_id,
-        packing_id=packing_id,
-        packing_modes=[packing_mode],
-        base_datadir=base_datadir,
-        results_dir=mode_results_dir,
-        packing_output_folder=packing_output_folder,
-        ingredient_key=mode_dict["ingredient_key"],
-        recalculate=False,
+    ax.bar(
+        x_pos - bar_w / 2,
+        df_sub["w_aic_with"],
+        bar_w,
+        label="With structure",
+        color="black",
+        alpha=0.7,
     )
-
-    all_distances = distance.get_distance_dictionary(
-        all_positions=mode_positions,
-        distance_measures=distance_measures,
-        mesh_information_dict=combined_mesh_dict,
-        channel_map={packing_mode: structure_id},
-        results_dir=mode_results_dir,
-        recalculate=False,
-        num_workers=16,
+    ax.bar(
+        x_pos + bar_w / 2,
+        df_sub["w_aic_without"],
+        bar_w,
+        label="Without structure",
+        color="grey",
+        alpha=0.7,
     )
+    ax.set_ylim(0, 1)
+    ax.set_ylabel("Akaike Weight", fontsize=9)
+    ax.set_title(f"{emd_type.capitalize()} EMD", fontsize=9)
+    ax.set_xticks(x_pos)
+    ax.set_xticklabels(condition_labels, rotation=45, ha="right", fontsize=8)
+    ax.legend(fontsize=8)
+    sns.despine(ax=ax)
 
-    for distance_measure in distance_measures:
-        distance_dict[packing_id]["distances"][distance_measure] = all_distances[distance_measure][
-            packing_mode
-        ]
+    # Cohen's d
+    ax = axes[1]
 
-with open(results_dir / "distances.dat", "wb") as f:
-    pickle.dump(distance_dict, f)
-# %% [markdown]
-records = []
-for row_mode in row_modes:
-    for col_mode in col_modes:
-        mode1 = distance_dict[row_mode]
-        mode2 = distance_dict[f"{col_mode}_{row_mode}"]
-        for distance_measure in distance_measures:
-            logger.info(f"Calculating {distance_measure} EMD for {row_mode} and {col_mode}")
-            distance_dict_1 = mode1["distances"][distance_measure]
-            distance_dict_2 = mode2["distances"][distance_measure]
-
-            cell_ids_1 = list(distance_dict_1.keys())
-            cell_ids_2 = list(distance_dict_2.keys())
-            pairwise_combinations = list(itertools.product(cell_ids_1, cell_ids_2))
-            for cell_id_1, cell_id_2 in tqdm(pairwise_combinations):
-                distances_1 = distance_dict_1[cell_id_1]
-                distances_2 = distance_dict_2[cell_id_2]
-                emd_record = {
-                    "mode_1": row_mode,
-                    "mode_2": col_mode,
-                    "cell_id_1": cell_id_1,
-                    "cell_id_2": cell_id_2,
-                    "distance_measure": distance_measure,
-                    "emd": wasserstein_distance(distances_1, distances_2),
-                }
-                records.append(emd_record)
-
-emd_df = pd.DataFrame(records)
-emd_df.to_parquet(results_dir / "emd_dataframe.parquet", index=False)
-
-# %% [markdown]
-# ## Plot results
-pairs = [
-    (("ER", "peroxisome"), ("ER", "endosome")),
-    (("golgi", "peroxisome"), ("golgi", "endosome")),
-]
-for distance_measure in distance_measures:
-    emd_df_subset = emd_df[emd_df["distance_measure"] == distance_measure]
-    fig, ax = plt.subplots(1, 1, figsize=(6, 4), dpi=300)
-    plot_params = {
-        "data": emd_df_subset,
-        "x": "mode_2",
-        "y": "emd",
-        "hue": "mode_1",
-        "errorbar": "sd",
-        "palette": COLOR_PALETTE,
-    }
-    sns.barplot(
-        ax=ax,
-        **plot_params,
+    vals = df_sub["cohens_d"].to_numpy()
+    colors_d = ["grey" if v < 0 else "black" for v in vals]
+    ax.bar(x_pos, vals.tolist(), color=colors_d, alpha=0.7)
+    ax.axhline(y=0, color="black", linestyle="-", linewidth=0.5)
+    for level, style, lbl in [
+        (0.2, "--", "Small (0.2)"),
+        (0.5, ":", "Medium (0.5)"),
+        (0.8, "-.", "Large (0.8)"),
+    ]:
+        color = "orange" if level == 0.8 else "gray"
+        ax.axhline(y=level, color=color, linestyle=style, linewidth=0.5, alpha=0.7, label=lbl)
+        ax.axhline(y=-level, color=color, linestyle=style, linewidth=0.5, alpha=0.7)
+    ax.set_ylabel("Cohen's d", fontsize=9)
+    ax.set_title(f"{emd_type.capitalize()} EMD", fontsize=9)
+    ax.set_xticks(x_pos)
+    ax.set_xticklabels(condition_labels, rotation=45, ha="right", fontsize=8)
+    ax.legend(fontsize=7)
+    ax.text(
+        0.02,
+        0.98,
+        "Black: lower EMD with structure\nGrey: higher EMD with structure",
+        transform=ax.transAxes,
+        verticalalignment="top",
+        fontsize=7,
     )
-    ax.legend()
-    ax.set_xlabel("Structure")
-    ax.set_ylabel(f"EMD for {distance_measure}")
-    sns.despine()
-    annotator = Annotator(ax=ax, pairs=pairs, plot="barplot", **plot_params)
-    annotator.configure(
-        test="Mann-Whitney",
-        verbose=False,
-        comparisons_correction="Bonferroni",
-        # loc="outside",
-    ).apply_and_annotate()
-    fig.savefig(figures_dir / f"emd_barplot_{distance_measure}{suffix}.{save_format}")
+    sns.despine(ax=ax)
+
+    fig.suptitle(
+        "Model Comparison & Effect Size (interpolated_with vs interpolated_no)", fontsize=10
+    )
+    plt.tight_layout()
+    fig_path = figures_dir / f"{emd_type}_model_comparison_effect_size_analysis.{save_format}"
+    plt.savefig(fig_path, bbox_inches="tight")
+
+
 # %%
