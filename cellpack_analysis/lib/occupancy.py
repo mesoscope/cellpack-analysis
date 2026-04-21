@@ -195,15 +195,15 @@ def get_kde_occupancy_for_single_cell(
         available_kde.set_bandwidth(bandwidth)
 
     available_distances = available_kde.dataset
-    occupied_distances = occupied_kde.dataset
-    if np.max(occupied_distances) >= np.max(available_distances):
-        logger.warning(
-            f"Cell ID {cell_id} has max available distance {np.max(available_distances)} "
-            f"less than or equal to max occupied distance {np.max(occupied_distances)}. "
-            "Discarding invalid data points for this cell."
-        )
-        valid_mask = occupied_distances <= np.max(available_distances)
-        occupied_distances = occupied_distances[valid_mask]
+    # occupied_distances = occupied_kde.dataset
+    # if np.max(occupied_distances) >= np.max(available_distances):
+    #     logger.warning(
+    #         f"Cell ID {cell_id} has max available distance {np.max(available_distances)} "
+    #         f"less than or equal to max occupied distance {np.max(occupied_distances)}. "
+    #         "Discarding invalid data points for this cell."
+    #     )
+    #     valid_mask = occupied_distances <= np.max(available_distances)
+    #     occupied_distances = occupied_distances[valid_mask]
 
     cell_lo = max(0, float(np.min(available_distances)))
     cell_hi = float(np.percentile(available_distances, 95))

@@ -1,17 +1,19 @@
 {
     "name": "rule_interpolation_e2e",
     "structure_id": "SLC25A17",
-    "simulated_structure_id": "SEC61B",
-    "packing_id": "ER_peroxisome",
+    "simulated_structure_id": "ST6GAL1",
+    "packing_id": "golgi_peroxisome_no_struct",
     "structure_name": "peroxisome",
-    "packing_output_folder": "packing_outputs/8d_sphere_data/rules_shape_with_seed/",
+    "output_path": "rule_interpolation_combine_prob/golgi_peroxisome_no_struct",
+    "validation_output_path": "rule_interpolation_combine_prob/golgi_peroxisome_no_struct/validation",
+    "validation_config_out_path": "combine_prob/validation",
+    "packing_output_folder": "packing_outputs/8d_sphere_data/combine_prob/",
     "channel_map": {
         "SLC25A17": "SLC25A17",
-        "random": "SEC61B",
-        "nucleus_gradient": "SEC61B",
-        "membrane_gradient": "SEC61B",
-        "apical_gradient": "SEC61B",
-        "struct_gradient": "SEC61B"
+        "random": "ST6GAL1",
+        "nucleus_gradient": "ST6GAL1",
+        "membrane_gradient": "ST6GAL1",
+        "apical_gradient": "ST6GAL1"
     },
     "distribution_method": "kde",
     "occupancy_distance_measures": [
@@ -36,18 +38,17 @@
         "random_state": 42,
         "grouping": "combined"
     },
-    "base_packing_config_path": "cellpack_analysis/packing/configs/rules_shape_with_seed/ER_peroxisome.json",
+    "base_packing_config_path": "cellpack_analysis/packing/configs/combine_prob/golgi_peroxisome_no_struct.json",
     "mode_to_gradient_name": {
         "random": "uniform",
         "nucleus_gradient": "nucleus_gradient",
         "membrane_gradient": "membrane_gradient",
-        "apical_gradient": "apical_gradient",
-        "struct_gradient": "struct_gradient"
+        "apical_gradient": "apical_gradient"
     },
     "packing_config_scope": "joint",
     "slurm_kwargs": {
-        "p": "aics_gpu",
-        "n": "cellPACK_ER_peroxisome"
+        "p": "aics",
+        "n": "cellPACK_golgi_peroxisome_no_struct"
     },
     "validation_distance_measures": [
         "nucleus",

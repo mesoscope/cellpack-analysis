@@ -1,0 +1,47 @@
+{
+    "packing_id": "ER_endosome",
+    "structure_id": "SEC61B",
+    "condition": "combine_prob",
+    "generate_recipes": true,
+    "generate_configs": true,
+    "recipe_template_path": "data/templates/recipes/combine_prob/ER_endosome_recipe_template.json",
+    "config_template_path": "data/templates/configs/combine_prob/ER_endosome_config_template.json",
+    "use_additional_struct": true,
+    "use_mean_cell": false,
+    "use_cells_in_8d_sphere": true,
+    "gradient_structure_name": "endosome",
+    "get_counts_from_data": false,
+    "get_size_from_data": false,
+    "get_bounding_box_from_mesh": true,
+    "num_processes": 4,
+    "skip_completed": false,
+    "dry_run": false,
+    "recipe_data": {
+        "random": {},
+        "nucleus_gradient": {
+            "gradients": [
+                "nucleus_gradient"
+            ]
+        },
+        "membrane_gradient": {
+            "gradients": [
+                "membrane_gradient"
+            ]
+        },
+        "apical_gradient": {
+            "gradients": [
+                "apical_gradient"
+            ]
+        },
+        "struct_gradient": {
+            "gradients": [
+                "struct_gradient"
+            ]
+        }
+    },
+    "packings_to_run": {
+        "rules": [
+            "random"
+        ]
+    }
+}

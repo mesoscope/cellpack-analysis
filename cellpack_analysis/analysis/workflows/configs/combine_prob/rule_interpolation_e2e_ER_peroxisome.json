@@ -4,7 +4,10 @@
     "simulated_structure_id": "SEC61B",
     "packing_id": "ER_peroxisome",
     "structure_name": "peroxisome",
-    "packing_output_folder": "packing_outputs/8d_sphere_data/rules_shape_with_seed/",
+    "output_path": "rule_interpolation_combine_prob/ER_peroxisome",
+    "validation_output_path": "rule_interpolation_combine_prob/ER_peroxisome/validation",
+    "validation_config_out_path": "combine_prob/validation",
+    "packing_output_folder": "packing_outputs/8d_sphere_data/combine_prob/",
     "channel_map": {
         "SLC25A17": "SLC25A17",
         "random": "SEC61B",
@@ -36,7 +39,7 @@
         "random_state": 42,
         "grouping": "combined"
     },
-    "base_packing_config_path": "cellpack_analysis/packing/configs/rules_shape_with_seed/ER_peroxisome.json",
+    "base_packing_config_path": "cellpack_analysis/packing/configs/combine_prob/ER_peroxisome.json",
     "mode_to_gradient_name": {
         "random": "uniform",
         "nucleus_gradient": "nucleus_gradient",
@@ -46,14 +49,13 @@
     },
     "packing_config_scope": "joint",
     "slurm_kwargs": {
-        "p": "aics_gpu",
+        "p": "aics",
         "n": "cellPACK_ER_peroxisome"
     },
     "validation_distance_measures": [
         "nucleus",
         "z"
     ],
-    "skip_mixed_rule_validation": false,
     "validation_analysis_steps": [
         "plot_distance_distributions",
         "run_emd_analysis",
@@ -61,5 +63,6 @@
         "run_occupancy_analysis",
         "run_occupancy_emd_analysis"
     ],
+    "skip_mixed_rule_validation": false,
     "recalculate": false
 }

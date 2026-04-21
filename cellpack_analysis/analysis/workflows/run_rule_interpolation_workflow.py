@@ -129,6 +129,23 @@ def _validation_config_path(suffix: str = "") -> Path:
     return _VALIDATION_CONFIG_DIR / f"mixed_rule_validation_config{suffix}.json"
 
 
+def _resolve_validation_config_path(raw_config: dict[str, Any]) -> Path:
+    """Return the validation analysis config path derived from the e2e config."""
+    packing_id = raw_config.get("packing_id", "")
+    config_out_path = raw_config.get("validation_config_out_path")
+    if config_out_path:
+        return (
+            get_project_root()
+            / "cellpack_analysis"
+            / "analysis"
+            / "workflows"
+            / "configs"
+            / config_out_path
+            / f"mixed_rule_validation_config_{packing_id}.json"
+        )
+    return _validation_config_path(suffix=f"_{packing_id}")
+
+
 # ---------------------------------------------------------------------------
 # Fit phase
 # ---------------------------------------------------------------------------
@@ -213,17 +230,18 @@ def _write_validation_analysis_config(
     }
 
     # Use the same output_path so results go to the same directory tree.
-    output_path = raw_config.get("output_path")
+    output_path = raw_config.get("validation_output_path")
     if output_path:
-        validation_config["output_path"] = output_path
+        validation_config["output_path"] = (get_project_root() / "results" / output_path).as_posix()
 
-    out_path = _validation_config_path(suffix=f"_{raw_config.get('packing_id', '')}")
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(out_path, "w") as fh:
+    config_out_path = _resolve_validation_config_path(raw_config)
+
+    config_out_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(config_out_path, "w") as fh:
         json.dump(validation_config, fh, indent=4)
 
-    logger.info("Wrote validation analysis config: %s", out_path)
-    return out_path
+    logger.info("Wrote validation analysis config: %s", config_out_path)
+    return config_out_path
 
 
 def fit(config_path: str, dry_run: bool = False) -> None:
@@ -360,7 +378,7 @@ def validate(config_path: str) -> None:
     raw_config = _load_e2e_config(config_path)
     results_dir = _resolve_results_dir(raw_config)
 
-    val_config_path = _validation_config_path(suffix=f"_{raw_config.get('packing_id', '')}")
+    val_config_path = _resolve_validation_config_path(raw_config)
     if not val_config_path.exists():
         raise FileNotFoundError(
             f"Validation config not found: {val_config_path}\nRun --phase fit first to generate it."
