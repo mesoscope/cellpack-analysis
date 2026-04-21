@@ -42,19 +42,19 @@ start_time = time.time()
 STRUCTURE_ID = "SLC25A17"
 """ID for the packed punctate structure; used as packing mode for observed data."""
 
-CELL_STRUCTURE_ID = "SLC25A17"
+CELL_STRUCTURE_ID = "SEC61B"
 """ID of the cell shapes used for packing (used for mesh lookup for simulated modes)."""
 
-PACKING_ID = "peroxisome"
+PACKING_ID = "ER_peroxisome"
 """Packing configuration ID — used for naming outputs and folders."""
 
 STRUCTURE_NAME = "peroxisome"
 """Name of the packed punctate structure in cellPACK output files."""
 
-CONDITION = "rules_shape_with_seed"
+CONDITION = "test_mixed_rule"
 """Experimental condition / packing output subfolder."""
 
-RESULT_SUBFOLDER = "occupancy_analysis/rules_shape_with_seed"
+RESULT_SUBFOLDER = f"{CONDITION}/{PACKING_ID}"
 """Subfolder within results/ to save outputs for this workflow."""
 # %% [markdown]
 # ### Set packing modes and channel map
@@ -64,11 +64,12 @@ baseline_mode = STRUCTURE_ID
 
 channel_map = {
     STRUCTURE_ID: STRUCTURE_ID,
-    "random": CELL_STRUCTURE_ID,
+    # "random": CELL_STRUCTURE_ID,
     "nucleus_gradient": CELL_STRUCTURE_ID,
-    "membrane_gradient": CELL_STRUCTURE_ID,
-    "apical_gradient": CELL_STRUCTURE_ID,
-    # "struct_gradient": CELL_STRUCTURE_ID,
+    # "membrane_gradient": CELL_STRUCTURE_ID,
+    # "apical_gradient": CELL_STRUCTURE_ID,
+    "struct_gradient": CELL_STRUCTURE_ID,
+    "interpolated": CELL_STRUCTURE_ID,
 }
 
 # relative path to packing outputs
@@ -85,6 +86,8 @@ base_results_dir = project_root / "results"
 results_dir = make_dir(base_results_dir / RESULT_SUBFOLDER)
 
 figures_dir = make_dir(results_dir / "figures/")
+
+log_dir = make_dir(results_dir / "logs/")
 # %% [markdown]
 # ### Distance measures to use
 # Options: "nucleus", "z", "scaled_nucleus", "membrane"
@@ -110,7 +113,7 @@ all_positions = get_position_data_from_outputs(
     results_dir=results_dir,
     packing_output_folder=packing_output_folder,
     ingredient_key=f"membrane_interior_{STRUCTURE_NAME}",
-    recalculate=True,
+    recalculate=False,
 )
 # %% [markdown]
 # ### Get mesh information
@@ -119,7 +122,7 @@ for structure_id in all_structures:
     mesh_information_dict = get_mesh_information_dict_for_structure(
         structure_id=structure_id,
         base_datadir=base_datadir,
-        recalculate=True,
+        recalculate=False,
     )
     combined_mesh_information_dict[structure_id] = mesh_information_dict
 # %% [markdown]
@@ -132,7 +135,7 @@ all_distance_dict_raw = distance.get_distance_dictionary(
     mesh_information_dict=combined_mesh_information_dict,
     channel_map=channel_map,
     results_dir=results_dir,
-    recalculate=True,
+    recalculate=False,
     num_workers=8,
 )
 all_distance_dict_filtered = distance.filter_invalids_from_distance_distribution_dict(
@@ -150,7 +153,7 @@ all_distance_dict = distance.normalize_distance_dictionary(
 # %% [markdown]
 # ### Set limits and bandwidths for plotting
 occupancy_params = {
-    "nucleus": {"xlim": 6, "ylim": 3.2, "bandwidth": 0.2},
+    "nucleus": {"xlim": 6, "ylim": 3, "bandwidth": 0.2},
     "z": {"xlim": 8, "ylim": 2, "bandwidth": 0.2},
 }
 # %% [markdown]
@@ -160,7 +163,6 @@ occupancy_axes_dict = {}
 minimum_distance = -1  # allowance for small negative distances
 occupancy_figures_dir = {}
 for dm in occupancy_distance_measures:
-    logger.info(f"Starting occupancy analysis for distance measure: {dm}")
     occupancy_figures_dir[dm] = make_dir(figures_dir / dm)
 # %% [markdown]
 # ### Calculate distance kde dictionary
@@ -171,7 +173,7 @@ for dm in occupancy_distance_measures:
         mesh_information_dict=combined_mesh_information_dict,
         channel_map=channel_map,
         save_dir=results_dir,
-        recalculate=True,
+        recalculate=False,
         suffix=suffix,
         normalization=normalization,
         distance_measure=dm,
@@ -179,6 +181,22 @@ for dm in occupancy_distance_measures:
     )
 
 # %% [markdown]
+# ### Plot illustration for one example cell
+# for dm in occupancy_distance_measures:
+#     fig_ill, axs_ill = visualization.plot_occupancy_illustration(
+#         distance_kde_dict=distance_kde_dict[dm],
+#         packing_mode="random",
+#         figures_dir=occupancy_figures_dir[dm],
+#         suffix=suffix,
+#         distance_measure=dm,
+#         normalization=normalization,
+#         cell_id_or_index=25,
+#         num_points=250,
+#         # bandwidth=0.4,
+#         save_format=save_format,
+#         ylim_ratio=2,
+#         xlim=occupancy_params[dm]["xlim"],
+#     )
 
 # %% [markdown]
 # ### Calculate occupancy ratio
@@ -201,23 +219,6 @@ for dm in occupancy_distance_measures:
     )
 
 # %% [markdown]
-# ### Plot illustration for one example cell
-for dm in occupancy_distance_measures:
-    fig_ill, axs_ill = visualization.plot_occupancy_illustration(
-        distance_kde_dict=distance_kde_dict[dm],
-        packing_mode="random",
-        figures_dir=occupancy_figures_dir[dm],
-        suffix=suffix,
-        distance_measure=dm,
-        normalization=normalization,
-        cell_id_or_index=25,
-        num_points=250,
-        bandwidth=0.4,
-        save_format=save_format,
-        xlim=occupancy_params[dm]["xlim"],
-    )
-
-# %% [markdown]
 # ### Plot occupancy ratio
 for dm in occupancy_distance_measures:
     fig, ax = visualization.plot_occupancy_ratio(
@@ -229,20 +230,19 @@ for dm in occupancy_distance_measures:
         normalization=normalization,
         distance_measure=dm,
         save_format=save_format,
-        xlim=occupancy_params[dm]["xlim"],
+        # xlim=occupancy_params[dm]["xlim"],
         ylim=occupancy_params[dm]["ylim"],
         fig_params={"dpi": 300, "figsize": (3.5, 2.5)},
     )
 
 # %% [markdown]
 # ## Calculate occupancy EMD
-# TODO: use combined grid evaluated occupancy
 occupancy_emd_df = occupancy.get_occupancy_emd_df(
     combined_occupancy_dict=combined_occupancy_dict,
     packing_modes=packing_modes,
     distance_measures=occupancy_distance_measures,
     results_dir=results_dir,
-    recalculate=True,
+    recalculate=False,
     suffix=suffix,
 )
 # %% [markdown]
@@ -311,13 +311,13 @@ fig_env_joint, axs_env_joint = visualization.plot_pairwise_envelope_matrix(
     font_scale=1.1,
 )
 # %% [markdown]
-# ### Per distance measure rejection bars (per reference mode)
+# ### Per distance measure rejection bars (per test mode)
 # %%
-for ref_mode in packing_modes:
+for test_mode in packing_modes:
     for joint_test in [False, True]:
         fig_env, axs_env = visualization.plot_per_dm_rejection_bars(
             pairwise_results=occ_pairwise_results,
-            reference_mode=ref_mode,
+            compare_mode=test_mode,
             joint_test=joint_test,
             figures_dir=envelope_figures_dir,
             figsize=(3.5, 2),
@@ -351,8 +351,8 @@ for ref_mode in packing_modes:
         combined_occupancy_dict=combined_occupancy_dict,
         baseline_mode=ref_mode,
         significance_level=ks_significance_level,
-        save_dir=None,
-        recalculate=True,
+        results_dir=None,
+        recalculate=False,
     )
     occ_ks_df["baseline_mode"] = ref_mode
     pairwise_occ_ks_dfs.append(occ_ks_df)
@@ -388,7 +388,7 @@ for ref_mode in packing_modes:
 # %% [markdown]
 # ### Log pairwise KS central tendencies
 pairwise_ks_log_file_path = (
-    results_dir / f"{STRUCTURE_NAME}_pairwise_occupancy_ks_central_tendencies{suffix}.log"
+    log_dir / f"{STRUCTURE_NAME}_pairwise_occupancy_ks_central_tendencies{suffix}.log"
 )
 for _ref_mode in packing_modes:
     ref_boot_df = pairwise_occ_ks_bootstrap_df.query("baseline_mode == @_ref_mode")

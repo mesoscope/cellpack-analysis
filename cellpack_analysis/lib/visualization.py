@@ -20,7 +20,12 @@ from cellpack_analysis.lib import label_tables
 from cellpack_analysis.lib.default_values import PIXEL_SIZE_IN_UM
 from cellpack_analysis.lib.distance import get_scaled_structure_radius
 from cellpack_analysis.lib.occupancy import get_kde_occupancy_for_single_cell
-from cellpack_analysis.lib.rule_interpolation import CVResult
+from cellpack_analysis.lib.rule_interpolation import (
+    AICComparisonResult,
+    CVResult,
+    FitResult,
+    ValidationResult,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -370,6 +375,7 @@ def plot_emd_comparisons(
     distance_measures: list[str],
     comparison_type: Literal["intra_mode", "baseline"] = "intra_mode",
     baseline_mode: str = "SLC25A17",
+    packing_modes: list[str] | None = None,
     suffix: str = "",
     figures_dir: Path | None = None,
     save_format: Literal["svg", "png", "pdf"] = "png",
@@ -392,6 +398,9 @@ def plot_emd_comparisons(
           (packing_mode_1 == baseline_mode)
     baseline_mode
         The baseline packing mode to use for comparison (used for both comparison types)
+    packing_modes
+        Ordered list of packing modes controlling the x-axis order.  When ``None``,
+        order is inferred from the data.
     suffix
         Suffix to append to the figure filenames
     figures_dir
@@ -459,11 +468,26 @@ def plot_emd_comparisons(
         ax_bar = axs_bar[0, col]
         ax_violin = axs_violin[0, col]
 
+        # Compute the display order for this comparison type
+        if packing_modes is not None:
+            if comparison_type == "intra_mode":
+                order: list[str] | None = [
+                    m for m in packing_modes if m in df_plot[x_column].values
+                ]
+            else:
+                order = [
+                    m for m in packing_modes if m != baseline_mode and m in df_plot[x_column].values
+                ]
+        else:
+            order = None
+
         plot_params = {
             "data": df_plot,
             "x": x_column,
             "y": "emd",
             "hue": x_column,
+            "order": order,
+            "hue_order": order,
             "legend": False,
             "orient": "v",
             "palette": label_tables.COLOR_PALETTE,
@@ -488,14 +512,18 @@ def plot_emd_comparisons(
 
             if annotate_significance:
                 if comparison_type == "intra_mode":
-                    packing_modes = df_plot[x_column].unique()
-                    pairs = list(combinations(packing_modes, 2))
+                    _annot_modes = (
+                        list(order) if order is not None else list(df_plot[x_column].unique())
+                    )
+                    pairs = list(combinations(_annot_modes, 2))
                     pairs = [pair for pair in pairs if baseline_mode in pair]
                 else:  # baseline comparison
-                    packing_modes = [
-                        mode for mode in df_plot[x_column].unique() if mode != baseline_mode
+                    _annot_modes = [
+                        mode
+                        for mode in (order if order is not None else df_plot[x_column].unique())
+                        if mode != baseline_mode
                     ]
-                    pairs = list(combinations(packing_modes, 2))
+                    pairs = list(combinations(_annot_modes, 2))
 
                 if pairs:  # Only annotate if there are pairs to compare
                     annotator = Annotator(ax=ax, pairs=pairs, plot=plot_type, **plot_params)
@@ -601,12 +629,10 @@ def plot_occupancy_illustration(
         if cell_id not in distance_kde_dict:
             raise KeyError(f"cell_id '{cell_id}' not found for mode '{packing_mode}'")
 
-    x_vals = np.linspace(0, xlim if xlim is not None else 1, num_points)
     result = get_kde_occupancy_for_single_cell(
         cell_id=cell_id,
         mode=packing_mode,
         distance_kde_dict=distance_kde_dict,
-        x_vals=x_vals,
         bandwidth=bandwidth,
         num_points=num_points,
     )
@@ -615,9 +641,10 @@ def plot_occupancy_illustration(
         raise ValueError(f"Mode '{packing_mode}' not found for cell '{cell_id}'")
 
     _, cell_result = result
-    pdf_occupied = cell_result["pdf_occupied_common"]
-    pdf_available = cell_result["pdf_available_common"]
-    occupancy = cell_result["occupancy_common"]
+    x_vals = cell_result["xvals"]
+    pdf_occupied = cell_result["pdf_occupied"]
+    pdf_available = cell_result["pdf_available"]
+    occupancy = cell_result["occupancy"]
 
     plt.rcParams.update({"font.size": 8})
     fig, axs = plt.subplots(3, 1, dpi=300, figsize=(3.5, 4), sharex=True)
@@ -630,7 +657,10 @@ def plot_occupancy_illustration(
         strict=False,
     ):
         sns.lineplot(x=x_vals, y=np.nan_to_num(ydata), ax=ax, color="k")
-        ax.set_xlim(0, xlim if xlim is not None else float(x_vals.max()))
+        data_xmax = float(x_vals.max())
+        ax.set_xlim(0, min(data_xmax, xlim) if xlim is not None else data_xmax)
+        ylim = float(np.nanmax(ydata)) * 1.1
+        ax.set_ylim(0, ylim)
         ax.set_ylabel(ylabel)
         ax.xaxis.set_major_locator(MaxNLocator(4, integer=True))
         ax.yaxis.set_major_locator(MaxNLocator(3, integer=True))
@@ -641,6 +671,9 @@ def plot_occupancy_illustration(
 
     if ylim_ratio is not None:
         axs[2].set_ylim(0, ylim_ratio)
+    else:
+        cur_ylim = axs[2].get_ylim()
+        axs[2].set_ylim(0, cur_ylim[1] * 1.02)
 
     mode_label = label_tables.MODE_LABELS.get(packing_mode, packing_mode)
     fig.suptitle(f"{mode_label} \u2014 cell {cell_id}", fontsize=8)
@@ -1740,7 +1773,7 @@ def plot_pairwise_envelope_matrix(
     if figures_dir is not None:
         dm_label = distance_measure or "joint"
         filepath = figures_dir / f"pairwise_envelope_matrix_{dm_label}{suffix}.{save_format}"
-        fig.savefig(filepath, format=save_format, bbox_inches="tight", transparent=True)
+        fig.savefig(filepath, format=save_format, bbox_inches="tight")
         logger.info("Saved pairwise envelope matrix to %s", filepath)
 
     return fig, axs
@@ -1748,7 +1781,8 @@ def plot_pairwise_envelope_matrix(
 
 def plot_per_dm_rejection_bars(
     pairwise_results: dict[str, Any],
-    reference_mode: str,
+    compare_mode: str,
+    envelope_from_compare: bool = True,
     joint_test: bool = False,
     figsize: tuple[float, float] | None = None,
     font_scale: float = 1.0,
@@ -1757,31 +1791,34 @@ def plot_per_dm_rejection_bars(
     save_format: Literal["svg", "png", "pdf"] = "pdf",
 ) -> tuple[Figure, Axes]:
     """
-    Plot per-distance-measure rejection rates against a fixed reference mode.
+    Plot rejection rates for compare mode based on envelope source.
 
     Creates a single subplot with grouped horizontal bars.  Each y-axis group
-    represents one *test* packing mode (``reference_mode`` is excluded).
+    represents packing modes excluding the ``compare_mode``.
 
     When ``joint_test=False`` (default): within each group there is one bar per
     distance measure, colored by distance measure.  Each bar is stacked with
-    the positive rejection fraction (obs > sim mean) on the left and the
-    negative rejection fraction (obs < sim mean) on the right.
+    the positive rejection fraction (compare_mode obs > ref mean) on the left and the
+    negative rejection fraction (compare_mode obs < ref mean) on the right.
 
-    When ``joint_test=True``: a single bar per mode is plotted, colored by
-    the mode color, using the joint (all-distance-measures combined) test
-    rejection fractions.
+    When ``joint_test=True``: a single bar per reference mode is plotted,
+    colored by the reference mode's color, using the joint
+    (all-distance-measures combined) test rejection fractions.
 
     Parameters
     ----------
     pairwise_results
         Output dictionary from :func:`~cellpack_analysis.lib.stats.pairwise_envelope_test`.
-    reference_mode
-        The packing mode whose envelope was used as the reference.  This mode
-        is excluded from the y-axis.
+    compare_mode
+        The packing mode whose observations are tested against every other mode's
+        null envelope.  This mode is excluded from the y-axis.
+    envelope_from_compare
+        If ``True``, use the compare_mode's envelope for determining the test rejection fractions.
+        If ``False``, use the reference mode's envelope.
     joint_test
-        If ``True``, plot a single bar per mode colored by the mode color using the
-        joint (all-distance-measures combined) test rejection fractions instead of
-        per-distance-measure grouped bars.
+        If ``True``, plot a single bar per reference mode colored by the reference
+        mode color using the joint (all-distance-measures combined) test rejection
+        fractions instead of per-distance-measure grouped bars.
     figsize
         Figure size ``(width, height)`` in inches; auto-scaled if not given.
     font_scale
@@ -1803,9 +1840,9 @@ def plot_per_dm_rejection_bars(
     per_dm = pairwise_results["per_distance_measure"]
     joint = pairwise_results["joint"]
 
-    # Exclude the reference mode itself — no self-comparison entry exists in the dict
-    test_modes = [m for m in packing_modes if m != reference_mode]
-    n_modes = len(test_modes)
+    # Exclude the test mode itself — no self-comparison entry exists in the dict
+    ref_modes = [m for m in packing_modes if m != compare_mode]
+    n_modes = len(ref_modes)
     n_dm = len(distance_measures)
 
     if figsize is None:
@@ -1817,24 +1854,31 @@ def plot_per_dm_rejection_bars(
 
     if joint_test:
         bar_height = 0.6
-        for mode_idx, mode in enumerate(test_modes):
-            entry = joint.get((mode, reference_mode), {})
+        for mode_idx, ref_mode in enumerate(ref_modes):
+            if envelope_from_compare:
+                entry = joint.get((ref_mode, compare_mode), {})
+            else:
+                entry = joint.get((compare_mode, ref_mode), {})
             pos_val = entry.get("rejection_fraction_positive", 0.0)
             neg_val = entry.get("rejection_fraction_negative", 0.0)
 
-            mode_color = label_tables.COLOR_PALETTE.get(
-                mode, label_tables.COLOR_PALETTE.get("random", "#808080")
+            ref_color = label_tables.COLOR_PALETTE.get(
+                ref_mode, label_tables.COLOR_PALETTE.get("random", "#808080")
             )
-            mode_neg_color = label_tables.adjust_color_saturation(mode_color, saturation=0.3)
+            ref_neg_color = label_tables.adjust_color_saturation(ref_color, saturation=0.3)
 
-            ax.barh(mode_idx, pos_val, height=bar_height, color=mode_color, alpha=0.9)
+            ax.barh(mode_idx, pos_val, height=bar_height, color=ref_color, alpha=0.9)
             ax.barh(
-                mode_idx, neg_val, height=bar_height, left=pos_val, color=mode_neg_color, alpha=0.9
+                mode_idx, neg_val, height=bar_height, left=pos_val, color=ref_neg_color, alpha=0.9
             )
 
         legend_handles = [
-            mpatches.Patch(color="gray", alpha=0.9, label="Test distances greater"),
-            mpatches.Patch(color="gray", alpha=0.4, label="Test distances smaller"),
+            mpatches.Patch(color="gray", alpha=0.9, label="Test obs > ref envelope"),
+            mpatches.Patch(
+                color="gray",
+                alpha=0.3,
+                label="Test obs < ref envelope",
+            ),
         ]
         ax.legend(
             handles=legend_handles,
@@ -1846,15 +1890,14 @@ def plot_per_dm_rejection_bars(
     else:
         bar_height = 0.8 / n_dm
 
-        for mode_idx, mode in enumerate(test_modes):
+        for mode_idx, ref_mode in enumerate(ref_modes):
             for dm_idx, dm in enumerate(distance_measures):
                 dm_dict = per_dm.get(dm, {})
-                pos_val = dm_dict.get((mode, reference_mode), {}).get(
-                    "rejection_fraction_positive", 0.0
+                pair = (
+                    (ref_mode, compare_mode) if envelope_from_compare else (compare_mode, ref_mode)
                 )
-                neg_val = dm_dict.get((mode, reference_mode), {}).get(
-                    "rejection_fraction_negative", 0.0
-                )
+                pos_val = dm_dict.get(pair, {}).get("rejection_fraction_positive", 0.0)
+                neg_val = dm_dict.get(pair, {}).get("rejection_fraction_negative", 0.0)
 
                 dm_color = label_tables.COLOR_PALETTE.get(dm, "#808080")
                 dm_neg_color = label_tables.adjust_color_saturation(dm_color, saturation=0.3)
@@ -1888,8 +1931,15 @@ def plot_per_dm_rejection_bars(
             for dm in distance_measures
         ]
         sign_handles = [
-            mpatches.Patch(color="gray", alpha=0.9, label="Test distances greater"),
-            mpatches.Patch(color="gray", alpha=0.4, label="Test distances smaller"),
+            mpatches.Patch(
+                color="gray", alpha=0.9, label="Test obs > ref envelope", edgecolor="none"
+            ),
+            mpatches.Patch(
+                color="gray",
+                alpha=0.3,
+                label="Test obs < ref envelope",
+                edgecolor="none",
+            ),
         ]
         ax.legend(
             handles=dm_handles + sign_handles,
@@ -1904,20 +1954,25 @@ def plot_per_dm_rejection_bars(
     ax.set_xlim(0, 1)
     ax.set_yticks(np.arange(n_modes))
     ax.set_yticklabels(
-        [label_tables.MODE_LABELS.get(tm, tm) or tm for tm in test_modes],
+        [label_tables.MODE_LABELS.get(rm, rm) or rm for rm in ref_modes],
         fontsize=8 * font_scale,
     )
     ax.set_xlabel("Rejection fraction", fontsize=8 * font_scale)
-    ref_label = label_tables.MODE_LABELS.get(reference_mode, reference_mode) or reference_mode
-    ax.set_title(f"Rejection rates — reference: {ref_label}", fontsize=10 * font_scale)
+    test_label = label_tables.MODE_LABELS.get(compare_mode, compare_mode) or compare_mode
+    if envelope_from_compare:
+        ax.set_title(f"Rejection rates — envelope: {test_label}", fontsize=10 * font_scale)
+    else:
+        ax.set_title(f"Rejection rates — test: {test_label}", fontsize=10 * font_scale)
     sns.despine(ax=ax)
     fig.tight_layout()
     plt.show()
 
     if figures_dir is not None:
         figname = "joint" if joint_test else "per_dm"
+        mode_str = "envelope_from_compare" if envelope_from_compare else "test_from_compare"
         filepath = (
-            figures_dir / f"{figname}_rejection_bars_ref_{reference_mode}{suffix}.{save_format}"
+            figures_dir
+            / f"{figname}_rejection_bars_{mode_str}_{compare_mode}{suffix}.{save_format}"
         )
         fig.savefig(filepath, format=save_format, bbox_inches="tight", transparent=True)
         logger.info("Saved per-DM rejection bars to %s", filepath)
@@ -2234,8 +2289,9 @@ def plot_pairwise_emd_matrix(
 
     use_occupancy = binned_occupancy_dict is not None
     n = len(packing_modes)
+
     if figure_size is None:
-        figure_size = (n * 1.8, n * 1.6)
+        figure_size = (n * 3, n * 1.5)
 
     plt.rcParams.update({"font.size": 6 * font_scale})
     fig, axs = plt.subplots(n, n, figsize=figure_size, dpi=300, squeeze=False)
@@ -2266,7 +2322,7 @@ def plot_pairwise_emd_matrix(
                 all_distance_dict,
                 [distance_measure],
                 packing_modes,
-                method="histogram",
+                method="kde",
                 bin_width=bin_width,
                 distance_limits=distance_limits,
                 minimum_distance=minimum_distance,
@@ -2540,6 +2596,134 @@ def plot_rule_interpolation_fit(
     return fig, ax
 
 
+def plot_validation_occupancy(
+    fit_result: FitResult,
+    occupancy_dict: dict[str, dict[str, dict[str, Any]]],
+    channel_map: dict[str, str],
+    baseline_mode: str,
+    distance_measure: str = "nucleus",
+    plot_type: str = "joint",
+    figures_dir: Path | None = None,
+    xlim: float | None = None,
+    ylim: float | None = None,
+    suffix: str = "",
+    save_format: Literal["svg", "png", "pdf"] = "pdf",
+    fig_params: dict[str, Any] | None = None,
+    show_envelope: bool = True,
+) -> tuple[Figure, Axes]:
+    """Plot combined validation occupancy with all modes, mixed rule, and interpolated line.
+
+    Draws every packing mode in *channel_map* (including ``"interpolated"``) as
+    solid occupancy-ratio curves, then overlays the NNLS reconstruction from
+    *fit_result* as a dash-dot line.
+
+    Parameters
+    ----------
+    fit_result
+        :class:`~cellpack_analysis.lib.rule_interpolation.FitResult` from
+        :func:`~cellpack_analysis.lib.rule_interpolation.fit_rule_interpolation`.
+    occupancy_dict
+        ``{distance_measure: {mode: {"individual": ..., "combined": {...}}}}``.
+    channel_map
+        Mapping from packing modes to structure IDs.  Should include
+        ``"interpolated"``.
+    baseline_mode
+        Experimental baseline packing mode key.
+    distance_measure
+        Which distance measure to plot.
+    plot_type
+        NNLS scope to overlay: ``"individual"`` or ``"joint"``.
+    figures_dir
+        Directory to save the figure.  Skipped when ``None``.
+    xlim
+        Upper x-axis limit.
+    ylim
+        Upper y-axis limit.
+    suffix
+        Suffix appended to the saved filename.
+    save_format
+        File format for saving.
+    fig_params
+        Optional matplotlib ``Figure`` keyword arguments.
+    show_envelope
+        When ``True``, shade the pointwise envelope.
+
+    Returns
+    -------
+    :
+        Tuple of ``(Figure, Axes)``.
+    """
+    _fig_params: dict[str, Any] = {"dpi": 300, "figsize": (4.5, 3.0)}
+    if fig_params is not None:
+        _fig_params.update(fig_params)
+
+    fig, ax = plot_occupancy_ratio(
+        occupancy_dict=occupancy_dict[distance_measure],
+        channel_map=channel_map,
+        baseline_mode=baseline_mode,
+        distance_measure=distance_measure,
+        xlim=xlim,
+        ylim=ylim,
+        fig_params=_fig_params,
+        show_envelope=show_envelope,
+    )
+
+    # ── Overlay NNLS reconstruction (dash-dot) ───────────────────────────
+    dm_occ = occupancy_dict[distance_measure]
+    recon: np.ndarray = fit_result.reconstructed_occupancy[distance_measure][plot_type]
+    common_xvals: np.ndarray = dm_occ[baseline_mode]["combined"]["xvals"]
+    relative_contribs: dict[str, float] = (
+        fit_result.relative_contributions_individual[distance_measure]
+        if plot_type == "individual"
+        else fit_result.relative_contributions_joint
+    )
+
+    mse: float = (
+        fit_result.train_mse_individual[distance_measure]
+        if plot_type == "individual"
+        else fit_result.train_mse_joint[distance_measure]
+    )
+    ax.set_title(f"{plot_type.capitalize()}, MSE: {mse:.4f}")
+
+    ax.plot(
+        common_xvals,
+        recon,
+        color=label_tables.COLOR_PALETTE.get(baseline_mode, "gray"),
+        linewidth=2,
+        linestyle="-.",
+        zorder=4,
+        label=f"Interpolated ({plot_type})",
+    )
+
+    contrib_text = "\n".join(
+        f"{label_tables.MODE_LABELS.get(k, k)}: {v:.0%}" for k, v in relative_contribs.items()
+    )
+    ax.text(
+        0.95,
+        0.60,
+        contrib_text,
+        ha="right",
+        va="top",
+        transform=ax.transAxes,
+        fontsize=6,
+    )
+
+    sns.despine(fig=fig)
+    fig.tight_layout()
+
+    if figures_dir is not None:
+        fig.savefig(
+            figures_dir
+            / f"{distance_measure}_{plot_type}_validation_occupancy{suffix}.{save_format}",
+            dpi=300,
+            bbox_inches="tight",
+            transparent=True,
+        )
+    plt.show()
+
+    return fig, ax
+
+
 def plot_cv_mse_summary(
     cv_df: pd.DataFrame,
     figures_dir: Path | None = None,
@@ -2579,7 +2763,7 @@ def plot_cv_mse_summary(
     _fig_params: dict[str, Any] = {"dpi": 300, "figsize": (max(3.0, n_scopes * 2.5), 2.5)}
     if fig_params is not None:
         _fig_params.update(fig_params)
-    fig, axs = plt.subplots(1, n_scopes, squeeze=False, **_fig_params)
+    fig, axs = plt.subplots(1, n_scopes, squeeze=False, sharey=True, **_fig_params)
 
     for ax, scope in zip(axs[0], scopes, strict=False):
         scope_df = cv_df[cv_df["scope"] == scope]
@@ -2706,3 +2890,534 @@ def plot_cv_coefficient_stability(
     plt.show()
 
     return fig, axs[0]
+
+
+def _get_aic_model_label(model_name: str) -> str:
+    """Map an AIC model name to a human-readable label."""
+    if model_name == "mixed_rule":
+        return "Mixed rule"
+    if model_name == "null":
+        return "Null"
+    if model_name.startswith("single:"):
+        mode = model_name[len("single:") :]
+        return label_tables.MODE_LABELS.get(mode, mode)
+    return model_name
+
+
+def _get_aic_model_color(model_name: str) -> str:
+    """Map an AIC model name to a color from the palette."""
+    if model_name == "mixed_rule":
+        return label_tables.COLOR_PALETTE.get("interpolated", "#000000")
+    if model_name == "null":
+        return "#888888"
+    if model_name.startswith("single:"):
+        mode = model_name[len("single:") :]
+        return label_tables.COLOR_PALETTE.get(mode, "gray")
+    return "gray"
+
+
+def _filter_emd_vs_baseline(
+    df_emd: pd.DataFrame,
+    baseline_mode: str,
+) -> pd.DataFrame:
+    """Filter an EMD DataFrame to baseline-vs-other pairs and return per-mode EMD.
+
+    Returns a DataFrame with columns ``packing_mode`` and ``emd``, where
+    ``packing_mode`` is the non-baseline mode in each pair.
+    """
+    # Rows where baseline is mode_1
+    mask_1 = (df_emd["packing_mode_1"] == baseline_mode) & (
+        df_emd["packing_mode_2"] != baseline_mode
+    )
+    df_1 = df_emd.loc[mask_1, ["packing_mode_2", "emd"]].rename(
+        columns={"packing_mode_2": "packing_mode"}
+    )
+
+    # Rows where baseline is mode_2
+    mask_2 = (df_emd["packing_mode_2"] == baseline_mode) & (
+        df_emd["packing_mode_1"] != baseline_mode
+    )
+    df_2 = df_emd.loc[mask_2, ["packing_mode_1", "emd"]].rename(
+        columns={"packing_mode_1": "packing_mode"}
+    )
+
+    return pd.concat([df_1, df_2], ignore_index=True)
+
+
+def _draw_emd_boxplot(
+    ax: Axes,
+    df_baseline_emd: pd.DataFrame,
+    title: str,
+    packing_modes: list[str] | None = None,
+) -> None:
+    """Draw a boxplot of EMD vs baseline on *ax*, coloured by packing mode."""
+    sns.boxplot(
+        data=df_baseline_emd,
+        x="packing_mode",
+        y="emd",
+        hue="packing_mode",
+        order=packing_modes,
+        hue_order=packing_modes,
+        legend=False,
+        orient="v",
+        palette=label_tables.COLOR_PALETTE,
+        linewidth=0.5,
+        whis=(2.5, 97.5),
+        showfliers=False,
+        ax=ax,
+    )
+    sns.despine(ax=ax)
+    ax.set_xlabel("")
+    ax.set_ylabel("EMD")
+    ax.set_title(title)
+    ax.yaxis.set_major_locator(MaxNLocator(4))
+    ax.set_xticks(
+        ax.get_xticks(),
+        labels=[
+            label_tables.MODE_LABELS.get(t.get_text(), t.get_text()) for t in ax.get_xticklabels()
+        ],
+        rotation=45,
+        ha="right",
+    )
+
+
+def _save_per_dm_emd_figures(
+    df_emd: pd.DataFrame,
+    baseline_mode: str,
+    title_prefix: str,
+    file_prefix: str,
+    figures_dir: Path,
+    suffix: str,
+    save_format: str,
+    packing_modes: list[str] | None = None,
+) -> None:
+    """Save one EMD boxplot figure per distance measure to *figures_dir*."""
+    for dm in df_emd["distance_measure"].unique():
+        df_dm = df_emd[df_emd["distance_measure"] == dm]
+        df_dm_filtered = _filter_emd_vs_baseline(df_dm, baseline_mode)
+        fig_dm, ax_dm = plt.subplots(dpi=300, figsize=(2.5, 2.5))
+        plt.rcParams.update({"font.size": 8})
+        dm_title = label_tables.DISTANCE_MEASURE_TITLES.get(dm, dm)
+        _draw_emd_boxplot(
+            ax_dm, df_dm_filtered, f"{title_prefix}\n({dm_title})", packing_modes=packing_modes
+        )
+        fig_dm.tight_layout()
+        figures_dir.mkdir(parents=True, exist_ok=True)
+        fig_dm.savefig(
+            figures_dir / f"{file_prefix}_{dm}{suffix}.{save_format}",
+            dpi=300,
+            bbox_inches="tight",
+            transparent=True,
+        )
+        plt.close(fig_dm)
+
+
+def _draw_distance_ks_barplot(
+    ax: Axes,
+    df_bootstrap: pd.DataFrame,
+    distance_measures: list[str],
+) -> None:
+    """Draw a split barplot of distance KS similarity by DM with bootstrap error bars."""
+    sns.barplot(
+        data=df_bootstrap,
+        x="packing_mode",
+        y="similar_fraction",
+        hue="distance_measure",
+        hue_order=distance_measures,
+        palette={dm: label_tables.COLOR_PALETTE.get(dm, "gray") for dm in distance_measures},
+        errorbar="sd",
+        err_kws={"linewidth": 1},
+        linewidth=0.5,
+        ax=ax,
+    )
+    sns.despine(ax=ax)
+    ax.set_ylim(0, 1)
+    ax.set_xlabel("")
+    ax.set_ylabel("Fraction similar")
+    ax.set_title("Distance KS similarity vs baseline")
+    ax.set_xticks(
+        ax.get_xticks(),
+        labels=[
+            label_tables.MODE_LABELS.get(t.get_text(), t.get_text()) for t in ax.get_xticklabels()
+        ],
+        rotation=45,
+        ha="right",
+    )
+    legend = ax.get_legend()
+    if legend is not None:
+        legend.set_title("")
+        for text in legend.get_texts():
+            orig = text.get_text()
+            text.set_text(label_tables.DISTANCE_MEASURE_TITLES.get(orig, orig))
+        legend.set_frame_on(False)
+        legend.prop.set_size(6)
+
+
+def _draw_aggregated_ks_barplot(
+    ax: Axes,
+    df_bootstrap: pd.DataFrame,
+    title: str,
+) -> None:
+    """Draw an aggregated KS similarity barplot on *ax*, one bar per packing mode."""
+    ks_summary = (
+        df_bootstrap.groupby("packing_mode", sort=False)["similar_fraction"].mean().reset_index()
+    )
+    mode_colors = [label_tables.COLOR_PALETTE.get(m, "gray") for m in ks_summary["packing_mode"]]
+    ax.bar(
+        range(len(ks_summary)),
+        ks_summary["similar_fraction"],
+        color=mode_colors,
+        linewidth=0.5,
+        edgecolor="black",
+    )
+    ax.set_xticks(range(len(ks_summary)))
+    ax.set_xticklabels(
+        [label_tables.MODE_LABELS.get(m, m) for m in ks_summary["packing_mode"]],  # type: ignore
+        rotation=45,
+        ha="right",
+    )
+    ax.set_ylim(0, 1)
+    ax.set_xlabel("")
+    ax.set_ylabel("Fraction similar")
+    ax.set_title(title)
+    sns.despine(ax=ax)
+
+
+def _save_per_dm_ks_figures(
+    df_bootstrap: pd.DataFrame,
+    figures_dir: Path,
+    suffix: str,
+    save_format: str,
+) -> None:
+    """Save one KS similarity barplot figure per distance measure to *figures_dir*."""
+    for dm in df_bootstrap["distance_measure"].unique():
+        df_dm = df_bootstrap[df_bootstrap["distance_measure"] == dm]
+        fig_dm, ax_dm = plt.subplots(dpi=300, figsize=(2.5, 2.5))
+        plt.rcParams.update({"font.size": 8})
+        dm_title = label_tables.DISTANCE_MEASURE_TITLES.get(dm, dm)
+        ks_dm = df_dm.groupby("packing_mode", sort=False)["similar_fraction"].mean().reset_index()
+        mode_colors = [label_tables.COLOR_PALETTE.get(m, "gray") for m in ks_dm["packing_mode"]]
+        ax_dm.bar(
+            range(len(ks_dm)),
+            ks_dm["similar_fraction"],
+            color=mode_colors,
+            linewidth=0.5,
+            edgecolor="black",
+        )
+        ax_dm.set_xticks(range(len(ks_dm)))
+        ax_dm.set_xticklabels(
+            [label_tables.MODE_LABELS.get(m, m) for m in ks_dm["packing_mode"]],  # type: ignore
+            rotation=45,
+            ha="right",
+        )
+        ax_dm.set_ylim(0, 1)
+        ax_dm.set_xlabel("")
+        ax_dm.set_ylabel("Fraction similar")
+        ax_dm.set_title(f"KS similarity vs baseline\n({dm_title})")
+        sns.despine(ax=ax_dm)
+        fig_dm.tight_layout()
+        figures_dir.mkdir(parents=True, exist_ok=True)
+        fig_dm.savefig(
+            figures_dir / f"rule_interpolation_ks_similarity_{dm}{suffix}.{save_format}",
+            dpi=300,
+            bbox_inches="tight",
+            transparent=True,
+        )
+        plt.close(fig_dm)
+
+
+def _draw_joint_rejection_bars(
+    ax: Axes,
+    envelope_results: dict[str, Any],
+    baseline_mode: str,
+) -> None:
+    """Draw vertical stacked rejection fraction bars (joint test) on *ax*."""
+    packing_modes = envelope_results["packing_modes"]
+    joint = envelope_results["joint"]
+    test_modes = [m for m in packing_modes if m != baseline_mode]
+
+    bar_width = 0.6
+    for mode_idx, mode in enumerate(test_modes):
+        entry = joint.get((mode, baseline_mode), {})
+        pos_val = entry.get("rejection_fraction_positive", 0.0)
+        neg_val = entry.get("rejection_fraction_negative", 0.0)
+
+        mode_color = label_tables.COLOR_PALETTE.get(
+            mode, label_tables.COLOR_PALETTE.get("random", "#808080")
+        )
+        mode_neg_color = label_tables.adjust_color_saturation(mode_color, saturation=0.3)
+
+        ax.bar(mode_idx, pos_val, width=bar_width, color=mode_color, alpha=0.9)
+        ax.bar(
+            mode_idx,
+            neg_val,
+            width=bar_width,
+            bottom=pos_val,
+            color=mode_neg_color,
+            alpha=0.9,
+        )
+
+    legend_handles = [
+        mpatches.Patch(color="gray", alpha=0.9, label="Test > baseline"),
+        mpatches.Patch(color="gray", alpha=0.4, label="Test < baseline"),
+    ]
+    ax.legend(handles=legend_handles, frameon=False, fontsize=6, loc="upper right")
+    ax.set_ylim(0, 1)
+    ax.set_xticks(np.arange(len(test_modes)))
+    ax.set_xticklabels(
+        [label_tables.MODE_LABELS.get(m, m) or m for m in test_modes],
+        rotation=45,
+        ha="right",
+    )
+    ax.set_ylabel("Rejection fraction")
+    ax.set_title("Joint MC rejection vs baseline")
+    sns.despine(ax=ax)
+
+
+def plot_aic_model_weights(
+    aic_result: AICComparisonResult,
+    figures_dir: Path | None = None,
+    suffix: str = "",
+    save_format: Literal["svg", "png", "pdf"] = "pdf",
+    fig_params: dict[str, Any] | None = None,
+) -> tuple[Figure, Axes]:
+    """Plot AIC / BIC model weights as a standalone figure.
+
+    Draws a grouped bar chart comparing Akaike and BIC weights for each
+    candidate model (mixed rule, single rule per mode, null) using the
+    joint scope.
+
+    Parameters
+    ----------
+    aic_result
+        Output from
+        :func:`~cellpack_analysis.lib.rule_interpolation.compute_aic_comparison`.
+    figures_dir
+        Directory to save the figure.  Skipped when ``None``.
+    suffix
+        Suffix appended to the saved filename.
+    save_format
+        File format for saving.
+    fig_params
+        Optional matplotlib ``Figure`` keyword arguments.
+
+    Returns
+    -------
+    :
+        Tuple of ``(Figure, Axes)``.
+    """
+    plt.rcParams.update({"font.size": 8})
+    _fig_params: dict[str, Any] = {"dpi": 300, "figsize": (3.5, 2.5)}
+    if fig_params is not None:
+        _fig_params.update(fig_params)
+    fig, ax = plt.subplots(**_fig_params)
+
+    joint_aic_w = aic_result.akaike_weights.get("joint", {}).get("joint", {})
+    joint_bic_w = aic_result.bic_weights.get("joint", {}).get("joint", {})
+    model_names = list(joint_aic_w.keys())
+
+    x = np.arange(len(model_names))
+    bar_width = 0.35
+    colors = [_get_aic_model_color(m) for m in model_names]
+
+    ax.bar(
+        x - bar_width / 2,
+        [joint_aic_w[m] for m in model_names],
+        bar_width,
+        color=colors,
+        edgecolor="black",
+        linewidth=0.5,
+        label="AIC weight",
+    )
+
+    # BIC bars: outline-only (no fill) to distinguish from AIC bars
+    ax.bar(
+        x + bar_width / 2,
+        [joint_bic_w[m] for m in model_names],
+        bar_width,
+        facecolor="none",
+        edgecolor=colors,
+        linewidth=1.5,
+        label="BIC weight",
+        hatch="////",
+    )
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(
+        [_get_aic_model_label(m) for m in model_names],
+        rotation=45,
+        ha="right",
+    )
+    ax.set_ylim(0, 1)
+    ax.set_ylabel("Model weight")
+    ax.set_title("AIC / BIC model weights (joint)")
+    ax.legend(fontsize=6, loc="upper right")
+    sns.despine(ax=ax)
+
+    fig.tight_layout()
+
+    if figures_dir is not None:
+        figures_dir.mkdir(parents=True, exist_ok=True)
+        fig.savefig(
+            figures_dir / f"aic_bic_model_weights{suffix}.{save_format}",
+            dpi=300,
+            bbox_inches="tight",
+            transparent=True,
+        )
+    plt.show()
+
+    return fig, ax
+
+
+def plot_rule_interpolation_validation_summary(
+    validation_result: ValidationResult,
+    packing_modes: list[str],
+    baseline_mode: str,
+    distance_measures: list[str],
+    figures_dir: Path | None = None,
+    suffix: str = "",
+    save_format: Literal["svg", "png", "pdf"] = "pdf",
+    fig_params: dict[str, Any] | None = None,
+) -> tuple[Figure, np.ndarray]:
+    """Multi-panel 2x2 summary comparing the mixed rule against individual rules.
+
+    Creates a fixed 2x2 figure with up to four panels:
+
+    * **(0, 0) Occupancy EMD vs baseline** (always) — boxplot of pairwise EMD
+      between each packing mode and the baseline, computed on occupancy curves.
+    * **(0, 1) Distance EMD vs baseline** (when distance data available) — same
+      layout using the distance-distribution EMD for an orthogonal comparison.
+      Hidden when no distance data is present.
+    * **(1, 0) KS similarity** (when distance KS bootstrap available) —
+      aggregated barplot (mean over distance measures) coloured by packing mode.
+      Falls back to occupancy KS bar when no distance data is available.
+      Hidden when neither applies.
+    * **(1, 1) Joint MC rejection fraction** (when distance envelope test available)
+      — stacked barplot of positive and negative rejection fractions from the
+      joint Monte Carlo rank-envelope test.  Hidden otherwise.
+
+    When *figures_dir* is provided, also saves per-distance-measure EMD and KS
+    figures alongside the summary.
+
+    Parameters
+    ----------
+    validation_result
+        Output from
+        :func:`~cellpack_analysis.lib.rule_interpolation.run_mixed_rule_validation`.
+    packing_modes
+        All packing modes present in the validation (including ``"interpolated"``).
+    baseline_mode
+        Experimental baseline packing mode key.
+    distance_measures
+        Distance measures used in the validation.
+    figures_dir
+        Directory to save the figure.  Skipped when ``None``.
+    suffix
+        Suffix appended to the saved filename.
+    save_format
+        File format for saving.
+    fig_params
+        Optional matplotlib ``Figure`` keyword arguments.
+
+    Returns
+    -------
+    :
+        Tuple of ``(Figure, 1-D ndarray of Axes)`` — axes in row-major order.
+    """
+    has_distance = validation_result.distance_emd_df is not None
+    has_distance_ks = validation_result.distance_ks_bootstrap_df is not None
+    has_envelope = validation_result.distance_envelope_test is not None
+    non_baseline_modes = [m for m in packing_modes if m != baseline_mode]
+
+    plt.rcParams.update({"font.size": 8})
+    _fig_params: dict[str, Any] = {"dpi": 300, "figsize": (5, 5)}
+    if fig_params is not None:
+        _fig_params.update(fig_params)
+    fig, axs = plt.subplots(2, 2, squeeze=False, **_fig_params)
+
+    # ── Panel (0, 0): Occupancy EMD vs baseline ──────────────────────────
+    df_occ_emd = _filter_emd_vs_baseline(validation_result.emd_df, baseline_mode)
+    _draw_emd_boxplot(
+        axs[0, 0], df_occ_emd, "Occupancy EMD vs baseline", packing_modes=non_baseline_modes
+    )
+
+    # ── Panel (0, 1): Distance EMD vs baseline ───────────────────────────
+    if has_distance:
+        assert validation_result.distance_emd_df is not None
+        df_dist_emd = _filter_emd_vs_baseline(validation_result.distance_emd_df, baseline_mode)
+        _draw_emd_boxplot(
+            axs[0, 1], df_dist_emd, "Distance EMD vs baseline", packing_modes=non_baseline_modes
+        )
+    else:
+        axs[0, 1].set_visible(False)
+
+    # ── Panel (1, 0): KS similarity ──────────────────────────────────────
+    if has_distance_ks:
+        assert validation_result.distance_ks_bootstrap_df is not None
+        _draw_aggregated_ks_barplot(
+            ax=axs[1, 0],
+            df_bootstrap=validation_result.distance_ks_bootstrap_df,
+            title="KS similarity vs baseline",
+        )
+    else:
+        axs[1, 0].set_visible(False)
+
+    # ── Panel (1, 1): Joint MC rejection fraction ────────────────────────
+    if has_envelope:
+        assert validation_result.distance_envelope_test is not None
+        _draw_joint_rejection_bars(
+            ax=axs[1, 1],
+            envelope_results=validation_result.distance_envelope_test,
+            baseline_mode=baseline_mode,
+        )
+    else:
+        axs[1, 1].set_visible(False)
+
+    fig.tight_layout()
+
+    if figures_dir is not None:
+        figures_dir.mkdir(parents=True, exist_ok=True)
+        fig.savefig(
+            figures_dir / f"rule_interpolation_validation_summary{suffix}.{save_format}",
+            dpi=300,
+            bbox_inches="tight",
+            transparent=True,
+        )
+
+        # Per-distance-measure EMD figures
+        if "distance_measure" in validation_result.emd_df.columns:
+            _save_per_dm_emd_figures(
+                df_emd=validation_result.emd_df,
+                baseline_mode=baseline_mode,
+                title_prefix="Occupancy EMD vs baseline",
+                file_prefix="rule_interpolation_occ_emd",
+                figures_dir=figures_dir,
+                suffix=suffix,
+                save_format=save_format,
+                packing_modes=non_baseline_modes,
+            )
+        if has_distance:
+            assert validation_result.distance_emd_df is not None
+            if "distance_measure" in validation_result.distance_emd_df.columns:
+                _save_per_dm_emd_figures(
+                    df_emd=validation_result.distance_emd_df,
+                    baseline_mode=baseline_mode,
+                    title_prefix="Distance EMD vs baseline",
+                    file_prefix="rule_interpolation_dist_emd",
+                    figures_dir=figures_dir,
+                    suffix=suffix,
+                    save_format=save_format,
+                    packing_modes=non_baseline_modes,
+                )
+        if has_distance_ks:
+            assert validation_result.distance_ks_bootstrap_df is not None
+            _save_per_dm_ks_figures(
+                df_bootstrap=validation_result.distance_ks_bootstrap_df,
+                figures_dir=figures_dir,
+                suffix=suffix,
+                save_format=save_format,
+            )
+
+    plt.show()
+
+    return fig, axs.ravel()

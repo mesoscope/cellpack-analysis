@@ -8,16 +8,25 @@ import pandas as pd
 import pytest
 
 from cellpack_analysis.lib.rule_interpolation import (
+    AICComparisonResult,
+    AICModelResult,
     CVResult,
     FitResult,
+    _compute_aic,
+    _compute_aicc,
+    _compute_bic,
     _compute_mean_occupancy_from_cells,
+    _fit_single_rule,
     _get_baseline_cell_ids,
     _normalize_coefficients,
+    compute_aic_comparison,
     fit_rule_interpolation,
     generate_mixed_rule_packing_configs,
     log_cv_summary,
+    log_evidence_ratios,
     log_rule_interpolation_coeffs,
     run_rule_interpolation_cv,
+    summarize_aic_comparison,
     summarize_cv_results,
 )
 
@@ -707,3 +716,335 @@ class TestLoggingHelpers:
         result = fit_rule_interpolation(occ, channel_map, "real")
         # Should not raise when file_path=None
         log_rule_interpolation_coeffs(result, "real", file_path=None)
+
+
+# ---------------------------------------------------------------------------
+# Tests: _compute_aic / _compute_aicc / _compute_bic
+# ---------------------------------------------------------------------------
+
+
+class TestComputeAIC:
+    """Tests for the pure AIC/AICc/BIC functions."""
+
+    def test_aic_known_values(self):
+        # n=100, k=2, RSS=50 → k_eff=3, AIC = 100*ln(0.5) + 6
+        n, k, rss = 100, 2, 50.0
+        expected = 100 * np.log(0.5) + 2 * 3
+        assert _compute_aic(n, k, rss) == pytest.approx(expected)
+
+    def test_bic_known_values(self):
+        # n=100, k=2, RSS=50 → k_eff=3, BIC = 100*ln(0.5) + 3*ln(100)
+        n, k, rss = 100, 2, 50.0
+        expected = 100 * np.log(0.5) + 3 * np.log(100)
+        assert _compute_bic(n, k, rss) == pytest.approx(expected)
+
+    def test_aicc_agrees_with_aic_for_large_n(self):
+        # For very large n, AICc → AIC
+        n, k, rss = 100_000, 3, 500.0
+        aic = _compute_aic(n, k, rss)
+        aicc = _compute_aicc(n, k, rss)
+        assert aicc == pytest.approx(aic, rel=1e-3)
+
+    def test_aicc_correction_positive(self):
+        # AICc should be >= AIC
+        n, k, rss = 20, 3, 10.0
+        assert _compute_aicc(n, k, rss) >= _compute_aic(n, k, rss)
+
+    def test_aicc_inf_when_insufficient_data(self):
+        # n - k_eff - 1 <= 0 should give inf
+        assert _compute_aicc(3, 2, 1.0) == float("inf")
+
+    def test_lower_rss_gives_lower_aic(self):
+        aic_low = _compute_aic(50, 2, 10.0)
+        aic_high = _compute_aic(50, 2, 100.0)
+        assert aic_low < aic_high
+
+    def test_more_params_increases_aic(self):
+        # Same RSS, more params → higher AIC penalty
+        aic_simple = _compute_aic(50, 1, 10.0)
+        aic_complex = _compute_aic(50, 5, 10.0)
+        assert aic_complex > aic_simple
+
+    def test_bic_penalizes_more_than_aic_for_large_n(self):
+        # For n > e^2 ≈ 7.4, BIC penalty > AIC penalty per parameter
+        n, k, rss = 100, 3, 50.0
+        bic = _compute_bic(n, k, rss)
+        aic = _compute_aic(n, k, rss)
+        # BIC has k_eff*ln(n) vs AIC has 2*k_eff; ln(100) > 2
+        assert bic > aic
+
+
+# ---------------------------------------------------------------------------
+# Tests: _fit_single_rule
+# ---------------------------------------------------------------------------
+
+
+class TestFitSingleRule:
+    """Tests for the single-mode NNLS helper."""
+
+    def test_returns_rss_and_n(self):
+        rng = np.random.default_rng(42)
+        b = rng.random(30)
+        mode_occ = rng.random(30)
+        rss, n = _fit_single_rule(b, mode_occ)
+        assert n == 30
+        assert rss >= 0.0
+
+    def test_perfect_fit_gives_zero_rss(self):
+        mode_occ = np.array([1.0, 2.0, 3.0])
+        b = 2.0 * mode_occ
+        rss, _ = _fit_single_rule(b, mode_occ)
+        assert rss == pytest.approx(0.0, abs=1e-10)
+
+    def test_rss_nonnegative(self):
+        rng = np.random.default_rng(99)
+        b = rng.random(50)
+        mode_occ = rng.random(50)
+        rss, _ = _fit_single_rule(b, mode_occ)
+        assert rss >= 0.0
+
+
+# ---------------------------------------------------------------------------
+# Tests: compute_aic_comparison
+# ---------------------------------------------------------------------------
+
+
+class TestComputeAICComparison:
+    """Tests for the full AIC/BIC model comparison."""
+
+    def test_returns_aic_comparison_result(self):
+        occ = _make_occupancy_dict("real", ["random", "gradient"], n_baseline_cells=8, seed=42)
+        channel_map = _make_channel_map("real", ["random", "gradient"])
+        result = compute_aic_comparison(occ, channel_map, "real")
+        assert isinstance(result, AICComparisonResult)
+
+    def test_akaike_weights_sum_to_one(self):
+        occ = _make_occupancy_dict("real", ["random", "gradient"], n_baseline_cells=8, seed=42)
+        channel_map = _make_channel_map("real", ["random", "gradient"])
+        result = compute_aic_comparison(occ, channel_map, "real")
+        for scope_dict in result.akaike_weights.values():
+            for dm, weights in scope_dict.items():
+                total = sum(weights.values())
+                assert total == pytest.approx(1.0, abs=1e-10)
+
+    def test_bic_weights_sum_to_one(self):
+        occ = _make_occupancy_dict("real", ["random", "gradient"], n_baseline_cells=8, seed=42)
+        channel_map = _make_channel_map("real", ["random", "gradient"])
+        result = compute_aic_comparison(occ, channel_map, "real")
+        for scope_dict in result.bic_weights.values():
+            for dm, weights in scope_dict.items():
+                total = sum(weights.values())
+                assert total == pytest.approx(1.0, abs=1e-10)
+
+    def test_delta_aic_best_is_zero(self):
+        occ = _make_occupancy_dict("real", ["random", "gradient"], n_baseline_cells=8, seed=42)
+        channel_map = _make_channel_map("real", ["random", "gradient"])
+        result = compute_aic_comparison(occ, channel_map, "real")
+        for scope_dict in result.delta_aic.values():
+            for dm, deltas in scope_dict.items():
+                best = result.best_model_aic[
+                    "individual" if dm != "joint" else "joint"
+                ][dm]
+                assert deltas[best] == pytest.approx(0.0)
+
+    def test_delta_bic_best_is_zero(self):
+        occ = _make_occupancy_dict("real", ["random", "gradient"], n_baseline_cells=8, seed=42)
+        channel_map = _make_channel_map("real", ["random", "gradient"])
+        result = compute_aic_comparison(occ, channel_map, "real")
+        for scope_dict in result.delta_bic.values():
+            for dm, deltas in scope_dict.items():
+                best = result.best_model_bic[
+                    "individual" if dm != "joint" else "joint"
+                ][dm]
+                assert deltas[best] == pytest.approx(0.0)
+
+    def test_correct_k_values(self):
+        modes = ["random", "gradient"]
+        occ = _make_occupancy_dict("real", modes, n_baseline_cells=8, seed=42)
+        channel_map = _make_channel_map("real", modes)
+        result = compute_aic_comparison(occ, channel_map, "real")
+        n_modes = len(modes)
+        for scope_dict in result.comparisons.values():
+            for dm, models in scope_dict.items():
+                for m in models:
+                    if m.model_name == "mixed_rule":
+                        assert m.k == n_modes
+                    else:
+                        assert m.k == 1
+
+    def test_all_deltas_nonnegative(self):
+        occ = _make_occupancy_dict("real", ["random", "gradient"], n_baseline_cells=8, seed=42)
+        channel_map = _make_channel_map("real", ["random", "gradient"])
+        result = compute_aic_comparison(occ, channel_map, "real")
+        for scope_dict in result.delta_aic.values():
+            for deltas in scope_dict.values():
+                for v in deltas.values():
+                    assert v >= -1e-10
+        for scope_dict in result.delta_bic.values():
+            for deltas in scope_dict.values():
+                for v in deltas.values():
+                    assert v >= -1e-10
+
+    def test_includes_individual_and_joint_scopes(self):
+        occ = _make_occupancy_dict("real", ["random"], n_baseline_cells=8, seed=42)
+        channel_map = _make_channel_map("real", ["random"])
+        result = compute_aic_comparison(occ, channel_map, "real")
+        assert "individual" in result.comparisons
+        assert "joint" in result.comparisons
+        assert "joint" in result.comparisons["joint"]
+
+    def test_multiple_distance_measures(self):
+        occ = _make_occupancy_dict(
+            "real", ["random"], n_baseline_cells=8,
+            distance_measures=["nucleus", "z"], seed=42,
+        )
+        channel_map = _make_channel_map("real", ["random"])
+        result = compute_aic_comparison(occ, channel_map, "real")
+        assert "nucleus" in result.comparisons["individual"]
+        assert "z" in result.comparisons["individual"]
+
+    def test_single_mode_prefers_single_when_baseline_matches(self):
+        """When baseline IS the single mode occupancy, AIC should prefer single."""
+        # Build occupancy dict where baseline combined = mode's combined
+        occ = _make_occupancy_dict("real", ["random", "gradient"], n_baseline_cells=10, seed=0)
+        channel_map = _make_channel_map("real", ["random", "gradient"])
+
+        # Overwrite all baseline cells to exactly match "random" combined
+        for dm in occ:
+            random_occ = occ[dm]["random"]["combined"]["occupancy"].copy()
+            for cell_id in occ[dm]["real"]["individual"]:
+                occ[dm]["real"]["individual"][cell_id]["occupancy"] = random_occ.copy()
+                occ[dm]["real"]["individual"][cell_id]["xvals"] = XVALS.copy()
+            occ[dm]["real"]["combined"]["occupancy"] = random_occ.copy()
+
+        result = compute_aic_comparison(occ, channel_map, "real")
+        # single:random should be best or at least have lower AIC than mixed
+        for dm in occ:
+            d_aic = result.delta_aic["individual"][dm]
+            assert d_aic["single:random"] <= d_aic["mixed_rule"]
+
+    def test_with_precomputed_fit_result(self):
+        occ = _make_occupancy_dict("real", ["random"], n_baseline_cells=8, seed=42)
+        channel_map = _make_channel_map("real", ["random"])
+        fit = fit_rule_interpolation(occ, channel_map, "real")
+        result = compute_aic_comparison(occ, channel_map, "real", fit_result=fit)
+        assert isinstance(result, AICComparisonResult)
+        # Should give same result as without fit_result
+        result2 = compute_aic_comparison(occ, channel_map, "real")
+        # Compare mixed_rule AIC in individual scope
+        dm = list(occ.keys())[0]
+        m1 = [m for m in result.comparisons["individual"][dm] if m.model_name == "mixed_rule"][0]
+        m2 = [m for m in result2.comparisons["individual"][dm] if m.model_name == "mixed_rule"][0]
+        assert m1.aic == pytest.approx(m2.aic)
+
+
+# ---------------------------------------------------------------------------
+# Tests: summarize_aic_comparison
+# ---------------------------------------------------------------------------
+
+
+class TestSummarizeAICComparison:
+    """Tests for summarize_aic_comparison."""
+
+    def test_returns_dataframe(self):
+        occ = _make_occupancy_dict("real", ["random"], n_baseline_cells=8, seed=42)
+        channel_map = _make_channel_map("real", ["random"])
+        aic_result = compute_aic_comparison(occ, channel_map, "real")
+        df = summarize_aic_comparison(aic_result)
+        assert isinstance(df, pd.DataFrame)
+
+    def test_expected_columns(self):
+        occ = _make_occupancy_dict("real", ["random"], n_baseline_cells=8, seed=42)
+        channel_map = _make_channel_map("real", ["random"])
+        aic_result = compute_aic_comparison(occ, channel_map, "real")
+        df = summarize_aic_comparison(aic_result)
+        expected_cols = {
+            "scope", "distance_measure", "model", "k", "n", "rss",
+            "aic", "aicc", "bic", "delta_aic", "delta_bic",
+            "akaike_weight", "bic_weight",
+        }
+        assert expected_cols == set(df.columns)
+
+    def test_row_count_matches_models(self):
+        modes = ["random", "gradient"]
+        occ = _make_occupancy_dict("real", modes, n_baseline_cells=8, seed=42)
+        channel_map = _make_channel_map("real", modes)
+        aic_result = compute_aic_comparison(occ, channel_map, "real")
+        df = summarize_aic_comparison(aic_result)
+        # 1 DM individual: 2 single + 1 mixed + 1 null = 4
+        # 1 DM joint: same = 4
+        assert len(df) == 8
+
+
+# ---------------------------------------------------------------------------
+# Tests: log_evidence_ratios
+# ---------------------------------------------------------------------------
+
+
+class TestLogEvidenceRatios:
+    """Tests for log_evidence_ratios."""
+
+    def test_creates_log_file(self, tmp_path):
+        occ = _make_occupancy_dict("real", ["random", "gradient"], n_baseline_cells=8, seed=42)
+        channel_map = _make_channel_map("real", ["random", "gradient"])
+        aic_result = compute_aic_comparison(occ, channel_map, "real")
+        log_path = tmp_path / "logs" / "test_evidence_ratios.log"
+        log_evidence_ratios(aic_result, log_path)
+        assert log_path.exists()
+        assert log_path.stat().st_size > 0
+
+    def test_log_contains_expected_content(self, tmp_path):
+        occ = _make_occupancy_dict("real", ["random", "gradient"], n_baseline_cells=8, seed=42)
+        channel_map = _make_channel_map("real", ["random", "gradient"])
+        aic_result = compute_aic_comparison(occ, channel_map, "real")
+        log_path = tmp_path / "evidence_ratios.log"
+        log_evidence_ratios(aic_result, log_path)
+        content = log_path.read_text()
+        assert "Evidence Ratio Report" in content
+        assert "mixed_rule" in content
+        assert "null" in content
+        assert "Interpretation guide" in content
+
+    def test_creates_parent_dirs(self, tmp_path):
+        occ = _make_occupancy_dict("real", ["random"], n_baseline_cells=8, seed=42)
+        channel_map = _make_channel_map("real", ["random"])
+        aic_result = compute_aic_comparison(occ, channel_map, "real")
+        log_path = tmp_path / "deep" / "nested" / "evidence.log"
+        log_evidence_ratios(aic_result, log_path)
+        assert log_path.exists()
+
+
+# ---------------------------------------------------------------------------
+# Tests: ValidationResult with AIC
+# ---------------------------------------------------------------------------
+
+
+class TestValidationResultAIC:
+    """Tests for AIC integration in run_mixed_rule_validation."""
+
+    def test_aic_result_none_without_fit_result(self):
+        from cellpack_analysis.lib.rule_interpolation import ValidationResult
+
+        vr = ValidationResult(
+            emd_df=pd.DataFrame(),
+            ks_df=pd.DataFrame(),
+            envelope_test={},
+        )
+        assert vr.aic_result is None
+
+    def test_aic_result_populated_with_fit_result(self):
+        from cellpack_analysis.lib.rule_interpolation import ValidationResult
+
+        occ = _make_occupancy_dict("real", ["random"], n_baseline_cells=8, seed=42)
+        channel_map = _make_channel_map("real", ["random"])
+        fit = fit_rule_interpolation(occ, channel_map, "real")
+        aic = compute_aic_comparison(occ, channel_map, "real", fit_result=fit)
+
+        vr = ValidationResult(
+            emd_df=pd.DataFrame(),
+            ks_df=pd.DataFrame(),
+            envelope_test={},
+            aic_result=aic,
+        )
+        assert vr.aic_result is not None
+        assert isinstance(vr.aic_result, AICComparisonResult)

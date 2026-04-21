@@ -16,8 +16,8 @@ Data loading / preparation
 Distance distribution analysis
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 - ``plot_distance_distributions`` — Plot per-cell distance distributions.
-  Uses discrete histograms when ``distribution_method`` is ``"discrete"`` (default)
-  or KDE curves when it is ``"kde"``.
+  Uses discrete histograms when ``distribution_method`` is ``"discrete"``
+  or KDE curves when it is ``"kde"`` (default). 
 - ``run_emd_analysis``       — Earth Mover's Distance analysis across packing modes,
   including pairwise EMD matrix plots.
 - ``run_ks_analysis``        — Pairwise Kolmogorov-Smirnov tests with bootstrap CIs
@@ -35,8 +35,6 @@ Occupancy analysis
   on per-cell occupancy ratio curves.
 - ``run_occupancy_ks_analysis``   — Pairwise Kolmogorov-Smirnov tests with bootstrap CIs
   on per-cell occupancy ratio distributions.
-- ``run_occupancy_interpolation_analysis`` — Interpolation analysis for KDE occupancy
-  data (KDE mode only).
 - ``run_rule_interpolation_cv`` — K-fold cross-validation for NNLS rule-mixing
   coefficients (works with both KDE and discrete occupancy).
 
@@ -216,6 +214,11 @@ class AnalysisConfig:
             "base_packing_config_path", None
         )
         self.mode_to_gradient_name: dict[str, str] = self.config.get("mode_to_gradient_name", {})
+        # cv_channel_map contains only the component modes used for CV fitting.
+        # When set in the config (e.g. by the validation phase), it excludes
+        # "interpolated" to prevent circular fitting with the mixed-rule mode.
+        # Defaults to the full channel_map when not explicitly specified.
+        self.cv_channel_map: dict[str, str] = self.config.get("cv_channel_map", self.channel_map)
 
     def _setup_recalculate(self) -> None:
         """Parse and validate the recalculate config field."""
@@ -294,7 +297,6 @@ class AnalysisRunner:
             "run_occupancy_emd_analysis": self._run_occupancy_emd_analysis,
             "run_occupancy_pairwise_envelope_test": self._run_occupancy_pairwise_envelope_test,
             "run_occupancy_ks_analysis": self._run_occupancy_ks_analysis,
-            "run_occupancy_interpolation_analysis": self._run_occupancy_interpolation_analysis,
             "run_rule_interpolation_cv": self._run_rule_interpolation_cv,
         }
 
@@ -387,31 +389,21 @@ class AnalysisRunner:
             self._calculate_distances(config)
 
         logger.info(f"Plotting distance distributions ({config.distribution_method})")
-        distance_figures_dir = config.figures_dir / "distance_distributions"
+        distance_figures_dir = config.figures_dir / "distance" / "distributions"
         distance_figures_dir.mkdir(exist_ok=True, parents=True)
 
         method = config.distribution_method
-        if method == "discrete":
-            bin_width: float | dict = {
-                dm: config.bin_width_map.get(dm, 0.2) for dm in config.distance_measures
-            }
-        else:
-            bin_width = config.bin_width_map.get(
-                config.distance_measures[0] if config.distance_measures else "nucleus", 0.2
-            )
         pdf_kwargs: dict = {
             "all_distance_dict": self.shared_data["all_distance_dict"],
             "distance_measures": config.distance_measures,
             "packing_modes": config.packing_modes,
             "method": method,
             "distance_limits": DISTANCE_LIMITS,
-            "bin_width": bin_width,
             "results_dir": config.results_dir,
             "recalculate": config.recalculate["plot_distance_distributions"],
             "minimum_distance": config.filter_minimum_distance,
             **config.distance_pdf_params,
         }
-
         distance_pdf_dict = distance.compute_distance_pdfs(**pdf_kwargs)
         self.shared_data["distance_pdf_dict"] = distance_pdf_dict
 
@@ -427,7 +419,7 @@ class AnalysisRunner:
         )
 
         log_file_path = (
-            config.results_dir
+            config.logs_dir
             / f"{config.structure_name}_distance_distribution_central_tendencies{config.suffix}.log"
         )
         distance.log_central_tendencies_for_distance_distributions(
@@ -444,7 +436,7 @@ class AnalysisRunner:
             self._calculate_distances(config)
 
         logger.info("Running EMD analysis")
-        emd_figures_dir = config.figures_dir / "emd"
+        emd_figures_dir = config.figures_dir / "distance" / "emd"
         emd_figures_dir.mkdir(exist_ok=True, parents=True)
 
         df_emd = distance.get_distance_distribution_emd_df(
@@ -457,28 +449,18 @@ class AnalysisRunner:
             num_workers=config.num_workers,
         )
 
-        # Per-comparison-type plots and logs
-        emd_log_file_path = (
-            config.results_dir / f"{config.packing_id}_emd_central_tendencies{config.suffix}.log"
-        )
+        # Per-comparison-type plots
         for comparison_type in ["intra_mode", "baseline"]:
             _ = visualization.plot_emd_comparisons(
                 df_emd=df_emd,
                 distance_measures=config.distance_measures,
                 comparison_type=comparison_type,  # type: ignore
                 baseline_mode=config.baseline_mode,
+                packing_modes=config.packing_modes,
                 figures_dir=emd_figures_dir,
                 suffix=config.suffix,
                 save_format=config.save_format,
                 annotate_significance=False,
-            )
-            distance.log_central_tendencies_for_emd(
-                df_emd=df_emd,
-                distance_measures=config.distance_measures,
-                packing_modes=config.packing_modes,
-                baseline_mode=config.baseline_mode,
-                log_file_path=emd_log_file_path,
-                comparison_type=comparison_type,
             )
 
         # Pairwise EMD matrix per distance measure
@@ -499,11 +481,11 @@ class AnalysisRunner:
             else:
                 emd_matrix_kwargs["all_distance_dict"] = self.shared_data["all_distance_dict"]
                 emd_matrix_kwargs["distance_limits"] = DISTANCE_LIMITS
-                emd_matrix_kwargs["bin_width"] = config.bin_width_map.get(dm, 0.2)
+                emd_matrix_kwargs["bin_width"] = config.distance_pdf_params.get("bin_width", 0.01)
             _ = visualization.plot_pairwise_emd_matrix(**emd_matrix_kwargs)
 
         pairwise_emd_log_file_path = (
-            config.results_dir
+            config.logs_dir
             / f"{config.packing_id}_emd_pairwise_central_tendencies{config.suffix}.log"
         )
         distance.log_pairwise_emd_central_tendencies(
@@ -522,7 +504,7 @@ class AnalysisRunner:
             self._calculate_distances(config)
 
         logger.info("Running pairwise KS test analysis")
-        ks_figures_dir = config.figures_dir / "pairwise_ks_test"
+        ks_figures_dir = config.figures_dir / "distance" / "ks_test"
         ks_figures_dir.mkdir(exist_ok=True, parents=True)
 
         # Collect per-ref-mode KS results
@@ -544,34 +526,34 @@ class AnalysisRunner:
 
         # Bootstrap per ref_mode and collect results
         pairwise_ks_bootstrap_dfs: list[pd.DataFrame] = []
+        ref_mode = config.baseline_mode
         ks_log_file_path = (
-            config.results_dir
-            / f"{config.structure_name}_pairwise_ks_central_tendencies{config.suffix}.log"
+            config.logs_dir / f"{config.structure_name}_pairwise_ks_central_tendencies"
+            f"_ref_{ref_mode}{config.suffix}.log"
         )
-        for ref_mode in config.packing_modes:
-            other_modes = [m for m in config.packing_modes if m != ref_mode]
-            ref_ks_df = pairwise_ks_test_df.query("baseline_mode == @ref_mode")
-            df_boot = distance.bootstrap_ks_tests(
-                ks_test_df=ref_ks_df,
-                distance_measures=config.distance_measures,
-                packing_modes=other_modes,
-                n_bootstrap=config.n_bootstrap,
-            )
-            df_boot["baseline_mode"] = ref_mode
-            pairwise_ks_bootstrap_dfs.append(df_boot)
+        other_modes = [m for m in config.packing_modes if m != ref_mode]
+        ref_ks_df = pairwise_ks_test_df.query("baseline_mode == @ref_mode")
+        df_boot = distance.bootstrap_ks_tests(
+            ks_test_df=ref_ks_df,
+            distance_measures=config.distance_measures,
+            packing_modes=other_modes,
+            n_bootstrap=config.n_bootstrap,
+        )
+        df_boot["baseline_mode"] = ref_mode
+        pairwise_ks_bootstrap_dfs.append(df_boot)
 
-            _ = visualization.plot_ks_test_results(
-                df_ks_bootstrap=df_boot,
-                distance_measures=config.distance_measures,
-                figures_dir=ks_figures_dir,
-                suffix=f"{config.suffix}_vs_{ref_mode}",
-                save_format=config.save_format,
-            )
-            distance.log_central_tendencies_for_ks(
-                df_ks_bootstrap=df_boot,
-                distance_measures=config.distance_measures,
-                file_path=ks_log_file_path,
-            )
+        _ = visualization.plot_ks_test_results(
+            df_ks_bootstrap=df_boot,
+            distance_measures=config.distance_measures,
+            figures_dir=ks_figures_dir,
+            suffix=f"{config.suffix}_vs_{ref_mode}",
+            save_format=config.save_format,
+        )
+        distance.log_central_tendencies_for_ks(
+            df_ks_bootstrap=df_boot,
+            distance_measures=config.distance_measures,
+            file_path=ks_log_file_path,
+        )
 
         self.shared_data["pairwise_ks_bootstrap_df"] = pd.concat(
             pairwise_ks_bootstrap_dfs, ignore_index=True
@@ -584,7 +566,7 @@ class AnalysisRunner:
             self._calculate_distances(config)
 
         logger.info("Running pairwise envelope test")
-        envelope_figures_dir = config.figures_dir / "pairwise_envelope"
+        envelope_figures_dir = config.figures_dir / "distance" / "pairwise_envelope"
         envelope_figures_dir.mkdir(exist_ok=True, parents=True)
 
         pairwise_results = pairwise_envelope_test(
@@ -617,12 +599,12 @@ class AnalysisRunner:
             font_scale=ep["joint_matrix_font_scale"],
         )
 
-        # Per-DM rejection bars (per reference mode)
-        for ref_mode in config.packing_modes:
+        # Per-DM rejection bars (per test mode)
+        for test_mode in config.packing_modes:
             for joint_test in [False, True]:
                 _ = visualization.plot_per_dm_rejection_bars(
                     pairwise_results=pairwise_results,
-                    reference_mode=ref_mode,
+                    compare_mode=test_mode,
                     joint_test=joint_test,
                     figures_dir=envelope_figures_dir,
                     figsize=tuple(ep["rejection_bars_figsize"]),
@@ -717,7 +699,7 @@ class AnalysisRunner:
             normalization=config.normalization,
             suffix=config.suffix,
             distance_measure=occupancy_distance_measure,
-            xlim=xlim,
+            # xlim=xlim,
             ylim=ylim,
             save_format=config.save_format,
             fig_params=config.occupancy_params.get(
@@ -735,7 +717,7 @@ class AnalysisRunner:
             f"Running occupancy analysis for distance measure: {occupancy_distance_measure}"
         )
 
-        occupancy_figures_dir = config.figures_dir / occupancy_distance_measure
+        occupancy_figures_dir = config.figures_dir / "occupancy" / occupancy_distance_measure
         occupancy_figures_dir.mkdir(exist_ok=True, parents=True)
 
         # Create KDE dictionary
@@ -770,17 +752,17 @@ class AnalysisRunner:
         self.shared_data["occupancy_dict"][occupancy_distance_measure] = occupancy_dict
 
         # Illustration for one example cell
-        _ = visualization.plot_occupancy_illustration(
-            distance_kde_dict=distance_kde_dict,
-            packing_mode=config.baseline_mode,
-            figures_dir=occupancy_figures_dir,
-            suffix=config.suffix,
-            distance_measure=occupancy_distance_measure,
-            normalization=config.normalization,
-            save_format=config.save_format,
-            xlim=config.occupancy_params[occupancy_distance_measure]["xlim"],
-            num_points=250,
-        )
+        # _ = visualization.plot_occupancy_illustration(
+        #     distance_kde_dict=distance_kde_dict,
+        #     packing_mode="random",
+        #     figures_dir=occupancy_figures_dir,
+        #     suffix=config.suffix,
+        #     distance_measure=occupancy_distance_measure,
+        #     normalization=config.normalization,
+        #     save_format=config.save_format,
+        #     # xlim=config.occupancy_params[occupancy_distance_measure]["xlim"],
+        #     num_points=250,
+        # )
 
         # Plot occupancy ratio: mean + pointwise envelope
         _ = visualization.plot_occupancy_ratio(
@@ -792,10 +774,10 @@ class AnalysisRunner:
             normalization=config.normalization,
             distance_measure=occupancy_distance_measure,
             save_format=config.save_format,
-            xlim=config.occupancy_params[occupancy_distance_measure]["xlim"],
+            # xlim=config.occupancy_params[occupancy_distance_measure]["xlim"],
             ylim=config.occupancy_params[occupancy_distance_measure]["ylim"],
             fig_params={"dpi": 300, "figsize": (3.5, 2.5)},
-            plot_individual=config.occupancy_params.get("plot_individual", True),
+            plot_individual=config.occupancy_params.get("plot_individual", False),
             show_legend=config.occupancy_params.get("show_legend", True),
         )
 
@@ -806,7 +788,7 @@ class AnalysisRunner:
             self._run_occupancy_analysis(config)
 
         logger.info("Running occupancy EMD analysis")
-        occupancy_emd_figures_dir = config.figures_dir / "occupancy_emd"
+        occupancy_emd_figures_dir = config.figures_dir / "occupancy" / "emd"
         occupancy_emd_figures_dir.mkdir(exist_ok=True, parents=True)
 
         occupancy_emd_df = occupancy.get_occupancy_emd_df(
@@ -823,27 +805,26 @@ class AnalysisRunner:
             distance_measures=config.occupancy_distance_measures,
             comparison_type="baseline",
             baseline_mode=config.baseline_mode,
+            packing_modes=config.packing_modes,
             figures_dir=occupancy_emd_figures_dir,
             suffix=config.suffix,
             save_format=config.save_format,
         )
 
         occupancy_emd_log_file_path = (
-            config.results_dir
-            / f"{config.packing_id}_occupancy_emd_central_tendencies{config.suffix}.log"
+            config.logs_dir
+            / f"{config.packing_id}_occupancy_emd_pairwise_central_tendencies{config.suffix}.log"
         )
-        distance.log_central_tendencies_for_emd(
+        distance.log_pairwise_emd_central_tendencies(
             df_emd=occupancy_emd_df,
             distance_measures=config.occupancy_distance_measures,
             packing_modes=config.packing_modes,
-            baseline_mode=config.baseline_mode,
             log_file_path=occupancy_emd_log_file_path,
-            comparison_type="baseline",
         )
 
         # Pairwise occupancy EMD matrix per distance measure
         for dm in config.occupancy_distance_measures:
-            dm_figures_dir = config.figures_dir / dm
+            dm_figures_dir = config.figures_dir / "occupancy" / dm
             dm_figures_dir.mkdir(exist_ok=True, parents=True)
             xlim = config.occupancy_params.get(dm, {}).get("xlim", 8)
             ylim = config.occupancy_params.get(dm, {}).get("ylim", 3)
@@ -869,7 +850,7 @@ class AnalysisRunner:
             self._run_occupancy_analysis(config)
 
         logger.info("Running occupancy pairwise envelope test")
-        envelope_figures_dir = config.figures_dir / "pairwise_envelope"
+        envelope_figures_dir = config.figures_dir / "occupancy" / "pairwise_envelope"
         envelope_figures_dir.mkdir(exist_ok=True, parents=True)
 
         occ_pairwise_results = occupancy.pairwise_envelope_test_occupancy(
@@ -903,12 +884,12 @@ class AnalysisRunner:
             font_scale=ep["joint_matrix_font_scale"],
         )
 
-        # Per-DM rejection bars (per reference mode)
-        for ref_mode in config.packing_modes:
+        # Per-DM rejection bars (per test mode)
+        for test_mode in config.packing_modes:
             for joint_test in [False, True]:
                 _ = visualization.plot_per_dm_rejection_bars(
                     pairwise_results=occ_pairwise_results,
-                    reference_mode=ref_mode,
+                    compare_mode=test_mode,
                     joint_test=joint_test,
                     figures_dir=envelope_figures_dir,
                     figsize=tuple(ep["rejection_bars_figsize"]),
@@ -928,60 +909,17 @@ class AnalysisRunner:
         self.shared_data["occupancy_pairwise_envelope_results"] = occ_pairwise_results
 
     def _run_rule_interpolation_cv(self, config: AnalysisConfig) -> None:
-        """Run full-data NNLS fit and k-fold cross-validation for rule interpolation."""
+        """Run k-fold cross-validated NNLS rule interpolation."""
         occupancy_key = "occupancy_dict"
         if occupancy_key not in self.shared_data:
             logger.warning("Occupancy data not available. Running occupancy analysis first.")
             self._run_occupancy_analysis(config)
 
-        logger.info("Running rule interpolation: full-data fit")
-        cv_params = config.rule_interpolation_cv_params
-
-        # Full-data NNLS fit on all baseline cells
-        fit_result = rule_interpolation.fit_rule_interpolation(
-            occupancy_dict=self.shared_data[occupancy_key],
-            channel_map=config.channel_map,
-            baseline_mode=config.baseline_mode,
-            distance_measures=config.occupancy_distance_measures,
-        )
-        self.shared_data["rule_interpolation_fit_result"] = fit_result
-
-        # Plot full-data fit overlay per distance measure
-        fit_figures_dir = config.figures_dir / "rule_interpolation_fit"
-        fit_figures_dir.mkdir(exist_ok=True, parents=True)
-        for dm in config.occupancy_distance_measures:
-            dm_fit_figures_dir = fit_figures_dir / dm
-            dm_fit_figures_dir.mkdir(exist_ok=True, parents=True)
-            for plot_type in ("individual", "joint"):
-                _ = visualization.plot_rule_interpolation_fit(
-                    fit_result=fit_result,
-                    occupancy_dict=self.shared_data[occupancy_key],
-                    channel_map=config.channel_map,
-                    baseline_mode=config.baseline_mode,
-                    distance_measure=dm,
-                    plot_type=plot_type,
-                    figures_dir=dm_fit_figures_dir,
-                    xlim=config.occupancy_params[dm]["xlim"],
-                    ylim=config.occupancy_params[dm]["ylim"],
-                    suffix=config.suffix,
-                    save_format=config.save_format,
-                )
-
-        # Log full-data fit coefficients
-        fit_log_path = (
-            config.results_dir
-            / f"{config.structure_name}_rule_interpolation_coefficients{config.suffix}.log"
-        )
-        rule_interpolation.log_rule_interpolation_coeffs(
-            fit_result=fit_result,
-            baseline_mode=config.baseline_mode,
-            file_path=fit_log_path,
-        )
-
         logger.info("Running rule interpolation cross-validation")
+        cv_params = config.rule_interpolation_cv_params
         cv_result = rule_interpolation.run_rule_interpolation_cv(
             occupancy_dict=self.shared_data[occupancy_key],
-            channel_map=config.channel_map,
+            channel_map=config.cv_channel_map,
             baseline_mode=config.baseline_mode,
             n_folds=cv_params["n_folds"],
             n_repeats=cv_params.get("n_repeats", 10),
@@ -1012,22 +950,26 @@ class AnalysisRunner:
             save_format=config.save_format,
         )
 
-        # Log CV summary to file
-        cv_log_path = (
-            config.results_dir
-            / f"{config.structure_name}_rule_interpolation_cv_summary{config.suffix}.log"
-        )
-        rule_interpolation.log_cv_summary(cv_result=cv_result, file_path=cv_log_path)
-
         # CV mean-coefficient fit overlay
         cv_fit_result = rule_interpolation.fit_result_from_cv(
             cv_result=cv_result,
             occupancy_dict=self.shared_data[occupancy_key],
-            channel_map=config.channel_map,
+            channel_map=config.cv_channel_map,
             baseline_mode=config.baseline_mode,
             distance_measures=config.occupancy_distance_measures,
         )
         self.shared_data["rule_interpolation_cv_fit_result"] = cv_fit_result
+
+        # Log CV summary to file (after cv_fit_result so both MSE types can be logged)
+        cv_log_path = (
+            config.logs_dir
+            / f"{config.structure_name}_rule_interpolation_cv_summary{config.suffix}.log"
+        )
+        rule_interpolation.log_cv_summary(
+            cv_result=cv_result,
+            file_path=cv_log_path,
+            reconstruction_fit_result=cv_fit_result,
+        )
 
         cv_fit_figures_dir = config.figures_dir / "cv_fit_overlay"
         cv_fit_figures_dir.mkdir(exist_ok=True, parents=True)
@@ -1043,7 +985,7 @@ class AnalysisRunner:
                     distance_measure=dm,
                     plot_type=plot_type,
                     figures_dir=dm_cv_fit_figures_dir,
-                    xlim=config.occupancy_params[dm]["xlim"],
+                    # xlim=config.occupancy_params[dm]["xlim"],
                     ylim=config.occupancy_params[dm]["ylim"],
                     suffix=f"{config.suffix}_cv_mean",
                     save_format=config.save_format,
@@ -1086,7 +1028,7 @@ class AnalysisRunner:
             self._run_occupancy_analysis(config)
 
         logger.info("Running pairwise occupancy KS test analysis")
-        ks_figures_dir = config.figures_dir / "pairwise_ks_test"
+        ks_figures_dir = config.figures_dir / "occupancy" / "ks_test"
         ks_figures_dir.mkdir(exist_ok=True, parents=True)
 
         # Collect per-ref-mode KS results
@@ -1098,7 +1040,7 @@ class AnalysisRunner:
                 combined_occupancy_dict=self.shared_data["occupancy_dict"],
                 baseline_mode=ref_mode,
                 significance_level=config.ks_significance_level,
-                save_dir=None,
+                results_dir=None,
                 recalculate=config.recalculate["run_occupancy_ks_analysis"],
             )
             occ_ks_df["baseline_mode"] = ref_mode
@@ -1109,7 +1051,7 @@ class AnalysisRunner:
         # Bootstrap per ref_mode and collect results
         pairwise_occ_ks_bootstrap_dfs: list[pd.DataFrame] = []
         ks_log_file_path = (
-            config.results_dir
+            config.logs_dir
             / f"{config.structure_name}_pairwise_occupancy_ks_central_tendencies{config.suffix}.log"
         )
         for ref_mode in config.packing_modes:
@@ -1140,60 +1082,6 @@ class AnalysisRunner:
         self.shared_data["pairwise_occupancy_ks_bootstrap_df"] = pd.concat(
             pairwise_occ_ks_bootstrap_dfs, ignore_index=True
         )
-
-    def _run_occupancy_interpolation_analysis(self, config: AnalysisConfig) -> None:
-        """Run interpolation analysis for occupancy data (KDE mode only)."""
-        if config.distribution_method != "kde":
-            logger.warning(
-                "run_occupancy_interpolation_analysis requires distribution_method='kde'. "
-                "Skipping (current method: '%s').",
-                config.distribution_method,
-            )
-            return
-        if "occupancy_dict" not in self.shared_data:
-            logger.warning("Occupancy data not available. Running occupancy analysis first.")
-            self._run_occupancy_analysis(config)
-
-        logger.info("Running occupancy interpolation analysis")
-
-        interpolation_figures_dir = config.figures_dir / "interpolation"
-        interpolation_figures_dir.mkdir(exist_ok=True, parents=True)
-
-        # Interpolate occupancy ratio and plot
-        self.shared_data["interp_occupancy_dict"] = occupancy.interpolate_occupancy_dict(
-            occupancy_dict=self.shared_data["occupancy_dict"],
-            channel_map=config.channel_map,
-            baseline_mode=config.baseline_mode,
-            results_dir=config.results_dir,
-            suffix=config.suffix,
-        )
-
-        for occupancy_distance_measure in config.occupancy_distance_measures:
-            # for plot_type in ["individual", "joint"]:
-            plot_type = "joint"
-            _, ax = visualization.plot_occupancy_ratio(
-                occupancy_dict=self.shared_data["occupancy_dict"][occupancy_distance_measure],
-                channel_map=config.channel_map,
-                baseline_mode=config.baseline_mode,
-                suffix=config.suffix,
-                normalization=config.normalization,
-                distance_measure=occupancy_distance_measure,
-                xlim=config.occupancy_params[occupancy_distance_measure]["xlim"],
-                ylim=config.occupancy_params[occupancy_distance_measure]["ylim"],
-                fig_params={"dpi": 300, "figsize": (3.5, 2.5)},
-                plot_individual=True,
-                show_legend=config.occupancy_params.get("show_legend", True),
-            )
-            _ = visualization.add_baseline_occupancy_interpolation_to_plot(
-                ax=ax,
-                interpolated_occupancy_dict=self.shared_data["interp_occupancy_dict"],
-                baseline_mode=config.baseline_mode,
-                distance_measure=occupancy_distance_measure,
-                figures_dir=interpolation_figures_dir,
-                suffix=config.suffix,
-                save_format=config.save_format,
-                plot_type=plot_type,
-            )
 
 
 def main():

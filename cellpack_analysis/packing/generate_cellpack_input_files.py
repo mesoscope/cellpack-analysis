@@ -1,4 +1,5 @@
 import concurrent.futures
+import copy
 import logging
 from pathlib import Path
 from typing import Any
@@ -165,7 +166,6 @@ def process_rule_dict(
         Updated recipe with rule data processed
     """
     for recipe_key, recipe_entry in rule_dict.items():
-
         if recipe_key == "gradients":
             updated_recipe = process_gradient_data(
                 recipe_entry, updated_recipe, gradient_structure_name
@@ -174,6 +174,36 @@ def process_rule_dict(
             updated_recipe["objects"][gradient_structure_name]["gradient_weights"] = recipe_entry
 
     return updated_recipe
+
+
+def _validate_recipe(recipe: dict[str, Any]) -> None:
+    """
+    Validate the updated recipe.
+
+    Parameters
+    ----------
+    recipe
+        The recipe to validate
+
+    Raises
+    ------
+    ValueError
+        If the recipe is invalid
+    """
+    cell_id = recipe["version"].split("_")[-1]
+    for mesh_type in ["membrane_mesh", "nucleus_mesh", "struct_mesh"]:
+        mesh_name = (
+            recipe["objects"]
+            .get(mesh_type, {})
+            .get("representations", {})
+            .get("mesh", {})
+            .get("name")
+        )
+        if mesh_name is None:
+            continue
+        mesh_id = mesh_name.split("_")[-1].split(".")[0]
+        if cell_id != mesh_id:
+            raise ValueError(f"Cell ID {cell_id} does not match mesh ID {mesh_id}")
 
 
 def update_and_save_recipe(
@@ -231,7 +261,7 @@ def update_and_save_recipe(
     :
         The updated recipe
     """
-    updated_recipe = recipe_template.copy()
+    updated_recipe = copy.deepcopy(recipe_template)
 
     # update recipe version
     updated_recipe["version"] = f"{rule_name}_{cell_id}"
@@ -260,16 +290,16 @@ def update_and_save_recipe(
     # update mesh paths
     for obj, short_name in zip(["nucleus_mesh", "membrane_mesh"], ["nuc", "mem"], strict=False):
         updated_recipe["objects"][obj]["representations"]["mesh"]["path"] = f"{mesh_path}"
-        updated_recipe["objects"][obj]["representations"]["mesh"][
-            "name"
-        ] = f"{short_name}_mesh_{cell_id}.obj"
+        updated_recipe["objects"][obj]["representations"]["mesh"]["name"] = (
+            f"{short_name}_mesh_{cell_id}.obj"
+        )
 
     # update mesh path for additional structure if needed
     if use_additional_struct:
         updated_recipe["objects"]["struct_mesh"]["representations"]["mesh"]["path"] = f"{mesh_path}"
-        updated_recipe["objects"]["struct_mesh"]["representations"]["mesh"][
-            "name"
-        ] = f"struct_mesh_{cell_id}.obj"
+        updated_recipe["objects"]["struct_mesh"]["representations"]["mesh"]["name"] = (
+            f"struct_mesh_{cell_id}.obj"
+        )
 
     # resolve gradient_structure_name before using it for counts/radius/rules
     if gradient_structure_name is None:
@@ -291,6 +321,9 @@ def update_and_save_recipe(
 
     # update recipe rule data
     updated_recipe = process_rule_dict(updated_recipe, rule_dict, gradient_structure_name)
+
+    # validate updated recipe
+    _validate_recipe(updated_recipe)
 
     # save recipe
     rule_path = f"{generated_recipe_path}/{rule_name}"

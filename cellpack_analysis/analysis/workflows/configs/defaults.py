@@ -21,7 +21,7 @@ DISTRIBUTION_METHOD = "kde"
 Options: "discrete" (histogram-based) or "kde" (kernel density estimate).
 Note: "kde" is the default; set to "discrete" in your config to use the histogram-based approach."""
 
-FILTER_MINIMUM_DISTANCE: float | None = None
+FILTER_MINIMUM_DISTANCE: float | None = -1
 """Minimum distance passed to ``filter_invalids_from_distance_distribution_dict``.
 Set to ``-1`` in configs that use KDE to allow small negative distances."""
 
@@ -49,7 +49,7 @@ OCCUPANCY_PARAMS = {
     "nucleus": {"xlim": 6, "ylim": 3, "bandwidth": 0.2, "num_points": 250, "x_min": 0},
     "z": {"xlim": 8, "ylim": 2, "bandwidth": 0.2, "num_points": 250, "x_min": 0},
     "fig_params": {"dpi": 300, "figsize": [3.5, 2.5]},
-    "plot_individual": True,
+    "plot_individual": False,
     "show_legend": True,
 }
 """Default occupancy analysis parameters (used for both KDE and discrete methods)."""
@@ -74,7 +74,6 @@ DISCRETE_OCCUPANCY_PARAMS = {
 
 ENVELOPE_TEST_PARAMS = {
     "alpha": 0.05,
-    "r_grid_size": 150,
     "bin_width": 0.2,
     "statistic": "intdev",
 }
@@ -91,7 +90,6 @@ RECALCULATE = {
     "run_occupancy_emd_analysis": False,
     "run_occupancy_pairwise_envelope_test": False,
     "run_occupancy_ks_analysis": False,
-    "run_occupancy_interpolation_analysis": False,
     "run_rule_interpolation_cv": False,
 }
 """Default recalculation flags for analysis workflow."""
@@ -107,7 +105,7 @@ RULE_INTERPOLATION_CV_PARAMS: dict = {
 }
 """Default parameters for rule interpolation cross-validation."""
 
-NUM_WORKERS = 16
+NUM_WORKERS = 8
 """Default number of workers for parallel processing."""
 
 DISTANCE_PDF_PARAMS: dict = {
@@ -119,6 +117,7 @@ DISTANCE_PDF_PARAMS: dict = {
 
 DISTANCE_PLOT_PARAMS: dict = {
     "plot_individual_curves": False,
+    "figure_size": [2.7, 3.4],
     "envelope_alpha": 0.05,
     "production_mode": False,
     "overlay_mean_and_std": False,
@@ -126,17 +125,17 @@ DISTANCE_PLOT_PARAMS: dict = {
 """Extra kwargs forwarded to ``visualization.plot_distance_distributions``."""
 
 EMD_PLOT_PARAMS: dict = {
-    "figure_size": [3.5, 3.5],
-    "minimum_distance": 0,
+    "figure_size": [7, 7],
+    "minimum_distance": -1,
 }
 """Extra kwargs forwarded to ``visualization.plot_pairwise_emd_matrix``."""
 
 ENVELOPE_PLOT_PARAMS: dict = {
-    "per_dm_matrix_figsize": [3.5, 2.5],
-    "per_dm_matrix_font_scale": 0.8,
-    "joint_matrix_figsize": [7, 3.5],
+    "per_dm_matrix_figsize": [7, 4],
+    "per_dm_matrix_font_scale": 1.1,
+    "joint_matrix_figsize": [7, 4],
     "joint_matrix_font_scale": 1.1,
-    "rejection_bars_figsize": [3.5, 2],
+    "rejection_bars_figsize": [4, 1.8],
     "rejection_bars_font_scale": 1.1,
     "overlaid_figsize": [3, 1.5],
 }

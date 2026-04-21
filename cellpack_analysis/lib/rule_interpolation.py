@@ -38,6 +38,7 @@ from scipy.optimize import nnls
 from cellpack_analysis.lib import distance, occupancy
 from cellpack_analysis.lib.file_io import (
     add_file_handler_to_logger,
+    get_project_root,
     remove_file_handler_from_logger,
 )
 
@@ -231,21 +232,89 @@ class ValidationResult:
     ----------
     emd_df
         Pairwise Earth Mover's Distance on occupancy curves.
-    ks_df
-        Kolmogorov-Smirnov test results vs the baseline mode.
-    envelope_test
-        Pairwise Monte Carlo rank-envelope test on occupancy curves.
     distance_emd_df
         Pairwise EMD on distance distributions (only if packings were run).
     distance_envelope_test
         Pairwise envelope test on distance distributions (only if packings were run).
+    distance_ks_df
+        Per-cell KS test on distance distributions vs baseline (only if packings were run).
+    distance_ks_bootstrap_df
+        Bootstrapped KS similarity fractions on distance distributions
+        (only if packings were run).
     """
 
     emd_df: pd.DataFrame
-    ks_df: pd.DataFrame
-    envelope_test: dict[str, Any]
+    ks_df: pd.DataFrame | None = None
+    envelope_test: dict[str, Any] | None = None
     distance_emd_df: pd.DataFrame | None = None
     distance_envelope_test: dict[str, Any] | None = None
+    distance_ks_df: pd.DataFrame | None = None
+    distance_ks_bootstrap_df: pd.DataFrame | None = None
+    aic_result: "AICComparisonResult | None" = None
+
+
+@dataclass
+class AICModelResult:
+    """AIC/BIC statistics for a single candidate model.
+
+    Parameters
+    ----------
+    model_name
+        Human-readable label (e.g. ``"mixed_rule"``, ``"single:random"``, ``"null"``).
+    k
+        Number of free model parameters (excluding error-variance).
+    n
+        Number of data points (occupancy grid length, or stacked length for joint).
+    rss
+        Residual sum of squares.
+    aic
+        Akaike Information Criterion.
+    aicc
+        Small-sample corrected AIC.
+    bic
+        Bayesian Information Criterion.
+    """
+
+    model_name: str
+    k: int
+    n: int
+    rss: float
+    aic: float
+    aicc: float
+    bic: float
+
+
+@dataclass
+class AICComparisonResult:
+    """Model comparison results for AIC/BIC across scopes and distance measures.
+
+    Parameters
+    ----------
+    comparisons
+        ``{scope: {dm: list[AICModelResult]}}``.
+        *scope* is ``"individual"`` or ``"joint"``; *dm* is a distance-measure
+        name (or ``"joint"`` for the stacked joint scope).
+    delta_aic
+        ``{scope: {dm: {model_name: float}}}``.  ΔAIC relative to the best model.
+    delta_bic
+        ``{scope: {dm: {model_name: float}}}``.  ΔBIC relative to the best model.
+    akaike_weights
+        ``{scope: {dm: {model_name: float}}}``.  Akaike weights (sum to 1).
+    bic_weights
+        ``{scope: {dm: {model_name: float}}}``.  BIC-based weights (sum to 1).
+    best_model_aic
+        ``{scope: {dm: str}}``.  Name of the best model per AIC.
+    best_model_bic
+        ``{scope: {dm: str}}``.  Name of the best model per BIC.
+    """
+
+    comparisons: dict[str, dict[str, list[AICModelResult]]]
+    delta_aic: dict[str, dict[str, dict[str, float]]]
+    delta_bic: dict[str, dict[str, dict[str, float]]]
+    akaike_weights: dict[str, dict[str, dict[str, float]]]
+    bic_weights: dict[str, dict[str, dict[str, float]]]
+    best_model_aic: dict[str, dict[str, str]]
+    best_model_bic: dict[str, dict[str, str]]
 
 
 # ---------------------------------------------------------------------------
@@ -272,7 +341,7 @@ def _get_baseline_cell_ids(
         Sorted cell ID list drawn from the first distance measure;
         a warning is logged if the cell set differs across distance measures.
     """
-    distance_measures = list(occupancy_dict.keys())
+    distance_measures = sorted(occupancy_dict.keys())
     if not distance_measures:
         raise ValueError("occupancy_dict is empty — no distance measures found.")
 
@@ -418,11 +487,11 @@ def fit_rule_interpolation(
         reconstructed occupancy curves.
     """
     if distance_measures is None:
-        distance_measures = list(occupancy_dict.keys())
+        distance_measures = sorted(occupancy_dict.keys())
 
-    packing_modes = [
+    packing_modes = sorted(
         mode for mode in channel_map.keys() if mode not in (baseline_mode, "interpolated")
-    ]
+    )
     if not packing_modes:
         raise ValueError(
             f"No simulated packing modes found in channel_map after excluding "
@@ -584,11 +653,11 @@ def fit_result_from_cv(
         coefficients.
     """
     if distance_measures is None:
-        distance_measures = list(occupancy_dict.keys())
+        distance_measures = sorted(occupancy_dict.keys())
 
-    packing_modes = [
+    packing_modes = sorted(
         mode for mode in channel_map.keys() if mode not in (baseline_mode, "interpolated")
-    ]
+    )
 
     # Extract mean coefficients from aggregated CV results
     mean_coeffs_individual: dict[str, dict[str, float]] = {
@@ -903,7 +972,7 @@ def run_rule_interpolation_cv(
         :class:`CVResult` with per-fold results and aggregated statistics.
     """
     if distance_measures is None:
-        distance_measures = list(occupancy_dict.keys())
+        distance_measures = sorted(occupancy_dict.keys())
 
     save_path: Path | None = None
     if results_dir is not None:
@@ -1106,6 +1175,7 @@ def summarize_cv_results(cv_result: CVResult) -> pd.DataFrame:
 def log_cv_summary(
     cv_result: CVResult,
     file_path: Path | None = None,
+    reconstruction_fit_result: FitResult | None = None,
 ) -> None:
     """Log a human-readable summary of cross-validation results.
 
@@ -1115,6 +1185,12 @@ def log_cv_summary(
         Output from :func:`run_rule_interpolation_cv`.
     file_path
         Optional path to write the log to a file.
+    reconstruction_fit_result
+        Optional :class:`FitResult` from :func:`fit_result_from_cv`.  When
+        provided, a second table is appended showing the full reconstruction
+        MSE — i.e. the mean CV coefficients applied to the combined occupancy
+        curve of **all** baseline cells.  This is distinct from the aggregate
+        training MSE (mean over per-fold fits on cell subsets).
     """
     if file_path is not None:
         cv_logger = add_file_handler_to_logger(logger, file_path)
@@ -1133,16 +1209,40 @@ def log_cv_summary(
         mean, std = data["joint"]
         cv_logger.info(f"  {mode:<30s}  {mean:.4f} ± {std:.4f}")
 
-    cv_logger.info("\nMSE summary (mean across folds):")
-    cv_logger.info("-" * 80)
-    cv_logger.info(
-        f"  {'Distance measure':<20s}  {'Scope':<12s}  {'Train MSE':>12s}  {'Test MSE':>12s}"
+    packing_modes = list(cv_result.aggregated_coefficients.keys())
+    mean_joint_coeffs = np.array(
+        [cv_result.aggregated_coefficients[mode]["joint"][0] for mode in packing_modes]
     )
+    _, rel_joint = _normalize_coefficients(mean_joint_coeffs, packing_modes)
+    cv_logger.info("\nAggregated joint relative contributions (normalised mean coefficients):")
+    cv_logger.info("-" * 80)
+    for mode in packing_modes:
+        cv_logger.info(f"  {mode:<30s}  {rel_joint[mode]:.4f}")
+
+    cv_logger.info("\nAggregate training MSE (mean ± std across folds):")
+    cv_logger.info("-" * 80)
+    header = (
+        f"  {'Distance measure':<20s}  {'Scope':<12s}"
+        f"  {'Aggregate Train MSE (mean ± std)':>33s}  {'Test MSE':>12s}"
+    )
+    cv_logger.info(header)
     for scope in ("individual", "joint"):
         for dm in cv_result.mean_train_mse.get(scope, {}):
-            train_mse = cv_result.mean_train_mse[scope][dm]
+            train_mean = cv_result.mean_train_mse[scope][dm]
+            train_std = cv_result.std_train_mse[scope][dm]
             test_mse = cv_result.mean_test_mse[scope][dm]
-            cv_logger.info(f"  {dm:<20s}  {scope:<12s}  {train_mse:>12.6f}  {test_mse:>12.6f}")
+            train_cell = f"{train_mean:.6f} ± {train_std:.6f}"
+            cv_logger.info(f"  {dm:<20s}  {scope:<12s}  {train_cell:>33s}  {test_mse:>12.6f}")
+
+    if reconstruction_fit_result is not None:
+        cv_logger.info("\nFull reconstruction MSE (mean CV coefficients applied to full data):")
+        cv_logger.info("-" * 80)
+        cv_logger.info(f"  {'Distance measure':<20s}  {'Scope':<12s}  {'Reconstruction MSE':>20s}")
+        for scope in ("individual", "joint"):
+            for dm in reconstruction_fit_result.distance_measures:
+                recon_mse = reconstruction_fit_result.train_mse.get(scope, {}).get(dm)
+                if recon_mse is not None:
+                    cv_logger.info(f"  {dm:<20s}  {scope:<12s}  {recon_mse:>20.6f}")
 
     remove_file_handler_from_logger(cv_logger, file_path)
 
@@ -1362,7 +1462,9 @@ def trigger_packing_workflow(
 
     if use_slurm:
         if slurm_script is None:
-            slurm_script = Path(__file__).parents[1] / "packing" / "submit_packing_slurm.sh"
+            slurm_script = (
+                get_project_root() / "cellpack_analysis" / "packing" / "submit_packing_slurm.sh"
+            )
         if not slurm_script.exists():
             raise FileNotFoundError(f"SLURM launcher not found: {slurm_script}")
 
@@ -1371,6 +1473,7 @@ def trigger_packing_workflow(
             if slurm_kwargs:
                 for key, val in slurm_kwargs.items():
                     cmd += [f"-{key}", str(val)]
+
             logger.info(f"Submitting SLURM job: {' '.join(cmd)}")
             subprocess.run(cmd, check=True)
     else:
@@ -1379,6 +1482,428 @@ def trigger_packing_workflow(
         for config_path in config_paths:
             logger.info(f"Running packing workflow locally for: {config_path}")
             _run_packing_workflow(workflow_config_path=config_path)
+
+
+# ---------------------------------------------------------------------------
+# AIC / BIC model comparison
+# ---------------------------------------------------------------------------
+
+
+def _compute_aic(n: int, k: int, rss: float) -> float:
+    r"""Compute the Akaike Information Criterion for Gaussian least-squares.
+
+    Uses :math:`k_{\\text{eff}} = k + 1` (model parameters plus error variance).
+
+    .. math::
+        \\text{AIC} = n \\ln(\\text{RSS} / n) + 2 k_{\\text{eff}}
+    """
+    k_eff = k + 1
+    return n * np.log(rss / n) + 2 * k_eff
+
+
+def _compute_aicc(n: int, k: int, rss: float) -> float:
+    r"""Compute the small-sample corrected AIC (AICc).
+
+    .. math::
+        \\text{AIC}_c = \\text{AIC} + \\frac{2 k_{\\text{eff}} (k_{\\text{eff}} + 1)}
+        {n - k_{\\text{eff}} - 1}
+    """
+    k_eff = k + 1
+    aic = _compute_aic(n, k, rss)
+    denom = n - k_eff - 1
+    if denom <= 0:
+        return float("inf")
+    return aic + 2 * k_eff * (k_eff + 1) / denom
+
+
+def _compute_bic(n: int, k: int, rss: float) -> float:
+    r"""Compute the Bayesian Information Criterion for Gaussian least-squares.
+
+    Uses :math:`k_{\\text{eff}} = k + 1`.
+
+    .. math::
+        \\text{BIC} = n \\ln(\\text{RSS} / n) + k_{\\text{eff}} \\ln(n)
+    """
+    k_eff = k + 1
+    return n * np.log(rss / n) + k_eff * np.log(n)
+
+
+def _fit_single_rule(
+    baseline_occupancy: np.ndarray,
+    mode_occupancy: np.ndarray,
+) -> tuple[float, int]:
+    """Fit a single-mode NNLS model and return (RSS, n).
+
+    Parameters
+    ----------
+    baseline_occupancy
+        Target vector (mean baseline occupancy), shape ``(n,)``.
+    mode_occupancy
+        Single simulated mode's combined occupancy on the same grid, shape ``(n,)``.
+
+    Returns
+    -------
+    rss
+        Residual sum of squares.
+    n
+        Number of data points.
+    """
+    mode_occ_matrix = mode_occupancy.reshape(-1, 1)
+    coeff, _ = nnls(mode_occ_matrix, baseline_occupancy)
+    recon = mode_occ_matrix @ coeff
+    rss = float(np.sum((baseline_occupancy - recon) ** 2))
+    return rss, len(baseline_occupancy)
+
+
+def _compute_model_weights(
+    delta_values: dict[str, float],
+) -> dict[str, float]:
+    r"""Convert ΔAIC or ΔBIC values to model weights via the Akaike formula.
+
+    .. math::
+        w_i = \\frac{\\exp(-\\Delta_i / 2)}{\\sum_j \\exp(-\\Delta_j / 2)}
+    """
+    raw = {name: np.exp(-0.5 * d) for name, d in delta_values.items()}
+    total = sum(raw.values())
+    if total == 0:
+        n = len(raw)
+        return dict.fromkeys(raw, 1.0 / n)
+    return {name: val / total for name, val in raw.items()}
+
+
+def compute_aic_comparison(
+    occupancy_dict: dict[str, dict[str, dict[str, Any]]],
+    channel_map: dict[str, str],
+    baseline_mode: str,
+    fit_result: FitResult | None = None,
+    distance_measures: list[str] | None = None,
+) -> AICComparisonResult:
+    """Compare mixed-rule, single-rule, and null models using AIC and BIC.
+
+    For each scope (individual per-DM and joint across all DMs) computes RSS
+    for the mixed rule (from ``fit_result``, or fits from scratch), each
+    single-mode NNLS model, and a constant-mean null model.  Returns AIC,
+    AICc, BIC, ΔAIC, ΔBIC, and model weights.
+
+    Parameters
+    ----------
+    occupancy_dict
+        ``{dm: {mode: {"individual": {...}, "combined": {...}}}}``.
+    channel_map
+        ``{mode: structure_id}``.
+    baseline_mode
+        Experimental baseline packing mode key.
+    fit_result
+        Pre-computed :class:`FitResult` (e.g. from :func:`fit_rule_interpolation`).
+        If ``None``, a full-data fit is performed internally.
+    distance_measures
+        Subset of distance measures to use.  Defaults to all keys in
+        ``occupancy_dict``.
+
+    Returns
+    -------
+    :
+        :class:`AICComparisonResult`.
+    """
+    if distance_measures is None:
+        distance_measures = sorted(occupancy_dict.keys())
+
+    packing_modes = sorted(
+        mode for mode in channel_map if mode not in (baseline_mode, "interpolated")
+    )
+
+    # Fit if not provided
+    if fit_result is None:
+        fit_result = fit_rule_interpolation(
+            occupancy_dict, channel_map, baseline_mode, distance_measures=distance_measures
+        )
+
+    n_modes = len(packing_modes)
+
+    # Pre-compute per-DM baseline targets and design matrices
+    dm_baseline: dict[str, np.ndarray] = {}
+    dm_sim_cols: dict[str, dict[str, np.ndarray]] = {}
+
+    for dm in distance_measures:
+        dm_data = occupancy_dict[dm]
+        baseline_dm = dm_data[baseline_mode]
+        common_xvals: np.ndarray = baseline_dm["combined"]["xvals"]
+
+        baseline_occ, _ = _compute_mean_occupancy_from_cells(
+            mode_individual_dict=baseline_dm["individual"],
+            cell_ids=fit_result.train_cell_ids,
+            common_xvals=common_xvals,
+        )
+        dm_baseline[dm] = baseline_occ
+
+        cols: dict[str, np.ndarray] = {}
+        for mode in packing_modes:
+            mode_xvals = dm_data[mode]["combined"]["xvals"]
+            mode_occ = dm_data[mode]["combined"]["occupancy"]
+            if len(mode_xvals) != len(common_xvals) or not np.allclose(mode_xvals, common_xvals):
+                col = np.interp(common_xvals, mode_xvals, mode_occ, right=0.0, left=0.0)
+            else:
+                col = mode_occ
+            cols[mode] = np.nan_to_num(col, nan=0.0)
+        dm_sim_cols[dm] = cols
+
+    # Collect results per scope/dm
+    comparisons: dict[str, dict[str, list[AICModelResult]]] = {
+        "individual": {},
+        "joint": {},
+    }
+
+    for dm in distance_measures:
+        b = dm_baseline[dm]
+        n = len(b)
+
+        models: list[AICModelResult] = []
+
+        # Mixed rule (individual scope)
+        recon_ind = fit_result.reconstructed_occupancy[dm]["individual"]
+        rss_mixed = float(np.sum((b - recon_ind) ** 2))
+        models.append(
+            AICModelResult(
+                model_name="mixed_rule",
+                k=n_modes,
+                n=n,
+                rss=rss_mixed,
+                aic=_compute_aic(n, n_modes, rss_mixed),
+                aicc=_compute_aicc(n, n_modes, rss_mixed),
+                bic=_compute_bic(n, n_modes, rss_mixed),
+            )
+        )
+
+        # Single-rule models
+        for mode in packing_modes:
+            rss_s, n_s = _fit_single_rule(b, dm_sim_cols[dm][mode])
+            models.append(
+                AICModelResult(
+                    model_name=f"single:{mode}",
+                    k=1,
+                    n=n_s,
+                    rss=rss_s,
+                    aic=_compute_aic(n_s, 1, rss_s),
+                    aicc=_compute_aicc(n_s, 1, rss_s),
+                    bic=_compute_bic(n_s, 1, rss_s),
+                )
+            )
+
+        # Null model: predict constant mean of baseline occupancy
+        mean_val = float(np.mean(b))
+        rss_null = float(np.sum((b - mean_val) ** 2))
+        models.append(
+            AICModelResult(
+                model_name="null",
+                k=1,
+                n=n,
+                rss=rss_null,
+                aic=_compute_aic(n, 1, rss_null),
+                aicc=_compute_aicc(n, 1, rss_null),
+                bic=_compute_bic(n, 1, rss_null),
+            )
+        )
+
+        comparisons["individual"][dm] = models
+
+    # Joint scope: stack all DMs
+    b_joint = np.concatenate([dm_baseline[dm] for dm in distance_measures])
+    n_joint = len(b_joint)
+
+    # Mixed rule (joint scope) — use joint reconstructed occupancy
+    recon_joint = np.concatenate(
+        [fit_result.reconstructed_occupancy[dm]["joint"] for dm in distance_measures]
+    )
+    rss_mixed_joint = float(np.sum((b_joint - recon_joint) ** 2))
+    joint_models: list[AICModelResult] = [
+        AICModelResult(
+            model_name="mixed_rule",
+            k=n_modes,
+            n=n_joint,
+            rss=rss_mixed_joint,
+            aic=_compute_aic(n_joint, n_modes, rss_mixed_joint),
+            aicc=_compute_aicc(n_joint, n_modes, rss_mixed_joint),
+            bic=_compute_bic(n_joint, n_modes, rss_mixed_joint),
+        )
+    ]
+
+    # Single-rule (joint scope): stack all DMs per mode
+    for mode in packing_modes:
+        stacked_mode = np.concatenate([dm_sim_cols[dm][mode] for dm in distance_measures])
+        rss_s, n_s = _fit_single_rule(b_joint, stacked_mode)
+        joint_models.append(
+            AICModelResult(
+                model_name=f"single:{mode}",
+                k=1,
+                n=n_s,
+                rss=rss_s,
+                aic=_compute_aic(n_s, 1, rss_s),
+                aicc=_compute_aicc(n_s, 1, rss_s),
+                bic=_compute_bic(n_s, 1, rss_s),
+            )
+        )
+
+    # Null (joint scope)
+    mean_joint = float(np.mean(b_joint))
+    rss_null_joint = float(np.sum((b_joint - mean_joint) ** 2))
+    joint_models.append(
+        AICModelResult(
+            model_name="null",
+            k=1,
+            n=n_joint,
+            rss=rss_null_joint,
+            aic=_compute_aic(n_joint, 1, rss_null_joint),
+            aicc=_compute_aicc(n_joint, 1, rss_null_joint),
+            bic=_compute_bic(n_joint, 1, rss_null_joint),
+        )
+    )
+    comparisons["joint"]["joint"] = joint_models
+
+    # Compute deltas and weights
+    delta_aic: dict[str, dict[str, dict[str, float]]] = {}
+    delta_bic: dict[str, dict[str, dict[str, float]]] = {}
+    akaike_weights: dict[str, dict[str, dict[str, float]]] = {}
+    bic_weights: dict[str, dict[str, dict[str, float]]] = {}
+    best_model_aic: dict[str, dict[str, str]] = {}
+    best_model_bic: dict[str, dict[str, str]] = {}
+
+    for scope, dm_dict in comparisons.items():
+        delta_aic[scope] = {}
+        delta_bic[scope] = {}
+        akaike_weights[scope] = {}
+        bic_weights[scope] = {}
+        best_model_aic[scope] = {}
+        best_model_bic[scope] = {}
+
+        for dm, models in dm_dict.items():
+            min_aic = min(m.aic for m in models)
+            min_bic = min(m.bic for m in models)
+
+            d_aic = {m.model_name: m.aic - min_aic for m in models}
+            d_bic = {m.model_name: m.bic - min_bic for m in models}
+
+            delta_aic[scope][dm] = d_aic
+            delta_bic[scope][dm] = d_bic
+            akaike_weights[scope][dm] = _compute_model_weights(d_aic)
+            bic_weights[scope][dm] = _compute_model_weights(d_bic)
+            best_model_aic[scope][dm] = min(d_aic, key=d_aic.get)  # type: ignore[arg-type]
+            best_model_bic[scope][dm] = min(d_bic, key=d_bic.get)  # type: ignore[arg-type]
+
+    return AICComparisonResult(
+        comparisons=comparisons,
+        delta_aic=delta_aic,
+        delta_bic=delta_bic,
+        akaike_weights=akaike_weights,
+        bic_weights=bic_weights,
+        best_model_aic=best_model_aic,
+        best_model_bic=best_model_bic,
+    )
+
+
+def summarize_aic_comparison(result: AICComparisonResult) -> pd.DataFrame:
+    """Return a tidy DataFrame summarising the AIC/BIC model comparison.
+
+    Columns: ``scope``, ``distance_measure``, ``model``, ``k``, ``n``, ``rss``,
+    ``aic``, ``aicc``, ``bic``, ``delta_aic``, ``delta_bic``,
+    ``akaike_weight``, ``bic_weight``.
+    """
+    rows: list[dict[str, Any]] = []
+    for scope, dm_dict in result.comparisons.items():
+        for dm, models in dm_dict.items():
+            for m in models:
+                rows.append(
+                    {
+                        "scope": scope,
+                        "distance_measure": dm,
+                        "model": m.model_name,
+                        "k": m.k,
+                        "n": m.n,
+                        "rss": m.rss,
+                        "aic": m.aic,
+                        "aicc": m.aicc,
+                        "bic": m.bic,
+                        "delta_aic": result.delta_aic[scope][dm][m.model_name],
+                        "delta_bic": result.delta_bic[scope][dm][m.model_name],
+                        "akaike_weight": result.akaike_weights[scope][dm][m.model_name],
+                        "bic_weight": result.bic_weights[scope][dm][m.model_name],
+                    }
+                )
+    return pd.DataFrame(rows)
+
+
+def log_evidence_ratios(
+    result: AICComparisonResult,
+    file_path: Path,
+) -> None:
+    """Write AIC/BIC evidence ratios to a dedicated log file.
+
+    For each scope and distance measure, logs:
+
+    * ΔAIC / ΔBIC interpretation thresholds (Burnham & Anderson 2002).
+    * Per-model AIC, BIC, Akaike weight, BIC weight, and evidence ratios
+      relative to the best model.
+
+    Parameters
+    ----------
+    result
+        Output from :func:`compute_aic_comparison`.
+    file_path
+        Absolute path for the log file.
+    """
+    file_path = Path(file_path)
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+
+    er_logger = logging.getLogger(__name__ + ".evidence_ratios")
+    add_file_handler_to_logger(er_logger, file_path)
+
+    er_logger.info("AIC / BIC Evidence Ratio Report")
+    er_logger.info("=" * 90)
+    er_logger.info(
+        "Interpretation guide (Burnham & Anderson 2002):\n"
+        "  ΔAIC  0-2  : Substantial support (model nearly as good as best)\n"
+        "  ΔAIC  4-7  : Considerably less support\n"
+        "  ΔAIC  > 10 : Essentially no support\n"
+        "  Evidence ratio = w_best / w_i  (how many times more likely the best model is)\n"
+    )
+
+    for scope, dm_dict in result.comparisons.items():
+        for dm, models in dm_dict.items():
+            er_logger.info("-" * 90)
+            er_logger.info(f"Scope: {scope}  |  Distance measure: {dm}")
+            er_logger.info(
+                f"  Best model (AIC): {result.best_model_aic[scope][dm]}  |  "
+                f"Best model (BIC): {result.best_model_bic[scope][dm]}"
+            )
+            er_logger.info("-" * 90)
+
+            header = (
+                f"  {'Model':<25s} {'k':>3s} {'AIC':>12s} {'ΔAIC':>10s} "
+                f"{'w_AIC':>10s} {'BIC':>12s} {'ΔBIC':>10s} {'w_BIC':>10s} "
+                f"{'ER_AIC':>10s} {'ER_BIC':>10s}"
+            )
+            er_logger.info(header)
+
+            best_w_aic = result.akaike_weights[scope][dm][result.best_model_aic[scope][dm]]
+            best_w_bic = result.bic_weights[scope][dm][result.best_model_bic[scope][dm]]
+
+            for m in models:
+                name = m.model_name
+                w_aic = result.akaike_weights[scope][dm][name]
+                w_bic = result.bic_weights[scope][dm][name]
+                er_aic = best_w_aic / w_aic if w_aic > 0 else float("inf")
+                er_bic = best_w_bic / w_bic if w_bic > 0 else float("inf")
+                d_aic = result.delta_aic[scope][dm][name]
+                d_bic = result.delta_bic[scope][dm][name]
+
+                er_logger.info(
+                    f"  {name:<25s} {m.k:>3d} {m.aic:>12.2f} {d_aic:>10.2f} "
+                    f"{w_aic:>10.4f} {m.bic:>12.2f} {d_bic:>10.2f} {w_bic:>10.4f} "
+                    f"{er_aic:>10.2f} {er_bic:>10.2f}"
+                )
+
+            er_logger.info("")
+
+    remove_file_handler_from_logger(er_logger, file_path)
 
 
 # ---------------------------------------------------------------------------
@@ -1395,13 +1920,18 @@ def run_mixed_rule_validation(
     mixed_rule_distance_dict: dict[str, Any] | None = None,
     results_dir: Path | None = None,
     recalculate: bool = False,
+    fit_result: FitResult | None = None,
+    occupancy_emd_df: "pd.DataFrame | None" = None,
+    distance_emd_df: "pd.DataFrame | None" = None,
+    distance_envelope_test_result: dict[str, Any] | None = None,
 ) -> ValidationResult:
     """Run orthogonal validation checks for the mixed packing rule.
 
     Always computes occupancy-based checks reusing the existing functions in
     :mod:`cellpack_analysis.lib.occupancy`.  If actual packing simulation
     outputs are available (``mixed_rule_distance_dict`` is not ``None``),
-    also runs distance-distribution-based tests.
+    also runs distance-distribution-based tests.  If ``fit_result`` is
+    provided, additionally runs AIC/BIC model comparison.
 
     Parameters
     ----------
@@ -1419,50 +1949,41 @@ def run_mixed_rule_validation(
     mixed_rule_distance_dict
         Raw distance data from mixed-rule packings in the same format as
         ``all_distance_dict`` used by the distance analysis workflow.
-        If ``None``, only occupancy-based tests are run.
+        If ``None``, only occupancy-based tests are run (unless
+        ``distance_emd_df`` / ``distance_envelope_test_result`` are supplied).
     results_dir
         Directory for saving intermediate results.
     recalculate
         Whether to recompute even if cached results exist.
+    fit_result
+        Pre-computed :class:`FitResult` from :func:`fit_rule_interpolation`.
+        When provided, AIC/BIC model comparison is computed and attached to
+        the returned :class:`ValidationResult`.
+    occupancy_emd_df
+        Pre-computed pairwise occupancy EMD dataframe (e.g. from a prior
+        ``run_occupancy_emd_analysis`` step).  When provided the internal
+        ``occupancy.get_occupancy_emd_df`` call is skipped.
+    distance_emd_df
+        Pre-computed pairwise distance EMD dataframe (e.g. from a prior
+        ``run_emd_analysis`` step).  When provided the internal
+        ``distance.get_distance_distribution_emd_df`` call is skipped.
+    distance_envelope_test_result
+        Pre-computed pairwise envelope test result dict (e.g. from a prior
+        ``run_pairwise_envelope_test`` step).  When provided the internal
+        ``pairwise_envelope_test`` call is skipped.
 
     Returns
     -------
     :
         :class:`ValidationResult` bundling all test outputs.
     """
-    logger.info("Running mixed-rule occupancy EMD analysis")
-    emd_df = occupancy.get_occupancy_emd_df(
-        combined_occupancy_dict=combined_occupancy_dict,
-        packing_modes=packing_modes,
-        distance_measures=distance_measures,
-        results_dir=results_dir,
-        recalculate=recalculate,
-        suffix="_mixed_rule_validation",
-    )
-
-    logger.info("Running mixed-rule occupancy KS test")
-    ks_df = occupancy.get_occupancy_ks_test_df(
-        distance_measures=distance_measures,
-        packing_modes=packing_modes,
-        combined_occupancy_dict=combined_occupancy_dict,
-        baseline_mode=baseline_mode,
-        save_dir=results_dir,
-        recalculate=recalculate,
-    )
-
-    logger.info("Running mixed-rule occupancy pairwise envelope test")
-    envelope_test = occupancy.pairwise_envelope_test_occupancy(
-        combined_occupancy_dict=combined_occupancy_dict,
-        packing_modes=packing_modes,
-    )
-
-    distance_emd_df: pd.DataFrame | None = None
-    distance_envelope_test: dict[str, Any] | None = None
-
-    if mixed_rule_distance_dict is not None:
-        logger.info("Running mixed-rule distance EMD analysis")
-        distance_emd_df = distance.get_distance_distribution_emd_df(
-            all_distance_dict=mixed_rule_distance_dict,
+    if occupancy_emd_df is not None:
+        logger.info("Reusing pre-computed occupancy EMD (skipping recomputation)")
+        emd_df = occupancy_emd_df
+    else:
+        logger.info("Running mixed-rule occupancy EMD analysis")
+        emd_df = occupancy.get_occupancy_emd_df(
+            combined_occupancy_dict=combined_occupancy_dict,
             packing_modes=packing_modes,
             distance_measures=distance_measures,
             results_dir=results_dir,
@@ -1470,19 +1991,79 @@ def run_mixed_rule_validation(
             suffix="_mixed_rule_validation",
         )
 
-        from cellpack_analysis.lib.stats import pairwise_envelope_test
+    _computed_distance_emd_df: pd.DataFrame | None = distance_emd_df
+    distance_envelope_test: dict[str, Any] | None = distance_envelope_test_result
+    distance_ks_df: pd.DataFrame | None = None
+    distance_ks_bootstrap_df: pd.DataFrame | None = None
 
-        logger.info("Running mixed-rule distance pairwise envelope test")
-        distance_envelope_test = pairwise_envelope_test(
-            all_distance_dict=mixed_rule_distance_dict,
-            packing_modes=packing_modes,
+    _has_distance_data = mixed_rule_distance_dict is not None
+    _has_precomputed_distance = (
+        distance_emd_df is not None or distance_envelope_test_result is not None
+    )
+    _has_mixed_structures = len(set(channel_map.values())) > 1
+
+    if _has_distance_data or _has_precomputed_distance:
+        if _computed_distance_emd_df is not None:
+            logger.info("Reusing pre-computed distance EMD (skipping recomputation)")
+        elif mixed_rule_distance_dict is not None:
+            logger.info("Running mixed-rule distance EMD analysis")
+            _computed_distance_emd_df = distance.get_distance_distribution_emd_df(
+                all_distance_dict=mixed_rule_distance_dict,
+                packing_modes=packing_modes,
+                distance_measures=distance_measures,
+                results_dir=results_dir,
+                recalculate=recalculate,
+                suffix="_mixed_rule_validation",
+            )
+
+        if distance_envelope_test is not None:
+            logger.info("Reusing pre-computed distance envelope test (skipping recomputation)")
+        elif mixed_rule_distance_dict is not None:
+            from cellpack_analysis.lib.stats import pairwise_envelope_test
+
+            logger.info("Running mixed-rule distance pairwise envelope test")
+            distance_envelope_test = pairwise_envelope_test(
+                all_distance_dict=mixed_rule_distance_dict,
+                packing_modes=packing_modes,
+                distance_measures=distance_measures,
+            )
+
+        if mixed_rule_distance_dict is not None and not _has_mixed_structures:
+            logger.info("Running mixed-rule distance KS test")
+            distance_ks_df = distance.get_ks_test_df(
+                distance_measures=distance_measures,
+                packing_modes=packing_modes,
+                all_distance_dict=mixed_rule_distance_dict,
+                baseline_mode=baseline_mode,
+            )
+
+            logger.info("Running mixed-rule distance KS bootstrap")
+            non_baseline_modes = [m for m in packing_modes if m != baseline_mode]
+            distance_ks_bootstrap_df = distance.bootstrap_ks_tests(
+                ks_test_df=distance_ks_df,
+                distance_measures=distance_measures,
+                packing_modes=non_baseline_modes,
+            )
+
+    distance_emd_df = _computed_distance_emd_df
+
+    # AIC/BIC model comparison
+    aic_result: AICComparisonResult | None = None
+    if fit_result is not None:
+        logger.info("Running AIC/BIC model comparison for mixed-rule validation")
+        aic_result = compute_aic_comparison(
+            occupancy_dict=combined_occupancy_dict,
+            channel_map=channel_map,
+            baseline_mode=baseline_mode,
+            fit_result=fit_result,
             distance_measures=distance_measures,
         )
 
     return ValidationResult(
         emd_df=emd_df,
-        ks_df=ks_df,
-        envelope_test=envelope_test,
         distance_emd_df=distance_emd_df,
         distance_envelope_test=distance_envelope_test,
+        distance_ks_df=distance_ks_df,
+        distance_ks_bootstrap_df=distance_ks_bootstrap_df,
+        aic_result=aic_result,
     )

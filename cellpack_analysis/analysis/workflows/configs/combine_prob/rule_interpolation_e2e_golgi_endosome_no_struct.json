@@ -1,0 +1,66 @@
+{
+    "name": "rule_interpolation_e2e",
+    "structure_id": "RAB5A",
+    "simulated_structure_id": "ST6GAL1",
+    "packing_id": "golgi_endosome_no_struct",
+    "structure_name": "endosome",
+    "output_path": "rule_interpolation_combine_prob/golgi_endosome_no_struct",
+    "validation_output_path": "rule_interpolation_combine_prob/golgi_endosome_no_struct/validation",
+    "validation_config_out_path": "combine_prob/validation",
+    "packing_output_folder": "packing_outputs/8d_sphere_data/combine_prob/",
+    "channel_map": {
+        "RAB5A": "RAB5A",
+        "random": "ST6GAL1",
+        "nucleus_gradient": "ST6GAL1",
+        "membrane_gradient": "ST6GAL1",
+        "apical_gradient": "ST6GAL1"
+    },
+    "distribution_method": "kde",
+    "occupancy_distance_measures": [
+        "nucleus",
+        "z"
+    ],
+    "occupancy_params": {
+        "nucleus": {
+            "xlim": 6,
+            "ylim": 3,
+            "bandwidth": 0.2
+        },
+        "z": {
+            "xlim": 8,
+            "ylim": 2,
+            "bandwidth": 0.2
+        }
+    },
+    "rule_interpolation_cv_params": {
+        "n_folds": 5,
+        "n_repeats": 10,
+        "random_state": 42,
+        "grouping": "combined"
+    },
+    "base_packing_config_path": "cellpack_analysis/packing/configs/combine_prob/golgi_endosome_no_struct.json",
+    "mode_to_gradient_name": {
+        "random": "uniform",
+        "nucleus_gradient": "nucleus_gradient",
+        "membrane_gradient": "membrane_gradient",
+        "apical_gradient": "apical_gradient"
+    },
+    "packing_config_scope": "joint",
+    "slurm_kwargs": {
+        "p": "aics",
+        "n": "cellPACK_golgi_endosome_no_struct"
+    },
+    "validation_distance_measures": [
+        "nucleus",
+        "z"
+    ],
+    "skip_mixed_rule_validation": false,
+    "validation_analysis_steps": [
+        "plot_distance_distributions",
+        "run_emd_analysis",
+        "run_pairwise_envelope_test",
+        "run_occupancy_analysis",
+        "run_occupancy_emd_analysis"
+    ],
+    "recalculate": false
+}

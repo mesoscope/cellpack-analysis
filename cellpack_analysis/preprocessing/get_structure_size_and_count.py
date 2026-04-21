@@ -6,6 +6,7 @@ import logging
 import numpy as np
 import pandas as pd
 
+from cellpack_analysis.lib.default_values import PIXEL_SIZE_IN_UM
 from cellpack_analysis.lib.file_io import get_datadir_path
 from cellpack_analysis.lib.get_cell_id_list import get_cell_id_list_for_structure
 from cellpack_analysis.lib.get_variance_dataset import get_variance_dataframe
@@ -30,12 +31,21 @@ df_filtered = pd.concat(filtered_frames)
 # %% [markdown]
 # ## Compute per-punctum measurements (vectorized)
 counts = df_filtered["STR_connectivity_cc"].astype(float)
-str_volume = df_filtered["STR_shape_volume"]
-mem_surface_area = df_filtered["MEM_roundness_surface_area"]
-mem_volume = df_filtered["MEM_shape_volume"]
-nuc_surface_area = df_filtered["NUC_roundness_surface_area"]
-nuc_volume = df_filtered["NUC_shape_volume"]
-
+str_volume = df_filtered["STR_shape_volume"] * (
+    PIXEL_SIZE_IN_UM**3
+)  # Convert from voxel count to µm³
+mem_surface_area = df_filtered["MEM_roundness_surface_area"] * (
+    PIXEL_SIZE_IN_UM**2
+)  # Convert from voxel count to µm²
+mem_volume = df_filtered["MEM_shape_volume"] * (
+    PIXEL_SIZE_IN_UM**3
+)  # Convert from voxel count to µm³
+nuc_surface_area = df_filtered["NUC_roundness_surface_area"] * (
+    PIXEL_SIZE_IN_UM**2
+)  # Convert from voxel count to µm²
+nuc_volume = df_filtered["NUC_shape_volume"] * (
+    PIXEL_SIZE_IN_UM**3
+)  # Convert from voxel count to µm³
 # Volume and radius per unit (NaN where count == 0 or volume == 0)
 volume_per_unit = str_volume.where(counts > 0) / counts.where(counts > 0)
 unit_radius = (volume_per_unit.where(volume_per_unit > 0) / (4 / 3 * np.pi)) ** (1 / 3)

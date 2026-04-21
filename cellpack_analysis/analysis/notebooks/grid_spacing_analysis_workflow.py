@@ -87,6 +87,9 @@ results_dir.mkdir(exist_ok=True, parents=True)
 
 figures_dir = results_dir / "figures/"
 figures_dir.mkdir(exist_ok=True, parents=True)
+
+log_dir = results_dir / "logs/"
+log_dir.mkdir(exist_ok=True, parents=True)
 # %% [markdown]
 # ### Distance measures to use
 distance_measures = [
@@ -178,9 +181,7 @@ fig, axs = visualization.plot_distance_distributions(
 )
 # %% [markdown]
 # ### log central tendencies for distance distributions
-log_file_path = (
-    results_dir / f"{STRUCTURE_NAME}_distance_distribution_central_tendencies{suffix}.log"
-)
+log_file_path = log_dir / f"{STRUCTURE_NAME}_distance_distribution_central_tendencies{suffix}.log"
 distance.log_central_tendencies_for_distance_distributions(
     all_distance_dict=all_distance_dict,
     distance_measures=distance_measures,
@@ -217,18 +218,6 @@ for comparison_type in ["intra_mode", "baseline"]:
         annotate_significance=False,
     )
 # %% [markdown]
-# ### Log statistics for EMD comparisons
-emd_log_file_path = results_dir / f"{PACKING_ID}_emd_central_tendencies{suffix}.log"
-for comparison_type in ["intra_mode", "baseline"]:
-    distance.log_central_tendencies_for_emd(
-        df_emd=df_emd,
-        distance_measures=distance_measures,
-        packing_modes=packing_modes,
-        baseline_mode=baseline_mode,
-        log_file_path=emd_log_file_path,
-        comparison_type=comparison_type,
-    )
-# %% [markdown]
 # ### Create plots for pairwise EMD matrix
 for dm in distance_measures:
     fig, axs = visualization.plot_pairwise_emd_matrix(
@@ -243,9 +232,7 @@ for dm in distance_measures:
     )
 # %% [markdown]
 # ### Log pairwise EMD central tendencies
-emd_pairwise_log_file_path = (
-    results_dir / f"{PACKING_ID}_emd_pairwise_central_tendencies{suffix}.log"
-)
+emd_pairwise_log_file_path = log_dir / f"{PACKING_ID}_emd_pairwise_central_tendencies{suffix}.log"
 distance.log_pairwise_emd_central_tendencies(
     df_emd=df_emd,
     distance_measures=distance_measures,
@@ -293,12 +280,12 @@ fig, axs = visualization.plot_pairwise_envelope_matrix(
     save_format=save_format,
 )
 # %% [markdown]
-# ### Per distance measure rejection bars (per reference mode)
+# ### Per distance measure rejection bars (per test mode)
 # %%
-for ref_mode in packing_modes:
+for test_mode in packing_modes:
     fig, axs = visualization.plot_per_dm_rejection_bars(
         pairwise_results=pairwise_results,
-        reference_mode=ref_mode,
+        compare_mode=test_mode,
         figures_dir=envelope_figures_dir,
         suffix=suffix,
         save_format=save_format,
@@ -369,9 +356,7 @@ for ref_mode in packing_modes:
     )
 # %% [markdown]
 # ### Log pairwise KS central tendencies
-pairwise_ks_log_file_path = (
-    results_dir / f"{STRUCTURE_NAME}_pairwise_ks_central_tendencies{suffix}.log"
-)
+pairwise_ks_log_file_path = log_dir / f"{STRUCTURE_NAME}_pairwise_ks_central_tendencies{suffix}.log"
 for ref_mode in packing_modes:
     ref_boot_df = pairwise_ks_bootstrap_df.query("baseline_mode == @ref_mode")
     distance.log_central_tendencies_for_ks(

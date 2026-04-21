@@ -546,8 +546,7 @@ def _run_worker(manifest_path: Path, result_path: Path) -> None:
     _write_worker_result(result_path, summary)
 
     logger.info(
-        f"Worker finished: {len(succeeded)} succeeded, "
-        f"{len(failed)} failed, {len(skipped)} skipped"
+        f"Worker finished: {len(succeeded)} succeeded, {len(failed)} failed, {len(skipped)} skipped"
     )
 
     # Exit with non-zero if any packing failed
@@ -609,9 +608,7 @@ def _run_orchestrator(
     slurm_log_dir.mkdir(parents=True, exist_ok=True)
 
     workflow_log_file = setup_workflow_logging(
-        workflow_config.output_path
-        / "logs"
-        / f"{workflow_config.packing_id}_{workflow_config.condition}_slurm.log"
+        slurm_log_dir / f"{workflow_config.packing_id}_{workflow_config.condition}_slurm.log"
     )
     logger.info(f"Logging all debug messages to {workflow_log_file}")
     logger.info(f"Batch size: {batch_size}")
@@ -666,8 +663,7 @@ def _run_orchestrator(
             continue
 
         logger.info(
-            f"Rule {rule}: {len(recipes_to_pack)} recipes to pack "
-            f"({total_skipped} skipped so far)"
+            f"Rule {rule}: {len(recipes_to_pack)} recipes to pack ({total_skipped} skipped so far)"
         )
 
         # Partition into batches
@@ -801,8 +797,7 @@ def _run_orchestrator(
 
     if no_wait:
         logger.info(
-            "Not waiting for jobs to complete (--no-wait). "
-            "Run the aggregation step manually later."
+            "Not waiting for jobs to complete (--no-wait). Run the aggregation step manually later."
         )
         return 0
 

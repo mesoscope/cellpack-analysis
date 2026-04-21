@@ -62,7 +62,7 @@ def get_cell_id_map_from_distance_kde_dict(
     return cell_id_map
 
 
-def _load_cached_kde_occupancy(
+def _load_cached_occupancy(
     save_path: Path,
     channel_map: dict[str, str],
 ) -> dict[str, dict[str, dict[str, Any]]] | None:
@@ -76,8 +76,8 @@ def _load_cached_kde_occupancy(
         return None
     try:
         with open(save_path, "rb") as f:
-            kde_occupancy_dict = pickle.load(f)
-        cached_modes = set(kde_occupancy_dict.keys())
+            occupancy_dict = pickle.load(f)
+        cached_modes = set(occupancy_dict.keys())
         requested_modes = set(channel_map.keys())
         if cached_modes != requested_modes:
             logger.warning(
@@ -86,9 +86,9 @@ def _load_cached_kde_occupancy(
             )
             return None
         first_mode = next(iter(cached_modes))
-        if "all_occupancy" in kde_occupancy_dict.get(first_mode, {}).get("combined", {}):
+        if "all_occupancy" in occupancy_dict.get(first_mode, {}).get("combined", {}):
             logger.info(f"Successfully loaded cached occupancy data from {save_path}")
-            return kde_occupancy_dict
+            return occupancy_dict
         logger.warning("Cached occupancy data is missing unified format keys — recalculating.")
         return None
     except Exception as e:
@@ -132,13 +132,56 @@ def _build_combined_available_kde(
     return combined_available_kde, float(x_min_calc), float(x_max_calc)
 
 
+def _get_available_distance_range(
+    distance_kde_dict: dict[str, dict[str, gaussian_kde]],
+    cell_id_map: dict[str, list[str]],
+) -> tuple[float, float]:
+    """
+    Infer the global min and max of available-space distances across all cells and modes.
+
+    Parameters
+    ----------
+    distance_kde_dict
+        Dictionary with cell IDs as keys and mode-specific KDEs as values
+    cell_id_map
+        Mapping from structure IDs to lists of cell IDs
+
+    Returns
+    -------
+    :
+        ``(x_min_calc, x_max_calc)`` where the floats are the global min/max
+        of all occupied-distance datasets across all modes and cells.
+    """
+    x_min_calc = np.inf
+    x_max_calc = -np.inf
+    for _, cell_ids in cell_id_map.items():
+        for cell_id in cell_ids:
+            available_distance_kde = distance_kde_dict[cell_id].get("available")
+            if available_distance_kde is None:
+                logger.warning(
+                    f"Cell ID {cell_id} is missing 'available' KDE, skipping for range calculation"
+                )
+                continue
+            available_distances = np.asarray(available_distance_kde.dataset, dtype=float)
+            available_distances = available_distances[np.isfinite(available_distances)]
+            if len(available_distances) == 0:
+                logger.warning(
+                    f"Cell ID {cell_id} has no finite available distances, "
+                    "skipping for range calculation"
+                )
+                continue
+            x_min_calc = min(x_min_calc, float(np.min(available_distances)))
+            x_max_calc = max(x_max_calc, float(np.max(available_distances)))
+    return float(x_min_calc), float(x_max_calc)
+
+
 def get_kde_occupancy_for_single_cell(
     cell_id: str,
     mode: str,
     distance_kde_dict: dict[str, dict[str, gaussian_kde]],
-    x_vals: np.ndarray,
-    bandwidth: str | float | None,
-    num_points: int,
+    common_xvals: np.ndarray | None = None,
+    bandwidth: str | float | None = None,
+    num_points: int = 100,
 ) -> tuple[str, dict[str, Any]] | None:
     """Compute KDE occupancy for a single cell; returns ``(cell_id, result)`` or ``None``."""
     if mode not in distance_kde_dict[cell_id]:
@@ -146,16 +189,29 @@ def get_kde_occupancy_for_single_cell(
 
     occupied_kde = distance_kde_dict[cell_id][mode]
     available_kde = distance_kde_dict[cell_id]["available"]
-    available_distances = available_kde.dataset
 
     if bandwidth is not None:
         occupied_kde.set_bandwidth(bandwidth)
         available_kde.set_bandwidth(bandwidth)
 
-    cell_xvals = np.linspace(np.min(available_distances), np.max(available_distances), num_points)
-    pdf_occupied = normalize_pdf(cell_xvals, occupied_kde.evaluate(cell_xvals))
-    pdf_available = normalize_pdf(cell_xvals, available_kde.evaluate(cell_xvals))
-    occupancy, pdf_occupied, pdf_available = pdf_ratio(cell_xvals, pdf_occupied, pdf_available)
+    available_distances = available_kde.dataset
+    # occupied_distances = occupied_kde.dataset
+    # if np.max(occupied_distances) >= np.max(available_distances):
+    #     logger.warning(
+    #         f"Cell ID {cell_id} has max available distance {np.max(available_distances)} "
+    #         f"less than or equal to max occupied distance {np.max(occupied_distances)}. "
+    #         "Discarding invalid data points for this cell."
+    #     )
+    #     valid_mask = occupied_distances <= np.max(available_distances)
+    #     occupied_distances = occupied_distances[valid_mask]
+
+    cell_lo = max(0, float(np.min(available_distances)))
+    cell_hi = float(np.percentile(available_distances, 95))
+
+    cell_xvals = np.linspace(cell_lo, cell_hi, num_points)
+    occupancy, pdf_occupied, pdf_available = pdf_ratio(
+        cell_xvals, occupied_kde.evaluate(cell_xvals), available_kde.evaluate(cell_xvals)
+    )
     result: dict[str, Any] = {
         "xvals": cell_xvals,
         "occupancy": occupancy,
@@ -163,11 +219,23 @@ def get_kde_occupancy_for_single_cell(
         "pdf_available": pdf_available,
     }
 
-    pdf_occ_common = normalize_pdf(x_vals, occupied_kde.evaluate(x_vals))
-    pdf_avail_common = normalize_pdf(x_vals, available_kde.evaluate(x_vals))
+    if common_xvals is None:
+        common_xvals = cell_xvals
+
     occ_common, pdf_occ_common, pdf_avail_common = pdf_ratio(
-        x_vals, pdf_occ_common, pdf_avail_common
+        common_xvals, occupied_kde.evaluate(common_xvals), available_kde.evaluate(common_xvals)
     )
+    # Mask x_vals outside this cell's available-data support to NaN so that
+    # nanmean across cells is naturally weighted by coverage and KDE tail
+    # extrapolation beyond the data range cannot corrupt the aggregate.
+    out_of_support = common_xvals > cell_hi
+    occ_common = occ_common.copy()
+    occ_common[out_of_support] = np.nan
+    pdf_occ_common = pdf_occ_common.copy()
+    pdf_occ_common[out_of_support] = np.nan
+    pdf_avail_common = pdf_avail_common.copy()
+    pdf_avail_common[out_of_support] = np.nan
+
     result["occupancy_common"] = occ_common
     result["pdf_occupied_common"] = pdf_occ_common
     result["pdf_available_common"] = pdf_avail_common
@@ -180,7 +248,7 @@ def _compute_mode_kde_occupancy(
     cell_id_map: dict[str, list[str]],
     distance_kde_dict: dict[str, dict[str, gaussian_kde]],
     # combined_available_kde: dict[str, gaussian_kde],
-    x_vals: np.ndarray,
+    common_xvals: np.ndarray,
     bandwidth: str | float | None,
     num_points: int,
     num_workers: int | None = None,
@@ -199,6 +267,7 @@ def _compute_mode_kde_occupancy(
     all_occupancy_list: list[np.ndarray] = []  # shape: (n_cells, n_points)
 
     cell_ids = cell_id_map.get(structure_id, [])
+
     with ThreadPoolExecutor(max_workers=num_workers) as executor:
         futures = {
             executor.submit(
@@ -206,7 +275,7 @@ def _compute_mode_kde_occupancy(
                 cell_id,
                 mode,
                 distance_kde_dict,
-                x_vals,
+                common_xvals,
                 bandwidth,
                 num_points,
             ): cell_id
@@ -245,16 +314,16 @@ def _compute_mode_kde_occupancy(
         arr_for_env = np.where(np.isnan(all_occ_arr), 0.0, all_occ_arr)
         env_lo, env_hi, _, _ = pointwise_envelope(arr_for_env, alpha=0.05)
     else:
-        all_occ_arr = np.empty((0, len(x_vals)))
-        mean_occ = np.zeros_like(x_vals)
-        std_occ = np.zeros_like(x_vals)
-        env_lo = np.zeros_like(x_vals)
-        env_hi = np.zeros_like(x_vals)
+        all_occ_arr = np.empty((0, len(common_xvals)))
+        mean_occ = np.zeros_like(common_xvals)
+        std_occ = np.zeros_like(common_xvals)
+        env_lo = np.zeros_like(common_xvals)
+        env_hi = np.zeros_like(common_xvals)
 
     return {
         "individual": individual,
         "combined": {
-            "xvals": x_vals,
+            "xvals": common_xvals,
             "occupancy": mean_occ,
             # "occupancy_pooled": occupancy_pooled,
             "std_occupancy": std_occ,
@@ -267,6 +336,52 @@ def _compute_mode_kde_occupancy(
     }
 
 
+def _get_common_xvals_from_kde(
+    distance_kde_dict: dict[str, dict[str, gaussian_kde]],
+    cell_id_map: dict[str, list[str]],
+    num_points: int = 100,
+    pct_min_cells: float = 95,
+    x_min: float = 0,
+    x_max: float | None = None,
+) -> np.ndarray:
+    """
+    Determine a common x-axis grid for occupancy evaluation based on the data range of cells.
+
+    Parameters
+    ----------
+    distance_kde_dict
+        Dictionary with cell IDs as keys and mode-specific KDEs as values
+    cell_id_map
+        Mapping from structure IDs to lists of cell IDs
+    num_points
+        Number of points for the x-axis grid
+    pct_min_cells
+        Fraction of cells that must have available data at a given distance for it to be included
+        in the common grid.
+    x_min
+        Minimum x value for the grid (default 0)
+    x_max
+        Optional maximum x value for the grid. If None, it will be determined from the data
+        percentiles to ensure sufficient coverage across cells.
+
+    Returns
+    -------
+    :
+        A common x-axis grid (numpy array) spanning the range of available distances across cells
+        with sufficient data.
+    """
+    x_max_values = []
+    for _, cell_ids in cell_id_map.items():
+        for cell_id in cell_ids:
+            x_max_values.append(distance_kde_dict[cell_id]["available"].dataset.max())
+    x_max_values = np.array(x_max_values)
+    x_max_calc = np.percentile(x_max_values, pct_min_cells)
+    x_max_from_cells = np.max(x_max_values[x_max_values <= x_max_calc])
+    x_max_to_use = min(x_max_from_cells, x_max) if x_max is not None else x_max_calc
+
+    return np.linspace(x_min, x_max_to_use, num_points)
+
+
 def get_kde_occupancy_dict(
     distance_kde_dict: dict[str, dict[str, gaussian_kde]],
     channel_map: dict[str, str],
@@ -277,8 +392,9 @@ def get_kde_occupancy_dict(
     bandwidth: str | float | None = None,
     num_cells: int | None = None,
     num_points: int = 100,
-    x_min: float | None = 0,
+    x_min: float = 0,
     x_max: float | None = None,
+    pct_min_cells: float = 0.05,
     num_workers: int | None = None,
 ) -> dict[str, dict[str, dict[str, Any]]]:
     """
@@ -309,6 +425,9 @@ def get_kde_occupancy_dict(
         Minimum x value for occupancy evaluation. Default is 0
     x_max
         Maximum x value for occupancy evaluation. Default is None
+    pct_min_cells
+        Minimum percentage of cells that must have data at a given distance for it to be included in
+        the common x-axis grid (default 0.05 for 5%)
     num_workers
         Number of worker threads for parallel per-cell KDE evaluation.
         ``None`` lets :class:`~concurrent.futures.ThreadPoolExecutor` choose
@@ -336,7 +455,7 @@ def get_kde_occupancy_dict(
     )
 
     if not recalculate and save_path is not None:
-        cached = _load_cached_kde_occupancy(save_path, channel_map)
+        cached = _load_cached_occupancy(save_path, channel_map)
         if cached is not None:
             return cached
 
@@ -348,13 +467,8 @@ def get_kde_occupancy_dict(
                     cell_ids, size=num_cells, replace=False
                 ).tolist()
 
-    _, x_min_calc, x_max_calc = _build_combined_available_kde(
-        distance_kde_dict, cell_id_map, channel_map, bandwidth
-    )
-    x_vals = np.linspace(
-        x_min if x_min is not None else x_min_calc,
-        x_max if x_max is not None else x_max_calc,
-        num_points,
+    common_x_vals = _get_common_xvals_from_kde(
+        distance_kde_dict, cell_id_map, num_points, pct_min_cells, x_min, x_max
     )
 
     kde_occupancy_dict = {
@@ -364,7 +478,7 @@ def get_kde_occupancy_dict(
             cell_id_map,
             distance_kde_dict,
             # combined_available_kde,
-            x_vals,
+            common_x_vals,
             bandwidth,
             num_points,
             num_workers=num_workers,
@@ -385,7 +499,7 @@ def get_occupancy_ks_test_df(
     combined_occupancy_dict: dict[str, dict[str, dict[str, dict[str, np.ndarray]]]],
     baseline_mode: str = "SLC25A17",
     significance_level: float = 0.05,
-    save_dir: Path | None = None,
+    results_dir: Path | None = None,
     recalculate: bool = True,
 ) -> pd.DataFrame:
     """
@@ -403,7 +517,7 @@ def get_occupancy_ks_test_df(
         The packing mode to use as the baseline for comparison
     significance_level
         Significance level for the KS test
-    save_dir
+    results_dir
         Directory to save the results
     recalculate
         Whether to recalculate even if results exist
@@ -415,8 +529,8 @@ def get_occupancy_ks_test_df(
         packing_mode, and ks_observed
     """
     file_name = "occupancy_ks_observed_combined_df.parquet"
-    if not recalculate and save_dir is not None:
-        file_path = save_dir / file_name
+    if not recalculate and results_dir is not None:
+        file_path = results_dir / file_name
         if file_path.exists():
             logger.info(f"Loading saved KS DataFrame from {file_path.relative_to(PROJECT_ROOT)}")
             return pd.read_parquet(file_path)
@@ -456,8 +570,8 @@ def get_occupancy_ks_test_df(
                 }
             )
     ks_test_df = pd.DataFrame.from_records(record_list)
-    if save_dir is not None:
-        file_path = save_dir / file_name
+    if results_dir is not None:
+        file_path = results_dir / file_name
         ks_test_df.to_parquet(file_path, index=False)
         logger.info(f"Saved KS observed DataFrame to {file_path.relative_to(PROJECT_ROOT)}")
 

@@ -1,0 +1,59 @@
+{
+    "packing_id": "ER_peroxisome",
+    "structure_id": "SEC61B",
+    "condition": "test_mixed_rule",
+    "generate_recipes": true,
+    "generate_configs": true,
+    "recipe_template_path": "data/templates/recipes/test_mixed_rule/ER_peroxisome_recipe_template.json",
+    "config_template_path": "data/templates/configs/test_mixed_rule/ER_peroxisome_config_template.json",
+    "use_additional_struct": true,
+    "use_mean_cell": false,
+    "use_cells_in_8d_sphere": true,
+    "gradient_structure_name": "peroxisome",
+    "get_counts_from_data": false,
+    "get_size_from_data": false,
+    "get_bounding_box_from_mesh": true,
+    "num_processes": 4,
+    "skip_completed": true,
+    "dry_run": false,
+    "recipe_data": {
+        "random": {},
+        "nucleus_gradient": {
+            "gradients": [
+                "nucleus_gradient"
+            ]
+        },
+        "membrane_gradient": {
+            "gradients": [
+                "membrane_gradient"
+            ]
+        },
+        "apical_gradient": {
+            "gradients": [
+                "apical_gradient"
+            ]
+        },
+        "struct_gradient": {
+            "gradients": [
+                "struct_gradient"
+            ]
+        },
+        "interpolated": {
+            "gradients": [
+                "nucleus_gradient",
+                "struct_gradient"
+            ],
+            "gradient_weights": {
+                "nucleus_gradient": 0.01,
+                "struct_gradient": 0.99
+            }
+        }
+    },
+    "packings_to_run": {
+        "rules": [
+            "nucleus_gradient",
+            "struct_gradient",
+            "interpolated"
+        ]
+    }
+}

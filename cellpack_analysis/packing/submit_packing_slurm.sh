@@ -68,15 +68,15 @@ set -euo pipefail
 
 # ----------------------------  defaults  ------------------------------------
 BATCH_SIZE=8
-PARTITION=""
+PARTITION="aics"
 TIME="00:30:00"
-MEM="16G"
+MEM="24G"
 CPUS="4"
 JOB_NAME="cellpack"
 ORCH_TIME="1-00:00:00"
 ORCH_CPUS="4"
 ORCH_MEM="16G"
-ORCH_PARTITION=""
+ORCH_PARTITION="aics"
 CONFIG=""
 VENV=""
 DRY_RUN=""
@@ -98,7 +98,7 @@ while [[ $# -gt 0 ]]; do
         -t|--time)         TIME="$2";          shift 2 ;;
         -m|--mem)          MEM="$2";           shift 2 ;;
         --cpus)            CPUS="$2";          shift 2 ;;
-        --job-name)        JOB_NAME="$2";      shift 2 ;;
+        -n|--job-name)        JOB_NAME="$2";      shift 2 ;;
         --orch-time)       ORCH_TIME="$2";     shift 2 ;;
         --orch-mem)        ORCH_MEM="$2";      shift 2 ;;
         --orch-partition)  ORCH_PARTITION="$2"; shift 2 ;;

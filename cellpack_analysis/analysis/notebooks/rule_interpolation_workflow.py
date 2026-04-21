@@ -92,6 +92,8 @@ base_results_dir = project_root / "results"
 results_dir = make_dir(base_results_dir / RESULT_SUBFOLDER)
 
 figures_dir = make_dir(results_dir / FIGURE_SUBFOLDER)
+
+log_dir = make_dir(results_dir / "logs/")
 # %% [markdown]
 # ### Distance measures to use
 # Options: "nucleus", "z", "scaled_nucleus", "membrane"
@@ -251,42 +253,6 @@ for dm in occupancy_distance_measures:
         fig_params={"dpi": 300, "figsize": (3.5, 2.5)},
     )
 # %% [markdown]
-# ## Full-data rule interpolation fit
-# %% [markdown]
-# ### Fit NNLS interpolation on all baseline cells
-fit_result = rule_interpolation.fit_rule_interpolation(
-    occupancy_dict=combined_kde_occupancy_dict,
-    channel_map=channel_map,
-    baseline_mode=baseline_mode,
-    distance_measures=occupancy_distance_measures,
-)
-# %% [markdown]
-# ### Plot fit overlay per distance measure
-for dm in occupancy_distance_measures:
-    interp_figures_dir = make_dir(figures_dir / dm)
-    for plot_type in ("individual", "joint"):
-        fig_fit, ax_fit = visualization.plot_rule_interpolation_fit(
-            fit_result=fit_result,
-            occupancy_dict=combined_kde_occupancy_dict,
-            channel_map=channel_map,
-            baseline_mode=baseline_mode,
-            distance_measure=dm,
-            plot_type=plot_type,
-            figures_dir=interp_figures_dir,
-            xlim=occupancy_params[dm]["xlim"],
-            ylim=occupancy_params[dm]["ylim"],
-            suffix=suffix,
-            save_format=save_format,
-        )
-        # display(fig_fit)
-# %% [markdown]
-# ### Log full-data fit coefficients
-rule_interpolation.log_rule_interpolation_coeffs(
-    fit_result=fit_result,
-    baseline_mode=baseline_mode,
-    file_path=results_dir / f"{STRUCTURE_NAME}_rule_interpolation_coefficients{suffix}.log",
-)
-# %% [markdown]
 # ## Cross-validation
 # %% [markdown]
 # ### Run k-fold cross-validation on baseline cell IDs
@@ -331,7 +297,7 @@ display(fig_coef)
 # ### Log CV summary
 rule_interpolation.log_cv_summary(
     cv_result=cv_result,
-    file_path=results_dir / f"{STRUCTURE_NAME}_rule_interpolation_cv_summary{suffix}.log",
+    file_path=log_dir / f"{STRUCTURE_NAME}_rule_interpolation_cv_summary{suffix}.log",
 )
 # %% [markdown]
 # ### Plot CV mean-coefficient fit overlay

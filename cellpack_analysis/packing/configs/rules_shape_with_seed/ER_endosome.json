@@ -37,27 +37,11 @@
             "gradients": [
                 "struct_gradient"
             ]
-        },
-        "interpolated": {
-            "gradients": [
-                "nucleus_gradient",
-                "membrane_gradient",
-                "struct_gradient"
-            ],
-            "gradient_weights": {
-                "nucleus_gradient": 0.1715,
-                "membrane_gradient": 0.2979,
-                "struct_gradient": 0.5306
-            }
         }
     },
     "packings_to_run": {
         "rules": [
-            "random",
-            "nucleus_gradient",
-            "membrane_gradient",
-            "apical_gradient",
-            "struct_gradient"
+            "random"
         ]
     }
 }

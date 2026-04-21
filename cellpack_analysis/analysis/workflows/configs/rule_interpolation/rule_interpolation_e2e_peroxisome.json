@@ -1,10 +1,10 @@
 {
     "name": "rule_interpolation_e2e",
     "structure_id": "SLC25A17",
+    "simulated_structure_id": "SLC25A17",
     "packing_id": "peroxisome",
     "structure_name": "peroxisome",
     "packing_output_folder": "packing_outputs/8d_sphere_data/rules_shape_with_seed/",
-    "output_path": "interpolation_analysis/rules_shape_with_seed",
     "channel_map": {
         "SLC25A17": "SLC25A17",
         "random": "SLC25A17",
@@ -20,7 +20,7 @@
     "occupancy_params": {
         "nucleus": {
             "xlim": 6,
-            "ylim": 3.2,
+            "ylim": 3,
             "bandwidth": 0.2
         },
         "z": {
@@ -43,23 +43,17 @@
         "apical_gradient": "apical_gradient"
     },
     "packing_config_scope": "joint",
-    "slurm_kwargs": {},
+    "slurm_kwargs": {
+        "p": "aics_gpu",
+        "n": "cellPACK_peroxisome"
+    },
     "validation_distance_measures": [
-        "nearest",
-        "pairwise",
         "nucleus",
         "z"
     ],
     "validation_analysis_steps": [
-        "load_common_data",
-        "calculate_distances",
-        "run_emd_analysis",
-        "run_ks_analysis",
-        "run_pairwise_envelope_test",
-        "run_occupancy_analysis",
-        "run_occupancy_emd_analysis",
-        "run_occupancy_ks_analysis",
-        "run_occupancy_pairwise_envelope_test"
+        "run_occupancy_analysis"
     ],
+    "skip_mixed_rule_validation": true,
     "recalculate": false
 }

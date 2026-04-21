@@ -32,18 +32,6 @@
             "gradients": [
                 "apical_gradient"
             ]
-        },
-        "interpolated": {
-            "gradients": [
-                "nucleus_gradient",
-                "membrane_gradient",
-                "apical_gradient"
-            ],
-            "gradient_weights": {
-                "nucleus_gradient": 0.3376,
-                "membrane_gradient": 0.2396,
-                "apical_gradient": 0.4228
-            }
         }
     },
     "packings_to_run": {

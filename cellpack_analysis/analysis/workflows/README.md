@@ -120,7 +120,6 @@ the config:
 | `run_occupancy_analysis` | Occupancy ratio analysis (discrete histogram or KDE) |
 | `run_occupancy_emd_analysis` | EMD on occupancy ratios + pairwise EMD matrix plots |
 | `run_occupancy_pairwise_envelope_test` | Pairwise Monte Carlo rank-envelope test on occupancy ratio curves |
-| `run_occupancy_interpolation_analysis` | Baseline interpolation for KDE occupancy (KDE mode only) |
 
 ### Example step lists
 

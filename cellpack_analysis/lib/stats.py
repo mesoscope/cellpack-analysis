@@ -5,7 +5,7 @@ from typing import Any, Literal
 import numpy as np
 import pandas as pd
 from scipy import integrate
-from scipy.stats import false_discovery_control
+from scipy.stats import false_discovery_control, mannwhitneyu, norm, wilcoxon
 
 EnvelopeType = Literal["pointwise", "rank"]
 
@@ -102,7 +102,9 @@ def normalize_pdf(xvals: np.ndarray, density: np.ndarray) -> np.ndarray:
         Normalized density
     """
     integral = integrate.trapezoid(density, xvals)
-    return density / integral if integral != 0 else density
+    if integral == 0:
+        return np.full_like(density, np.nan, dtype=float)
+    return density / integral
 
 
 def pdf_ratio(
@@ -125,20 +127,20 @@ def pdf_ratio(
     :
         Tuple containing the density ratio, normalized density1, and normalized density2
     """
-    # regularize
     reg = 1e-10
-    density1_reg = np.maximum(density1, reg)
-    density2_reg = np.maximum(density2, reg)
 
-    # normalize densities
-    density1_norm = normalize_pdf(xvals, density1_reg)
-    density2_norm = normalize_pdf(xvals, density2_reg)
+    # normalize first so regularization doesn't bias the normalization integral
+    density1_norm = normalize_pdf(xvals, density1)
+    density2_norm = normalize_pdf(xvals, density2)
 
-    # Calculate ratio in log space
-    log_ratio = np.log(density1_norm) - np.log(density2_norm)
+    # Calculate ratio in log space, applying floor only inside the log
+    log_ratio = np.log(np.maximum(density1_norm, reg)) - np.log(np.maximum(density2_norm, reg))
     density_ratio = np.exp(log_ratio)
 
-    density_ratio = np.nan_to_num(density_ratio, nan=0.0, posinf=0.0, neginf=0.0)
+    # nan=nan: NaN arises when normalize_pdf returns all-NaN (zero-integral input);
+    #   propagate honestly so downstream nanmean ignores these cells.
+    # posinf=nan: denominator→0 with non-zero numerator → unreliable, propagate NaN
+    density_ratio = np.nan_to_num(density_ratio, nan=np.nan, posinf=np.nan, neginf=0.0)
 
     return density_ratio, density1_norm, density2_norm
 
@@ -1138,3 +1140,144 @@ def pairwise_envelope_test(
         "statistic": statistic,
         "envelope_type": envelope_type,
     }
+
+
+def calculate_model_comparison(
+    emd_with: np.ndarray,
+    emd_without: np.ndarray,
+    k_with: int,
+    k_without: int,
+) -> dict[str, float | str]:
+    """Compare two EMD models using AIC (Burnham & Anderson, 2002).
+
+    RSS = Σ(emd²) treats EMD values as residuals from zero (perfect occupancy match).
+    Each model uses k_eff = k + 1 (error variance counted as a free parameter).
+
+    Interpretation of ΔAIC:
+        0-2:  Substantial support (essentially as good as best model)
+        4-7:  Considerably less support
+        >10:  Essentially no support
+
+    Parameters
+    ----------
+    emd_with
+        EMD values for the model with the colocalization structure.
+    emd_without
+        EMD values for the model without the colocalization structure.
+    k_with
+        Number of model parameters for the model with structure.
+    k_without
+        Number of model parameters for the model without structure.
+
+    Returns
+    -------
+    :
+        Dict with AIC values, ΔAIC, Akaike weights, evidence ratio, best model
+        label, and a ΔAIC interpretation string.
+    """
+    rss_with = float(np.sum(emd_with**2))
+    rss_without = float(np.sum(emd_without**2))
+    n_with = len(emd_with)
+    n_without = len(emd_without)
+
+    def _aic(n: int, k: int, rss: float) -> float:
+        k_eff = k + 1
+        return n * np.log(rss / n) + 2 * k_eff
+
+    aic_with = _aic(n_with, k_with, rss_with)
+    aic_without = _aic(n_without, k_without, rss_without)
+
+    min_aic = min(aic_with, aic_without)
+    delta_aic_with = aic_with - min_aic
+    delta_aic_without = aic_without - min_aic
+
+    raw_with = np.exp(-0.5 * delta_aic_with)
+    raw_without = np.exp(-0.5 * delta_aic_without)
+    total = raw_with + raw_without
+    w_aic_with = raw_with / total
+    w_aic_without = raw_without / total
+
+    er_aic = max(w_aic_with, w_aic_without) / max(min(w_aic_with, w_aic_without), 1e-16)
+    best_aic = "with structure" if aic_with < aic_without else "without structure"
+
+    loser_delta = max(delta_aic_with, delta_aic_without)
+    if loser_delta <= 2:
+        interpretation = "Both models have substantial support"
+    elif loser_delta <= 7:
+        interpretation = "Considerably less support for losing model"
+    elif loser_delta <= 10:
+        interpretation = "Little support for losing model"
+    else:
+        interpretation = "Essentially no support for losing model"
+
+    return {
+        "aic_with": aic_with,
+        "aic_without": aic_without,
+        "delta_aic_with": delta_aic_with,
+        "delta_aic_without": delta_aic_without,
+        "w_aic_with": w_aic_with,
+        "w_aic_without": w_aic_without,
+        "er_aic": er_aic,
+        "best_model_aic": best_aic,
+        "delta_aic_interpretation": interpretation,
+    }
+
+
+def calculate_emd_effect_size(
+    emd_with: np.ndarray,
+    emd_without: np.ndarray,
+    test: Literal["mannwhitney", "wilcoxon"] = "mannwhitney",
+    **kwargs: Any,
+) -> tuple[float, float, float, float]:
+    """Compute signed Cohen's d and a rank-based test for two EMD distributions.
+
+    Negative d: EMD lower with structure (better fit).
+    Positive d: EMD higher with structure (worse fit).
+
+    For ``"mannwhitney"``, rank-biserial r is computed as ``r = 1 - 2U/(n1*n2)``.
+    For ``"wilcoxon"`` (paired), rank-biserial r is computed as ``r = Z/sqrt(n)``
+    where Z is derived from the p-value and signed by ``mean(emd_with - emd_without)``.
+
+    Parameters
+    ----------
+    emd_with
+        EMD values for the model with structure.
+    emd_without
+        EMD values for the model without structure.
+    test
+        Statistical test to use: ``"mannwhitney"`` (default, independent samples)
+        or ``"wilcoxon"`` (paired signed-rank test).
+    **kwargs
+        Additional keyword arguments passed to the selected scipy test function
+        (``scipy.stats.mannwhitneyu`` or ``scipy.stats.wilcoxon``).
+
+    Returns
+    -------
+    :
+        ``(cohens_d, p_value, test_stat, r_effect)``
+    """
+    n_with = len(emd_with)
+    n_without = len(emd_without)
+
+    pooled_std = np.sqrt(
+        ((n_with - 1) * np.var(emd_with, ddof=1) + (n_without - 1) * np.var(emd_without, ddof=1))
+        / (n_with + n_without - 2)
+    )
+    signed_d = (
+        0.0 if pooled_std == 0 else float((np.mean(emd_with) - np.mean(emd_without)) / pooled_std)
+    )
+
+    if test == "mannwhitney":
+        kwargs.setdefault("alternative", "two-sided")
+        test_result = mannwhitneyu(emd_with, emd_without, **kwargs)
+        r_effect = 1.0 - 2.0 * float(test_result.statistic) / (n_with * n_without)
+        return signed_d, float(test_result.pvalue), float(test_result.statistic), r_effect
+    elif test == "wilcoxon":
+        test_result = wilcoxon(emd_with, emd_without, **kwargs)
+        n = len(emd_with)
+        z = float(norm.ppf(1.0 - float(test_result.pvalue) / 2.0))  # type: ignore
+        sign = float(np.sign(np.mean(emd_with - emd_without))) or 1.0
+        r_effect = sign * z / np.sqrt(n)
+        return signed_d, float(test_result.pvalue), float(test_result.statistic), r_effect  # type: ignore
+    else:
+        raise ValueError(f"Invalid test: {test!r}. Must be 'mannwhitney' or 'wilcoxon'.")
