@@ -49,6 +49,8 @@ nuc_volume = df_filtered["NUC_shape_volume"] * (
 # Volume and radius per unit (NaN where count == 0 or volume == 0)
 volume_per_unit = str_volume.where(counts > 0) / counts.where(counts > 0)
 unit_radius = (volume_per_unit.where(volume_per_unit > 0) / (4 / 3 * np.pi)) ** (1 / 3)
+mem_height = df_filtered["MEM_position_depth"] * PIXEL_SIZE_IN_UM
+nuc_height = df_filtered["NUC_position_depth"] * PIXEL_SIZE_IN_UM
 
 # Sphericity: 1 = perfect sphere; NaN where volume == 0
 mem_sphericity = (
@@ -68,8 +70,8 @@ df_stats = pd.DataFrame(
         "cell_stage": df_filtered["cell_stage"].values,
         "cell_volume": mem_volume.values,
         "nuc_volume": nuc_volume.values,
-        "cell_height": df_filtered["MEM_position_depth"].values,
-        "nuc_height": df_filtered["NUC_position_depth"].values,
+        "cell_height": mem_height.values,
+        "nuc_height": nuc_height.values,
         "mem_sphericity": mem_sphericity.values,
         "nuc_sphericity": nuc_sphericity.values,
     }
@@ -90,7 +92,7 @@ for gene in structures_of_interest:
 # %% [markdown]
 # ## Save updated dataframe
 df_stats_path = get_datadir_path() / "structure_stats.parquet"
-
+# %%
 df_stats.to_parquet(df_stats_path)
 logger.info("Saved structure stats to %s", df_stats_path)
 
