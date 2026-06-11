@@ -328,21 +328,31 @@ def create_csv_files(
                 "Dataset": config.dataset,
                 "Condition": config.condition,
                 "Experiment": config.experiment,
-                "Cell Volume (µm³)": np.round(stats["cell_volume"], 2)
-                if stats.get("cell_volume") is not None
-                else None,
-                "Nucleus Volume (µm³)": np.round(stats["nuc_volume"], 2)
-                if stats.get("nuc_volume") is not None
-                else None,
-                "Cell Height (µm)": np.round(stats["cell_height"], 2)
-                if stats.get("cell_height") is not None
-                else None,
-                "Nucleus Height (µm)": np.round(stats["nuc_height"], 2)
-                if stats.get("nuc_height") is not None
-                else None,
-                "Cell Sphericity": np.round(stats["mem_sphericity"], 4)
-                if stats.get("mem_sphericity") is not None
-                else None,
+                "Cell Volume (µm³)": (
+                    np.round(stats["cell_volume"], 2)
+                    if stats.get("cell_volume") is not None
+                    else None
+                ),
+                "Nucleus Volume (µm³)": (
+                    np.round(stats["nuc_volume"], 2)
+                    if stats.get("nuc_volume") is not None
+                    else None
+                ),
+                "Cell Height (µm)": (
+                    np.round(stats["cell_height"], 2)
+                    if stats.get("cell_height") is not None
+                    else None
+                ),
+                "Nucleus Height (µm)": (
+                    np.round(stats["nuc_height"], 2)
+                    if stats.get("nuc_height") is not None
+                    else None
+                ),
+                "Cell Sphericity": (
+                    np.round(stats["mem_sphericity"], 4)
+                    if stats.get("mem_sphericity") is not None
+                    else None
+                ),
                 "File Type": "simularium",
                 "File Path": simularium_s3_path,
                 "Thumbnail": thumbnail_s3_path,
