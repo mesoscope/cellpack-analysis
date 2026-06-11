@@ -94,6 +94,9 @@ class DataReleaseConfig:
         # Output name
         self.output_name = self.config.get("output_name", "cellpack_simularium")
 
+        # Dry run mode
+        self.dry_run: bool = self.config.get("dry_run", False)
+
     def _setup_paths(self):
         """Set directory paths."""
         self.base_datadir = get_datadir_path()

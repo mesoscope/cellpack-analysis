@@ -22,6 +22,7 @@ import logging
 import time
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
@@ -39,6 +40,18 @@ from cellpack_analysis.lib.simularium_utils import (
 logger = logging.getLogger(__name__)
 
 
+def extract_cell_id(file_stem: str, packing_id: str, condition: str) -> str:
+    """Extract cell_id from a simularium file stem.
+
+    Handles stems of the form:
+        results_{packing_id}_{condition}_{cell_id}_seed_{seed}
+        results_{packing_id}_{condition}_{cell_id}
+    """
+    prefix = f"results_{packing_id}_{condition}_"
+    remainder = file_stem.removeprefix(prefix)
+    return remainder.rsplit("_seed_", 1)[0]
+
+
 def upload_meshes(config: DataReleaseConfig) -> None:
     """
     Upload meshes to S3 for all structures in the configuration.
@@ -52,6 +65,14 @@ def upload_meshes(config: DataReleaseConfig) -> None:
 
     for structure_config in config.structures:
         structure_id = structure_config["structure_id"]
+
+        if config.dry_run:
+            logger.info(
+                f"[DRY RUN] Would upload meshes for structure: {structure_id} "
+                f"to bucket: {config.s3_bucket}"
+            )
+            continue
+
         logger.info(f"Processing meshes for structure: {structure_id}")
 
         count = upload_meshes_for_structure(
@@ -113,6 +134,7 @@ def collect_simularium_files(config: DataReleaseConfig) -> list[dict]:
                         "structure_id": structure_id,
                         "structure_name": structure_name,
                         "packing_id": packing_id,
+                        "condition": config.condition,
                         "rule": rule,
                         "figure_path": figure_path,
                         "channel_colors": channel_colors.copy(),
@@ -126,6 +148,7 @@ def collect_simularium_files(config: DataReleaseConfig) -> list[dict]:
 
 def update_simularium_files_locally(
     files_to_process: list[dict],
+    dry_run: bool = False,
 ) -> None:
     """
     Update simularium files locally (mesh URLs and colors).
@@ -134,12 +157,20 @@ def update_simularium_files_locally(
     ----------
     files_to_process
         List of file information dictionaries
+    dry_run
+        If True, log operations without modifying files
     """
     logger.info("Step 2: Updating simularium files locally")
 
+    if dry_run:
+        for file_info in files_to_process:
+            logger.info(f"[DRY RUN] Would update simularium file: {file_info['file_path']}")
+        logger.info(f"[DRY RUN] Would update {len(files_to_process)} simularium files")
+        return
+
     for file_info in tqdm(files_to_process, desc="Updating simularium files"):
         file_path = file_info["file_path"]
-        cell_id = file_path.stem.split("_seed")[0].split("_")[-1]
+        cell_id = extract_cell_id(file_path.stem, file_info["packing_id"], file_info["condition"])
 
         # Update mesh URLs
         update_simularium_mesh_urls(file_path, file_info["mesh_url"], cell_id)
@@ -164,6 +195,14 @@ def upload_simularium_files_to_s3(config: DataReleaseConfig, files_to_process: l
         List of file information dictionaries
     """
     logger.info("Step 3: Uploading simularium files to S3")
+
+    if config.dry_run:
+        for file_info in files_to_process:
+            file_path = file_info["file_path"]
+            s3_key = file_path.relative_to(config.base_datadir).as_posix()
+            logger.info(f"[DRY RUN] Would upload {file_path} to s3://{config.s3_bucket}/{s3_key}")
+        logger.info(f"[DRY RUN] Would upload {len(files_to_process)} simularium files to S3")
+        return
 
     s3_client = get_s3_client()
     uploaded_count = 0
@@ -196,12 +235,19 @@ def generate_and_upload_all_thumbnails(
     """
     logger.info("Step 4: Generating and uploading thumbnails")
 
+    if config.dry_run:
+        for file_info in files_to_process:
+            file_path = file_info["file_path"]
+            logger.info(f"[DRY RUN] Would generate and upload thumbnail for: {file_path.stem}")
+        logger.info(f"[DRY RUN] Would generate {len(files_to_process)} thumbnails")
+        return
+
     s3_client = get_s3_client()
     generated_count = 0
 
     for file_info in tqdm(files_to_process, desc="Generating thumbnails"):
         file_path = file_info["file_path"]
-        cell_id = file_path.stem.split("_seed")[0].split("_")[-1]
+        cell_id = extract_cell_id(file_path.stem, file_info["packing_id"], file_info["condition"])
 
         thumbnail_url = generate_and_upload_thumbnail(
             s3_client=s3_client,
@@ -249,7 +295,7 @@ def create_csv_files(
 
     for file_info in tqdm(files_to_process, desc="Building CSV records"):
         file_path = file_info["file_path"]
-        cell_id = file_path.stem.split("_seed")[0].split("_")[-1]
+        cell_id = extract_cell_id(file_path.stem, file_info["packing_id"], file_info["condition"])
 
         # Build S3 paths
         simularium_s3_key = file_path.relative_to(config.base_datadir).as_posix()
@@ -266,9 +312,13 @@ def create_csv_files(
         # Get structure stats
         stats = _get_cell_stats(cell_id, file_info["structure_id"], structure_stats_df)
 
+        short_rule_name = (
+            file_info["rule"].split("_")[0] if "_" in file_info["rule"] else file_info["rule"]
+        )
+
         records.append(
             {
-                "File Name": f"{file_info['packing_id']}_{file_info['rule']}_{cell_id}",
+                "File Name": f"{cell_id}_{short_rule_name}_{file_info['packing_id']}",
                 "Cell ID": cell_id,
                 "Rule": file_info["rule"],
                 "Packing ID": file_info["packing_id"],
@@ -278,11 +328,21 @@ def create_csv_files(
                 "Dataset": config.dataset,
                 "Condition": config.condition,
                 "Experiment": config.experiment,
-                "Cell Volume": stats["cell_volume"],
-                "Nucleus Volume": stats["nuc_volume"],
-                "Cell Height": stats["cell_height"],
-                "Nucleus Height": stats["nuc_height"],
-                "Cell Sphericity": stats["sphericity"],
+                "Cell Volume (µm³)": np.round(stats["cell_volume"], 2)
+                if stats.get("cell_volume") is not None
+                else None,
+                "Nucleus Volume (µm³)": np.round(stats["nuc_volume"], 2)
+                if stats.get("nuc_volume") is not None
+                else None,
+                "Cell Height (µm)": np.round(stats["cell_height"], 2)
+                if stats.get("cell_height") is not None
+                else None,
+                "Nucleus Height (µm)": np.round(stats["nuc_height"], 2)
+                if stats.get("nuc_height") is not None
+                else None,
+                "Cell Sphericity": np.round(stats["mem_sphericity"], 4)
+                if stats.get("mem_sphericity") is not None
+                else None,
                 "File Type": "simularium",
                 "File Path": simularium_s3_path,
                 "Thumbnail": thumbnail_s3_path,
@@ -292,7 +352,17 @@ def create_csv_files(
     # Save main CSV
     df = pd.DataFrame.from_records(records)
     csv_path = config.csv_output_dir / f"{config.output_name}_paths.csv"
-    df.to_csv(csv_path, index=False)
+
+    if config.dry_run:
+        logger.info(f"[DRY RUN] Would write {len(df)} rows to: {csv_path}")
+        if config.create_metadata_csv:
+            metadata_csv_path = config.csv_output_dir / f"{config.output_name}_metadata.csv"
+            logger.info(f"[DRY RUN] Would write metadata CSV to: {metadata_csv_path}")
+        if config.upload_csv_to_s3:
+            logger.info(f"[DRY RUN] Would upload CSV files to s3://{config.s3_bucket}/")
+        return
+
+    df.to_csv(csv_path, index=False, encoding="utf-8")
     logger.info(f"Saved paths CSV: {csv_path}")
 
     # Create metadata CSV if enabled
@@ -341,7 +411,7 @@ def _get_cell_stats(
         "nuc_volume": _get("nuc_volume"),
         "cell_height": _get("cell_height"),
         "nuc_height": _get("nuc_height"),
-        "sphericity": _get("sphericity"),
+        "mem_sphericity": _get("mem_sphericity"),
     }
 
 
@@ -364,24 +434,32 @@ def update_csv_cell_stats(config: DataReleaseConfig, structure_stats_df: pd.Data
         logger.error(f"CSV file not found: {csv_path}. Run 'create_csv' first.")
         return
 
+    if config.dry_run:
+        df = pd.read_csv(csv_path)
+        logger.info(f"[DRY RUN] Would update cell stats for {len(df)} rows in: {csv_path}")
+        if config.upload_csv_to_s3:
+            logger.info(f"[DRY RUN] Would upload updated CSV to s3://{config.s3_bucket}/")
+        return
+
     logger.info(f"Updating cell stats in: {csv_path}")
     df = pd.read_csv(csv_path)
 
-    col_map = {
-        "Count": "count",
-        "Cell Volume": "cell_volume",
-        "Nucleus Volume": "nuc_volume",
-        "Cell Height": "cell_height",
-        "Nucleus Height": "nuc_height",
-        "Cell Sphericity": "sphericity",
+    col_rounding = {
+        "Count": ("count", None),
+        "Cell Volume (µm³)": ("cell_volume", 2),
+        "Nucleus Volume (µm³)": ("nuc_volume", 2),
+        "Cell Height (µm)": ("cell_height", 2),
+        "Nucleus Height (µm)": ("nuc_height", 2),
+        "Cell Sphericity": ("mem_sphericity", 4),
     }
 
     for idx, row in tqdm(df.iterrows(), total=len(df), desc="Updating cell stats"):
         stats = _get_cell_stats(str(row["Cell ID"]), str(row["Structure ID"]), structure_stats_df)
-        for col, key in col_map.items():
-            df.at[idx, col] = stats[key]
+        for col, (key, decimals) in col_rounding.items():
+            val = stats[key]
+            df.at[idx, col] = np.round(val, decimals) if val is not None and decimals else val
 
-    df.to_csv(csv_path, index=False)
+    df.to_csv(csv_path, index=False, encoding="utf-8")
     logger.info(f"Updated cell stats for {len(df)} rows in {csv_path}")
 
     if config.upload_csv_to_s3:
@@ -411,7 +489,7 @@ def _create_metadata_csv(config: DataReleaseConfig) -> Path:
     metadata_dict = get_metadata_dict()
     metadata_df = pd.DataFrame(list(metadata_dict.items()), columns=["Column Name", "Description"])
     metadata_csv_path = config.csv_output_dir / f"{config.output_name}_metadata.csv"
-    metadata_df.to_csv(metadata_csv_path, index=False)
+    metadata_df.to_csv(metadata_csv_path, index=False, encoding="utf-8")
     logger.info(f"Created metadata CSV: {metadata_csv_path}")
     return metadata_csv_path
 
@@ -434,8 +512,10 @@ def _upload_csv_files_to_s3(
 
     s3_client = get_s3_client()
 
-    # Upload main CSV to bucket root
-    csv_s3_key = csv_path.name
+    s3_prefix = f"bff/{config.condition}"
+
+    # Upload main CSV
+    csv_s3_key = f"{s3_prefix}/{csv_path.name}"
     if config.reupload_csv_files or not _file_exists_on_s3(s3_client, config.s3_bucket, csv_s3_key):
         upload_to_s3(s3_client, csv_path, config.s3_bucket, csv_s3_key)
         csv_s3_url = f"{config.base_s3_url}{csv_s3_key}"
@@ -445,7 +525,7 @@ def _upload_csv_files_to_s3(
 
     # Upload metadata CSV to bucket root if enabled and exists
     if config.upload_metadata_csv and metadata_csv_path is not None:
-        metadata_s3_key = metadata_csv_path.name
+        metadata_s3_key = f"{s3_prefix}/{metadata_csv_path.name}"
         if config.reupload_csv_files or not _file_exists_on_s3(
             s3_client, config.s3_bucket, metadata_s3_key
         ):
@@ -460,7 +540,9 @@ def _upload_csv_files_to_s3(
         logger.info("Metadata CSV not created, skipping upload")
 
 
-def run_data_release_workflow(config_file: Path, steps_to_run: list[str] | None = None) -> None:
+def run_data_release_workflow(
+    config_file: Path, steps_to_run: list[str] | None = None, dry_run: bool = False
+) -> None:
     """
     Run the data release workflow.
 
@@ -472,10 +554,16 @@ def run_data_release_workflow(config_file: Path, steps_to_run: list[str] | None 
         List of specific steps to run. If None, runs all enabled steps from config.
         Valid steps: 'upload_meshes', 'update_simularium', 'upload_simularium',
                      'upload_thumbnails', 'create_csv'
+    dry_run
+        If True, log operations without uploading or modifying files
     """
     # Load configuration
     config = DataReleaseConfig(config_file)
+    if dry_run:
+        config.dry_run = True
     logger.info(f"Loaded configuration: {config}")
+    if config.dry_run:
+        logger.info("[DRY RUN] Dry run mode enabled — no files will be modified or uploaded")
 
     # Determine which steps to run
     if steps_to_run is None:
@@ -506,7 +594,7 @@ def run_data_release_workflow(config_file: Path, steps_to_run: list[str] | None 
 
     # Step 2: Update simularium files locally
     if run_update_simularium and files_to_process:
-        update_simularium_files_locally(files_to_process)
+        update_simularium_files_locally(files_to_process, dry_run=config.dry_run)
 
     # Step 3: Upload simularium files to S3
     if run_upload_simularium and files_to_process:
@@ -570,6 +658,11 @@ if __name__ == "__main__":
         action="store_true",
         help="Update cell statistics columns in an existing CSV without modifying simularium files",
     )
+    parser.add_argument(
+        "--dry_run",
+        action="store_true",
+        help="Log operations that would be performed without uploading or modifying files",
+    )
 
     args = parser.parse_args()
 
@@ -599,6 +692,8 @@ if __name__ == "__main__":
         if args.update_csv_stats:
             steps_to_run.append("update_csv_stats")
 
-    run_data_release_workflow(config_file=Path(args.config_file), steps_to_run=steps_to_run)
+    run_data_release_workflow(
+        config_file=Path(args.config_file), steps_to_run=steps_to_run, dry_run=args.dry_run
+    )
 
     logger.info(f"Total time: {format_time(time.time() - start)}")
