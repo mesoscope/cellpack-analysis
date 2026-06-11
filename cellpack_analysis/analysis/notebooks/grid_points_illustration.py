@@ -13,6 +13,7 @@ Workflow steps:
    c. Calculate weights based on these distances using an exponential decay function.
 4. Visualize the distance and weight maps for each distance type and projection axis.
 """
+
 import logging
 import pickle
 
@@ -162,7 +163,8 @@ distance_configs = {
     },
     "z": {
         "labels": {"distance": "Z Distance (µm)", "weight": "Z Weight"},
-        "calc_func": lambda axis_data, nuc_mesh, mem_mesh: mem_mesh.bounds[1][2] - axis_data["grid_points_slice"][axis_data["inside_mem_outside_nuc"], 2],
+        "calc_func": lambda axis_data, nuc_mesh, mem_mesh: mem_mesh.bounds[1][2]
+        - axis_data["grid_points_slice"][axis_data["inside_mem_outside_nuc"], 2],
     },
     "rnd": {
         "labels": {"distance": "Uniform Distance", "weight": "Uniform Weight"},

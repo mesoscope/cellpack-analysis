@@ -90,6 +90,7 @@ for gene in structures_of_interest:
 # %% [markdown]
 # ## Save updated dataframe
 df_stats_path = get_datadir_path() / "structure_stats.parquet"
+
 df_stats.to_parquet(df_stats_path)
 logger.info("Saved structure stats to %s", df_stats_path)
 

@@ -327,7 +327,9 @@ def get_mesh_information_for_shape(
     inside_mem_inds = np.where((mem_grid_distances > 0) & ~np.isinf(mem_grid_distances))[0]
     mem_grid_distances = mem_grid_distances[inside_mem_inds]
     if not (
-        len(nuc_grid_distances) == len(mem_grid_distances) == len(z_grid_distances)
+        len(nuc_grid_distances)
+        == len(mem_grid_distances)
+        == len(z_grid_distances)
         # == len(scaled_nuc_grid_distances)
         # == len(scaled_z_grid_distances)
     ):

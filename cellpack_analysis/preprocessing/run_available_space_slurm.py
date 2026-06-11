@@ -613,7 +613,10 @@ Examples
     orch.add_argument(
         "--use-all-cells",
         action="store_true",
-        help="Use all cells for the structure, including those outside the 8D sphere (default: False).",
+        help=(
+            "Use all cells for the structure, including those outside the 8D sphere "
+            "(default: False)."
+        ),
     )
     orch.add_argument(
         "--recalculate",

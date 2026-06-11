@@ -170,6 +170,9 @@ max-complexity = 20 # Adjust maximum McCabe complexity (C901)
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*.py" = ["D"]
+# Notebooks contain long-form markdown prose and heading-style docstrings in
+# `# %%` cells, where line-length and docstring-punctuation rules don't apply.
+"**/notebooks/*.py" = ["D", "E501"]
 
 [tool.mypy]
 ignore_missing_imports = true

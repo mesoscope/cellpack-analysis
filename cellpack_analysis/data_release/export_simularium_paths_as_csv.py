@@ -170,7 +170,7 @@ def process_simularium_file(
 ) -> dict:
     """
     Process a single simularium file.
-     
+
     1. update mesh URLs
     2. update colors
     3. upload to S3
@@ -204,7 +204,8 @@ def process_simularium_file(
     thumbnail_dir
         Path to the directory to save generated thumbnails before uploading to S3
     channel_colors
-        Dictionary mapping channel names to RGB color tuples for updating simularium colors and generating thumbnails
+        Dictionary mapping channel names to RGB color tuples for updating simularium
+        colors and generating thumbnails
     s3_client
         Boto3 S3 client for checking and uploading files to S3
     reupload_simularium

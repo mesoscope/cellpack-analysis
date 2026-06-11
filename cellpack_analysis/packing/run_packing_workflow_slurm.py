@@ -559,7 +559,7 @@ def _run_worker(manifest_path: Path, result_path: Path) -> None:
 # ===================================================================
 
 
-def _run_orchestrator(
+def _run_orchestrator(  # noqa: C901
     workflow_config_path: Path,
     batch_size: int = 8,
     slurm_opts: dict[str, str] | None = None,

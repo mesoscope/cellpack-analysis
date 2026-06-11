@@ -357,7 +357,7 @@ for ref_mode in packing_modes:
 # %% [markdown]
 # ### Log pairwise KS central tendencies
 pairwise_ks_log_file_path = log_dir / f"{STRUCTURE_NAME}_pairwise_ks_central_tendencies{suffix}.log"
-for ref_mode in packing_modes:
+for ref_mode in packing_modes:  # noqa: B007  (referenced in the pandas .query string)
     ref_boot_df = pairwise_ks_bootstrap_df.query("baseline_mode == @ref_mode")
     distance.log_central_tendencies_for_ks(
         df_ks_bootstrap=ref_boot_df,

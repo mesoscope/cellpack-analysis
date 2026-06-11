@@ -290,16 +290,16 @@ def update_and_save_recipe(
     # update mesh paths
     for obj, short_name in zip(["nucleus_mesh", "membrane_mesh"], ["nuc", "mem"], strict=False):
         updated_recipe["objects"][obj]["representations"]["mesh"]["path"] = f"{mesh_path}"
-        updated_recipe["objects"][obj]["representations"]["mesh"]["name"] = (
-            f"{short_name}_mesh_{cell_id}.obj"
-        )
+        updated_recipe["objects"][obj]["representations"]["mesh"][
+            "name"
+        ] = f"{short_name}_mesh_{cell_id}.obj"
 
     # update mesh path for additional structure if needed
     if use_additional_struct:
         updated_recipe["objects"]["struct_mesh"]["representations"]["mesh"]["path"] = f"{mesh_path}"
-        updated_recipe["objects"]["struct_mesh"]["representations"]["mesh"]["name"] = (
-            f"struct_mesh_{cell_id}.obj"
-        )
+        updated_recipe["objects"]["struct_mesh"]["representations"]["mesh"][
+            "name"
+        ] = f"struct_mesh_{cell_id}.obj"
 
     # resolve gradient_structure_name before using it for counts/radius/rules
     if gradient_structure_name is None:
