@@ -109,7 +109,7 @@ def get_meshes_for_file(
         logger.debug(f"Saved mesh: {save_path}")
 
 
-def main():
+def main() -> int:
     """Parse arguments and process files."""
     parser = argparse.ArgumentParser(
         description="Extract meshes from multichannel image files",

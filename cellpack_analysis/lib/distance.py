@@ -528,7 +528,7 @@ def process_cell(
     mode: str,
     distance_measures: list[str],
     mode_mesh_dict: dict[str, Any],
-):
+) -> tuple[str, dict[str, dict[str, np.ndarray]]]:
     """
     Process a single cell ID with all its seeds.
 
@@ -552,7 +552,7 @@ def process_cell(
         Tuple of (cell_id, cell_results) where cell_results is
         {distance_measure: {seed: distances}}
     """
-    cell_results = {dm: {} for dm in distance_measures}
+    cell_results: dict[str, dict[str, np.ndarray]] = {dm: {} for dm in distance_measures}
 
     for seed, seed_positions in seed_positions_dict.items():
         try:
@@ -1171,7 +1171,7 @@ def calculate_ripley_k(
     :
         Tuple containing all Ripley K values, mean values, confidence intervals, and r values
     """
-    all_ripley_k = {}
+    all_ripley_k: dict[str, dict[str, np.ndarray]] = {}
     mean_ripley_k = {}
     ci_ripley_k = {}
     r_max = 0.5
@@ -1186,11 +1186,17 @@ def calculate_ripley_k(
             mean_k_values, _ = ripley_k(positions, volume, r_values, norm_factor=(radius * 2))
             all_ripley_k[mode][cell_id] = mean_k_values
         mean_ripley_k[mode] = np.mean(
-            np.array([np.array(v, dtype=float) for v in all_ripley_k[mode].values()], dtype=float),
+            np.array(
+                [np.array(v, dtype=np.float64) for v in all_ripley_k[mode].values()],
+                dtype=np.float64,
+            ),
             axis=0,
         )
         ci_ripley_k[mode] = np.percentile(
-            np.array([np.array(v, dtype=float) for v in all_ripley_k[mode].values()], dtype=float),
+            np.array(
+                [np.array(v, dtype=np.float64) for v in all_ripley_k[mode].values()],
+                dtype=np.float64,
+            ),
             [2.5, 97.5],
             axis=0,
         )
@@ -1405,7 +1411,7 @@ def get_distance_distribution_kde(
             # These are already normalized
             if cell_id not in kde_dict:
                 kde_dict[cell_id] = {}
-            all_cell_id_distances = []
+            all_cell_id_distances: list[np.float32] = []
             for _, distances in seed_dict.items():
                 distances = filter_invalid_distances(
                     distances, minimum_distance=minimum_distance

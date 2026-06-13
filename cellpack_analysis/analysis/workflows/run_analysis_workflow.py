@@ -305,7 +305,7 @@ class AnalysisRunner:
         else:
             logger.warning(f"Unknown step: '{step}'. Available steps: {list(step_method_map)}")
 
-    def _load_common_data(self, config: AnalysisConfig):
+    def _load_common_data(self, config: AnalysisConfig) -> None:
         """Load position data and mesh information common to all analyses."""
         if (
             "all_positions" in self.shared_data
@@ -341,7 +341,7 @@ class AnalysisRunner:
         self.shared_data["all_positions"] = all_positions
         self.shared_data["combined_mesh_information_dict"] = combined_mesh_information_dict
 
-    def _calculate_distances(self, config: AnalysisConfig):
+    def _calculate_distances(self, config: AnalysisConfig) -> None:
         """Calculate distance measures and normalize."""
         if (
             "all_distance_dict" in self.shared_data
@@ -1084,7 +1084,7 @@ class AnalysisRunner:
         )
 
 
-def main():
+def main() -> None:
     """Run the analysis workflow based on command-line arguments."""
     parser = argparse.ArgumentParser(
         description="Run cellpack analysis workflows",

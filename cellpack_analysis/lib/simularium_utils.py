@@ -3,6 +3,7 @@
 import json
 import logging
 from pathlib import Path
+from typing import Any
 
 import matplotlib.colors as mcolors
 
@@ -80,7 +81,7 @@ def update_simularium_colors(
 
 
 def generate_and_upload_thumbnail(
-    s3_client,
+    s3_client: Any,
     figure_path: Path,
     file_stem: str,
     packing_id: str,
@@ -179,10 +180,10 @@ def process_simularium_file(
     figure_path: Path,
     thumbnail_dir: Path,
     channel_colors: dict[str, tuple[float, float, float]],
-    s3_client,
+    s3_client: Any,
     bucket: str,
     base_s3_url: str,
-    structure_stats_df,
+    structure_stats_df: Any,
     reupload_simularium: bool,
     reupload_thumbnails: bool,
 ) -> dict:

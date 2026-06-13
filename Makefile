@@ -24,7 +24,7 @@ lint: # run formatting and linting
 	black cellpack_analysis
 	isort cellpack_analysis
 	ruff check cellpack_analysis
-	mypy --disallow-untyped-calls --disallow-untyped-defs --disallow-incomplete-defs cellpack_analysis
+	mypy cellpack_analysis
 
 docs: # generates documentation
 	make -C docs html

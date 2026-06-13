@@ -24,7 +24,7 @@ np.random.seed(42)
 logger = logging.getLogger(__name__)
 
 
-def _run_packing_workflow(workflow_config_path: Path):
+def _run_packing_workflow(workflow_config_path: Path) -> int:
     """
     Run the packing workflow.
 

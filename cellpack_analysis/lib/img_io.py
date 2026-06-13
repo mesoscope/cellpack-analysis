@@ -17,7 +17,7 @@ def generate_composite_thumbnail(
     threshold: float = 0.7,
     dpi: int = 300,
     figsize: tuple = (4, 4),
-):
+) -> None:
     """
     Generate a composite PNG thumbnail from a multi-channel TIFF image.
 
