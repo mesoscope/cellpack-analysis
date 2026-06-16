@@ -7,11 +7,15 @@ updates:
     schedule:
       interval: "monthly"
 
-    # Group *all* Python dependency updates into a single PR
+    # Bundle version updates and security updates each into a single PR.
     groups:
-      python-all:
+      python-version-updates:
+        applies-to: version-updates
+        patterns:
+          - "*"
+      python-security-updates:
+        applies-to: security-updates
         patterns:
           - "*"
 
-    # Ensure Dependabot never opens more than one PR at a time
     open-pull-requests-limit: 1
