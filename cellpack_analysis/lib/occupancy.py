@@ -374,9 +374,9 @@ def _get_common_xvals_from_kde(
     for _, cell_ids in cell_id_map.items():
         for cell_id in cell_ids:
             x_max_values.append(distance_kde_dict[cell_id]["available"].dataset.max())
-    x_max_values = np.array(x_max_values)
-    x_max_calc = np.percentile(x_max_values, pct_min_cells)
-    x_max_from_cells = np.max(x_max_values[x_max_values <= x_max_calc])
+    x_max_array = np.array(x_max_values)
+    x_max_calc = np.percentile(x_max_array, pct_min_cells)
+    x_max_from_cells = np.max(x_max_array[x_max_array <= x_max_calc])
     x_max_to_use = min(x_max_from_cells, x_max) if x_max is not None else x_max_calc
 
     return np.linspace(x_min, x_max_to_use, num_points)

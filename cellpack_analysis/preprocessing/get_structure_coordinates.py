@@ -18,6 +18,7 @@ import json
 import logging
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 from scipy import ndimage
@@ -82,9 +83,9 @@ def get_positions_from_single_image(
         zcoords, ycoords, xcoords = np.where(label_img_nuc == i)
         nuc_positions.append(
             [
-                np.mean(xcoords),
-                np.mean(ycoords),
-                np.mean(zcoords),
+                float(np.mean(xcoords)),
+                float(np.mean(ycoords)),
+                float(np.mean(zcoords)),
             ]
         )
         nuc_sizes.append(len(xcoords))
@@ -102,9 +103,9 @@ def get_positions_from_single_image(
         zcoords, ycoords, xcoords = np.where(label_img_mem == i)
         mem_positions.append(
             [
-                np.mean(xcoords),
-                np.mean(ycoords),
-                np.mean(zcoords),
+                float(np.mean(xcoords)),
+                float(np.mean(ycoords)),
+                float(np.mean(zcoords)),
             ]
         )
         mem_sizes.append(len(xcoords))
@@ -119,16 +120,20 @@ def get_positions_from_single_image(
     struct_mem_distances = []
     for i in range(1, n_pex + 1):
         zcoords, ycoords, xcoords = np.where(label_img_pex == i)
-        centroid = [np.mean(xcoords), np.mean(ycoords), np.mean(zcoords)]
+        centroid = [
+            float(np.mean(xcoords)),
+            float(np.mean(ycoords)),
+            float(np.mean(zcoords)),
+        ]
         centroid_inds = np.round(centroid).astype(int)
         positions.append(
             centroid,
         )
         struct_nuc_distances.append(
-            nuc_distances[centroid_inds[2], centroid_inds[1], centroid_inds[0]]  # type: ignore
+            float(nuc_distances[centroid_inds[2], centroid_inds[1], centroid_inds[0]])  # type: ignore
         )
         struct_mem_distances.append(
-            mem_distances[centroid_inds[2], centroid_inds[1], centroid_inds[0]]  # type: ignore
+            float(mem_distances[centroid_inds[2], centroid_inds[1], centroid_inds[0]])  # type: ignore
         )
     return (
         cell_id,
@@ -146,7 +151,7 @@ def extract_structure_coordinates(
     structure_name: str,
     num_processes: int,
     datadir: Path,
-):
+) -> None:
     """
     Extract structure coordinates from segmented images and save to JSON files.
 
@@ -163,9 +168,9 @@ def extract_structure_coordinates(
     datadir
         Directory to save the output JSON files.
     """
-    positions_dict = {}
-    centroids_dict = {}
-    distances_dict = {}
+    positions_dict: dict[str, dict[str, Any]] = {}
+    centroids_dict: dict[str, dict[str, Any]] = {}
+    distances_dict: dict[str, dict[str, Any]] = {}
 
     with ProcessPoolExecutor(max_workers=num_processes) as executor:
         for _, (

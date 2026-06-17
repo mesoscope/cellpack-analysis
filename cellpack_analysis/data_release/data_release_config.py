@@ -48,7 +48,7 @@ class DataReleaseConfig:
         with open(self.config_file) as f:
             return json.load(f)
 
-    def _setup_parameters(self):
+    def _setup_parameters(self) -> None:
         """Set workflow parameters from config."""
         # S3 configuration
         self.s3_bucket = self.config.get("s3_bucket", DEFAULT_S3_BUCKET)
@@ -97,7 +97,7 @@ class DataReleaseConfig:
         # Dry run mode
         self.dry_run: bool = self.config.get("dry_run", False)
 
-    def _setup_paths(self):
+    def _setup_paths(self) -> None:
         """Set directory paths."""
         self.base_datadir = get_datadir_path()
         self.base_results_dir = get_results_path()

@@ -21,6 +21,7 @@ import argparse
 import logging
 import time
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -412,7 +413,7 @@ def _get_cell_stats(
         & (structure_stats_df["structure_name"] == structure_id)
     ]
 
-    def _get(col):
+    def _get(col: str) -> Any:
         return cellid_structure_stats[col].values[0] if not cellid_structure_stats.empty else None
 
     return {
@@ -479,7 +480,7 @@ def update_csv_cell_stats(config: DataReleaseConfig, structure_stats_df: pd.Data
         _upload_csv_files_to_s3(config, csv_path, metadata_csv_path)
 
 
-def _file_exists_on_s3(s3_client, bucket: str, s3_key: str) -> bool:
+def _file_exists_on_s3(s3_client: Any, bucket: str, s3_key: str) -> bool:
     """Check if a file exists on S3."""
     try:
         s3_client.head_object(Bucket=bucket, Key=s3_key)

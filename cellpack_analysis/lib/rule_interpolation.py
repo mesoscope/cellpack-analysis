@@ -27,6 +27,7 @@ import logging
 import os
 import pickle
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -1079,7 +1080,7 @@ def _aggregate_cv_results(
 
     # --- MSE aggregation ---
     def _agg_mse(
-        mse_getter,  # callable(FoldResult, dm) -> float | np.ndarray
+        mse_getter: Callable[[FoldResult, str, str], float | np.ndarray],
     ) -> dict[str, dict[str, float]]:
         result: dict[str, dict[str, float]] = {}
         for scope in ("individual", "joint"):
@@ -1096,7 +1097,7 @@ def _aggregate_cv_results(
         return fr.test_mse[scope][dm]
 
     def _agg_std(
-        mse_getter,
+        mse_getter: Callable[[FoldResult, str, str], float | np.ndarray],
     ) -> dict[str, dict[str, float]]:
         result: dict[str, dict[str, float]] = {}
         for scope in ("individual", "joint"):

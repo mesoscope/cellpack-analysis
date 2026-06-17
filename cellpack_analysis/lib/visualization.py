@@ -995,7 +995,7 @@ def plot_grid_points_slice(
     cmap: Colormap | str | None = None,
     reverse_cmap: bool = False,
     clim: tuple[float, float] | None = None,
-):
+) -> tuple[Figure, Axes]:
     """
     Plot a slice of grid points with coloring based on a variable.
 
@@ -1050,7 +1050,7 @@ def plot_grid_points_slice(
     # custom_cmap = LinearSegmentedColormap.from_list(
     #     "gray_cutoff", plt.cm.get_cmap("gray")(np.linspace(0, 0.9, 256))
     # )
-    custom_cmap = LinearSegmentedColormap.from_list(
+    custom_cmap: Colormap = LinearSegmentedColormap.from_list(
         "reds_cutoff", plt.cm.get_cmap("Reds")(np.linspace(0.3, 1, 256))
     )
     if cmap is not None:
@@ -1137,9 +1137,10 @@ def plot_envelope_for_cell(
     if ax is None:
         fig, ax = plt.subplots(dpi=300, figsize=(4, 4))
     else:
-        fig = ax.get_figure(root=True)
-        if fig is None:
+        maybe_fig = ax.get_figure(root=True)
+        if maybe_fig is None:
             raise ValueError("The provided Axes object does not have an associated Figure")
+        fig = maybe_fig
     ax.fill_between(
         xvals,
         info["lo"],
@@ -1192,9 +1193,10 @@ def plot_rejection_bars(
     if ax is None:
         fig, ax = plt.subplots(dpi=300, figsize=(6, 4))
     else:
-        fig = ax.get_figure(root=True)
-        if fig is None:
+        maybe_fig = ax.get_figure(root=True)
+        if maybe_fig is None:
             raise ValueError("The provided Axes object does not have an associated Figure")
+        fig = maybe_fig
     if isinstance(rej_rates_dict, pd.Series) and isinstance(rej_rates_dict.index, pd.MultiIndex):
         # per-distance measure: make a grouped bar
         df = rej_rates_dict.unstack(level="distance_measure").reset_index()
@@ -1278,9 +1280,10 @@ def plot_rejection_bars_by_sign(
     if ax is None:
         fig, ax = plt.subplots(dpi=300, figsize=(6, 4))
     else:
-        fig = ax.get_figure(root=True)
-        if fig is None:
+        maybe_fig = ax.get_figure(root=True)
+        if maybe_fig is None:
             raise ValueError("The provided Axes object does not have an associated Figure")
+        fig = maybe_fig
     if title is None:
         title = f"Rejection rates by deviation direction ({test_statistic})"
     packing_modes = rej_positive.index.tolist()
@@ -1380,9 +1383,10 @@ def plot_grouped_rejection_bars_by_sign(
     if ax is None:
         fig, ax = plt.subplots(dpi=300, figsize=(8, 5))
     else:
-        fig = ax.get_figure(root=True)
-        if fig is None:
+        maybe_fig = ax.get_figure(root=True)
+        if maybe_fig is None:
             raise ValueError("The provided Axes object does not have an associated Figure")
+        fig = maybe_fig
 
     if title is None:
         title = f"Rejection rates by deviation direction and distance measure ({test_statistic})"
@@ -1412,8 +1416,8 @@ def plot_grouped_rejection_bars_by_sign(
             pos_values.append(pos_val)
             neg_values.append(neg_val)
 
-        pos_values = np.array(pos_values)
-        neg_values = np.array(neg_values)
+        pos_array = np.array(pos_values)
+        neg_array = np.array(neg_values)
 
         # Calculate x positions for this measure
         x_offset = x_pos + (idx - n_measures / 2 + 0.5) * bar_width
@@ -1421,7 +1425,7 @@ def plot_grouped_rejection_bars_by_sign(
         # Plot positive bars (upward)
         ax.bar(
             x_offset,
-            pos_values,
+            pos_array,
             width=bar_width,
             color=color,
             alpha=0.9,
@@ -1431,7 +1435,7 @@ def plot_grouped_rejection_bars_by_sign(
         # Plot negative bars (downward)
         ax.bar(
             x_offset,
-            -neg_values,
+            -neg_array,
             width=bar_width,
             color=color_neg,
             alpha=0.9,

@@ -600,6 +600,8 @@ def monte_carlo_per_cell(
                 [ecdf(rep.get(distance_measure, np.array([])), xvals) for rep in reps]
             )  # (R, L)
 
+            # tobs is int from the rank envelope but float from the other statistics
+            tobs: float
             if envelope_type == "rank":
                 lo, hi, pval, supremum_sign, tobs = compute_rank_envelope(
                     obs_curve, sim_mat, alpha=alpha
@@ -659,6 +661,7 @@ def monte_carlo_per_cell(
             axis=0,
         )
 
+        tobs_joint: float
         if envelope_type == "rank":
             _, _, p_joint, supremum_sign_joint, tobs_joint = compute_rank_envelope(
                 obs_concat, sim_concat, alpha=alpha

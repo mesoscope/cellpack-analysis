@@ -3,6 +3,7 @@
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from typing import Any
 
 import boto3
 from tqdm import tqdm
@@ -12,7 +13,9 @@ from cellpack_analysis.lib.mesh_tools import invert_mesh_faces
 logger = logging.getLogger(__name__)
 
 
-def should_upload_to_s3(s3_client, bucket: str, s3_key: str, force_upload: bool = False) -> bool:
+def should_upload_to_s3(
+    s3_client: Any, bucket: str, s3_key: str, force_upload: bool = False
+) -> bool:
     """
     Check if a file should be uploaded to S3.
 
@@ -41,7 +44,7 @@ def should_upload_to_s3(s3_client, bucket: str, s3_key: str, force_upload: bool 
         return True
 
 
-def upload_to_s3(s3_client, local_path: Path, bucket: str, s3_key: str) -> None:
+def upload_to_s3(s3_client: Any, local_path: Path, bucket: str, s3_key: str) -> None:
     """
     Upload a file to S3 and set it as public-read.
 
@@ -61,7 +64,7 @@ def upload_to_s3(s3_client, local_path: Path, bucket: str, s3_key: str) -> None:
     logger.debug(f"Uploaded {local_path} to s3://{bucket}/{s3_key}")
 
 
-def get_s3_client():
+def get_s3_client() -> Any:
     """
     Get a boto3 S3 client.
 
@@ -77,7 +80,7 @@ def process_and_upload_mesh(
     file_path: Path,
     base_datadir: Path,
     inverted_dir: Path,
-    s3_client,
+    s3_client: Any,
     bucket: str,
     use_inverted_meshes: bool = False,
     reinvert: bool = False,

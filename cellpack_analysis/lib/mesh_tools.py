@@ -115,10 +115,12 @@ def get_list_of_grid_points_mgrid(bounding_box: np.ndarray, spacing: float) -> n
         2D array of grid point coordinates with shape (N, 3)
     """
 
+    # np.mgrid accepts float start/stop/step, but its typeshed stub only allows
+    # integer slice indices, so the float-step slices are ignored for type checking.
     grid = np.mgrid[
-        bounding_box[0, 0] : bounding_box[1, 0] + spacing : spacing,
-        bounding_box[0, 1] : bounding_box[1, 1] + spacing : spacing,
-        bounding_box[0, 2] : bounding_box[1, 2] + spacing : spacing,
+        bounding_box[0, 0] : bounding_box[1, 0] + spacing : spacing,  # type: ignore[misc]
+        bounding_box[0, 1] : bounding_box[1, 1] + spacing : spacing,  # type: ignore[misc]
+        bounding_box[0, 2] : bounding_box[1, 2] + spacing : spacing,  # type: ignore[misc]
     ]
     all_points = grid.reshape(3, -1).T
 
@@ -132,8 +134,7 @@ def get_mesh_vertices(mesh_file_path: str | Path) -> np.ndarray:
         for line in mesh_file:
             if line.startswith("v"):
                 coordinates.append([float(x) for x in line.split()[1:]])
-    coordinates = np.array(coordinates)
-    return coordinates
+    return np.array(coordinates)
 
 
 def get_mesh_center(mesh_file_path: str | Path) -> np.ndarray:

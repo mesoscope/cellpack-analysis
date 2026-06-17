@@ -16,6 +16,7 @@
 import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from typing import Any
 
 import boto3
 import matplotlib.colors as mcolors
@@ -37,7 +38,7 @@ structure_stats_df = get_structure_stats_dataframe()
 
 # %%
 # Helper functions
-def should_upload_to_s3(s3_client, s3_key: str, force_upload: bool = False) -> bool:
+def should_upload_to_s3(s3_client: Any, s3_key: str, force_upload: bool = False) -> bool:
     """Check if a file should be uploaded to S3."""
     if force_upload:
         return True
@@ -48,7 +49,7 @@ def should_upload_to_s3(s3_client, s3_key: str, force_upload: bool = False) -> b
         return True
 
 
-def upload_to_s3(s3_client, local_path: Path, s3_key: str) -> None:
+def upload_to_s3(s3_client: Any, local_path: Path, s3_key: str) -> None:
     """Upload a file to S3 and set it as public-read."""
     s3_client.upload_file(str(local_path), S3_BUCKET, s3_key)
     s3_client.put_object_acl(ACL="public-read", Bucket=S3_BUCKET, Key=s3_key)
@@ -107,7 +108,7 @@ def update_simularium_colors(
 
 
 def generate_and_upload_thumbnail(
-    s3_client,
+    s3_client: Any,
     figure_path: Path,
     file_stem: str,
     packing_id: str,
@@ -164,7 +165,7 @@ def process_simularium_file(
     figure_path: Path,
     thumbnail_dir: Path,
     channel_colors: dict[str, tuple[float, float, float]],
-    s3_client,
+    s3_client: Any,
     reupload_simularium: bool,
     reupload_thumbnails: bool,
 ) -> dict:
@@ -303,7 +304,7 @@ thumbnail_dir.mkdir(parents=True, exist_ok=True)
 
 # %%
 # Structure configuration
-structures = [
+structures: list[dict[str, Any]] = [
     {
         "structure_id": "SLC25A17",
         "structure_name": "peroxisome",
@@ -340,7 +341,7 @@ reupload_thumbnails = True
 
 # %%
 # Collect all files to process
-files_to_process = []
+files_to_process: list[dict[str, Any]] = []
 for structure_config in structures:
     structure_id = structure_config["structure_id"]
     structure_name = structure_config["structure_name"]
