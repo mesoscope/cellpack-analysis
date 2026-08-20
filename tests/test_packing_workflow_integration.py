@@ -4,13 +4,39 @@ These tests verify end-to-end functionality with real file I/O and dependencies.
 """
 
 import json
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
-from cellpack_analysis.lib.file_io import get_project_root
+from cellpack_analysis.lib.file_io import get_datadir_path, get_project_root
 from cellpack_analysis.packing.run_packing_workflow import _run_packing_workflow
 from cellpack_analysis.packing.workflow_config import WorkflowConfig
+
+# Cell whose meshes/grid/stats are expected to be available locally for the
+# real-data packing test below.
+REAL_PACKING_CELL_ID = "743916"
+
+
+def _real_data_assets(cell_id: str = REAL_PACKING_CELL_ID) -> dict[str, Path]:
+    """Resolve the local assets a real (non-dry) peroxisome packing needs."""
+    datadir = get_datadir_path()
+    sd = datadir / "structure_data" / "SLC25A17"
+    return {
+        "recipe_template": datadir
+        / "templates/recipes/rules_shape/peroxisome_recipe_template.json",
+        "config_template": datadir
+        / "templates/configs/rules_shape/peroxisome_config_template.json",
+        "membrane_mesh": sd / "meshes" / f"mem_mesh_{cell_id}.obj",
+        "nucleus_mesh": sd / "meshes" / f"nuc_mesh_{cell_id}.obj",
+        "grid": sd / "grids" / f"{cell_id}_grid.dat",
+        "stats": datadir / "structure_stats.parquet",
+    }
+
+
+def _missing_real_data_assets() -> list[str]:
+    """Return the names of any local assets missing for the real packing test."""
+    return [name for name, path in _real_data_assets().items() if not path.exists()]
 
 
 @pytest.fixture
@@ -304,3 +330,109 @@ class TestPackingWorkflowIntegration:
         # Verify file count is the same (files were overwritten, not duplicated)
         second_run_files = list(recipe_dir.glob("*.json"))
         assert len(first_run_files) == len(second_run_files)
+
+
+@pytest.mark.slow
+class TestPackingWorkflowRealData:
+    """End-to-end test that runs the *full* workflow (generation AND packing).
+
+    Unlike the dry-run tests above (which only exercise recipe/config generation)
+    and the slow tests in ``test_run_packing_workflow.py`` (which pre-supply
+    recipes and skip generation), this runs the complete pipeline with
+    ``dry_run=False``: generate recipes + configs from the real ``rules_shape``
+    template, then actually pack them with cellPACK for both a plain ``random``
+    rule and a gradient rule.
+
+    It requires the local structure-data assets (meshes, grid, stats) that are
+    not present in fresh clones, so it skips when they are missing and is gated
+    behind the ``slow`` marker (run with ``pytest -m slow``).
+
+    To run against a specific cellpack build (e.g. a candidate branch rather than
+    the pinned revision), point ``CELLPACK`` at it AND add its repo root to
+    ``PYTHONPATH`` so the ``pack.py`` subprocess imports that branch — setting
+    ``CELLPACK`` alone only redirects the script, not ``import cellpack``. The
+    cellpack build in use is logged by ``pack.py`` ("Using cellpack package from: ...").
+    """
+
+    @pytest.fixture
+    def real_packing_config(self, tmp_path):
+        """Full-pipeline workflow config (generation + packing) on real data."""
+        missing = _missing_real_data_assets()
+        if missing:
+            pytest.skip(f"Missing local assets for real packing test: {missing}")
+
+        assets = _real_data_assets()
+        config_data = {
+            "packing_id": "peroxisome",
+            "structure_id": "SLC25A17",
+            "condition": "integration_real",
+            "datadir": str(get_datadir_path()),
+            "generate_recipes": True,
+            "generate_configs": True,
+            "dry_run": False,
+            "use_mean_cell": False,
+            "use_cells_in_8d_sphere": False,
+            "get_counts_from_data": True,
+            "get_size_from_data": True,
+            "get_bounding_box_from_mesh": True,
+            "number_of_replicates": 1,
+            "result_type": "simularium",
+            "num_processes": 1,
+            "skip_completed": False,
+            "use_additional_struct": False,
+            "gradient_structure_name": "peroxisome",
+            "recipe_template_path": str(assets["recipe_template"]),
+            "config_template_path": str(assets["config_template"]),
+            # keep generated inputs and outputs inside the temp dir
+            "generated_recipe_path": str(tmp_path / "recipes"),
+            "generated_config_path": str(tmp_path / "configs"),
+            "output_path": str(tmp_path / "outputs"),
+            "recipe_data": {
+                "random": {},
+                "nucleus_gradient_strong": {"gradients": ["nucleus_gradient"]},
+            },
+            "packings_to_run": {"rules": ["random", "nucleus_gradient_strong"]},
+        }
+        config_path = tmp_path / "workflow_config.json"
+        with open(config_path, "w") as f:
+            json.dump(config_data, f, indent=2)
+        return config_path, tmp_path
+
+    def test_full_workflow_generates_and_packs(self, real_packing_config):
+        """Generate recipes/configs and pack them for a random and a gradient rule."""
+        config_path, tmp_path = real_packing_config
+
+        cell_ids = [REAL_PACKING_CELL_ID]
+        # Pin cell selection on both the generation side (sample_cell_ids_for_structure)
+        # and the packing side (get_cell_id_list_for_structure) to a known local cell.
+        with (
+            patch(
+                "cellpack_analysis.packing.generate_cellpack_input_files."
+                "sample_cell_ids_for_structure",
+                return_value=cell_ids,
+            ),
+            patch(
+                "cellpack_analysis.packing.pack_recipes.get_cell_id_list_for_structure",
+                return_value=cell_ids,
+            ),
+        ):
+            result = _run_packing_workflow(config_path)
+
+        assert result == 0, f"Packing workflow reported {result} failure(s)"
+
+        # Recipes were generated for both rules
+        for rule in ["random", "nucleus_gradient_strong"]:
+            recipe = tmp_path / "recipes" / rule / f"peroxisome_{rule}_{REAL_PACKING_CELL_ID}.json"
+            assert recipe.exists(), f"Recipe not generated for rule {rule}: {recipe}"
+
+        # A .simularium result was packed for each rule, with the expected naming
+        for rule in ["random", "nucleus_gradient_strong"]:
+            sim_dir = tmp_path / "outputs" / rule / "peroxisome" / "spheresSST"
+            assert sim_dir.is_dir(), f"Output dir missing for rule {rule}: {sim_dir}"
+            results = list(
+                sim_dir.glob(f"results_*_{rule}_{REAL_PACKING_CELL_ID}_seed_*.simularium")
+            )
+            assert results, (
+                f"No results_*.simularium for rule {rule} in {sim_dir}. "
+                f"Contents: {list(sim_dir.iterdir())}"
+            )
