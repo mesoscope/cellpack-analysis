@@ -50,17 +50,17 @@ start_time = time.time()
 PUNCTATE_STRUCTURE_ID = "SLC25A17"
 """This is the ID for the packed structure, it is used as the packing mode for observed data"""
 
-CELL_STRUCTURE_ID = "SEC61B"
+CELL_STRUCTURE_ID = "SLC25A17"
 """This is the ID for the cell shapes used for packing"""
 
-PACKING_ID = "ER_peroxisome"
+PACKING_ID = "peroxisome"
 """This is the ID for the overall packing configuration,
 it is used for naming outputs and folders"""
 
 STRUCTURE_NAME = "peroxisome"
 """This is the name of the structure being analyzed, it is used in cellPACK output files"""
 
-CONDITION = "rules_shape_with_seed"
+CONDITION = "replicate_99_v2"
 """This is the experimental condition or packing output subfolder to analyze"""
 
 RESULTS_SUBFOLDER = f"{CONDITION}/{PACKING_ID}"
