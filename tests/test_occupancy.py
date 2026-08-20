@@ -5,6 +5,7 @@ import pytest
 from scipy.stats import gaussian_kde
 
 from cellpack_analysis.lib.occupancy import (
+    _apply_coverage_mask,
     _compute_single_cell_occupancy,
     get_binned_occupancy_dict_from_distance_dict,
     get_kde_occupancy_dict,
@@ -278,10 +279,11 @@ class TestGetKdeOccupancyDictUnifiedFormat:
             x_min=0,
             x_max=8.0,
             recalculate=True,
+            min_coverage_fraction=0.0,
         )
         combined = result["real"]["combined"]
-        # combined["occupancy"] is the nanmean of the per-cell curves stacked
-        # in combined["all_occupancy"] (shape: n_cells x n_points).
+        # With the coverage mask disabled, combined["occupancy"] is exactly the
+        # nanmean of the per-cell curves stacked in combined["all_occupancy"].
         expected_mean = np.nanmean(combined["all_occupancy"], axis=0)
         np.testing.assert_allclose(combined["occupancy"], expected_mean)
 
@@ -384,21 +386,21 @@ class TestGetKdeOccupancyForSingleCell:
         }
         return kde_dict, available_data
 
-    # def test_bandwidth_does_not_mutate_original_kde(self, kde_inputs):
-    #     kde_dict, _ = kde_inputs
-    #     original_factor = float(kde_dict["cell_0"]["real"].factor)
-    #     x_vals = np.linspace(0, 8, 50)
-    #     get_kde_occupancy_for_single_cell(
-    #         cell_id="cell_0",
-    #         mode="real",
-    #         distance_kde_dict=kde_dict,
-    #         common_xvals=x_vals,
-    #         bandwidth=0.5,
-    #         num_points=50,
-    #     )
-    #     assert float(kde_dict["cell_0"]["real"].factor) == original_factor, (
-    #         "Original KDE bandwidth must not be mutated by get_kde_occupancy_for_single_cell"
-    #     )
+    def test_bandwidth_does_not_mutate_original_kde(self, kde_inputs):
+        kde_dict, _ = kde_inputs
+        original_factor = float(kde_dict["cell_0"]["real"].factor)
+        x_vals = np.linspace(0, 8, 50)
+        get_kde_occupancy_for_single_cell(
+            cell_id="cell_0",
+            mode="real",
+            distance_kde_dict=kde_dict,
+            common_xvals=x_vals,
+            bandwidth=0.5,
+            num_points=50,
+        )
+        assert float(kde_dict["cell_0"]["real"].factor) == original_factor, (
+            "Original KDE bandwidth must not be mutated by get_kde_occupancy_for_single_cell"
+        )
 
     def test_occupancy_common_nan_outside_support(self, kde_inputs):
         kde_dict, available_data = kde_inputs
@@ -424,3 +426,62 @@ class TestGetKdeOccupancyForSingleCell:
         assert np.any(np.isfinite(occ[in_support])), (
             "occupancy_common must contain finite values within the available-data support"
         )
+
+    def test_no_infinities_when_objects_exceed_support(self, kde_inputs):
+        kde_dict, available_data = kde_inputs
+        avail_max = float(np.max(available_data))
+        # "Skip filtering" scenario: inject occupied objects well beyond the
+        # available-space support and confirm the ratio never blows up.
+        rng = np.random.default_rng(3)
+        occupied_beyond = np.concatenate([
+            rng.exponential(2.0, size=300),
+            avail_max + rng.uniform(1.0, 5.0, size=50),
+        ])
+        kde_dict["cell_0"]["real"] = gaussian_kde(occupied_beyond)
+        x_vals = np.linspace(0.0, avail_max + 10.0, 200)
+        result = get_kde_occupancy_for_single_cell(
+            cell_id="cell_0",
+            mode="real",
+            distance_kde_dict=kde_dict,
+            common_xvals=x_vals,
+            bandwidth=None,
+            num_points=50,
+        )
+        assert result is not None
+        occ = result[1]["occupancy_common"]
+        assert not np.any(np.isinf(occ)), "occupancy_common must never contain infinities"
+        assert np.any(np.isfinite(occ)), (
+            "occupancy_common must have finite values within the available-data support"
+        )
+
+
+class TestApplyCoverageMask:
+    """Unit tests for the trailing coverage mask applied to the combined aggregate."""
+
+    def test_masks_high_x_tail_keeps_low_x_start(self):
+        # 4 cells, 6 grid points. Coverage: idx0 = 1 cell (leading, low),
+        # idx1-3 = 4 cells (full), idx4-5 = 1 cell (trailing, low).
+        all_curves = np.full((4, 6), np.nan)
+        all_curves[0, 0] = 1.0
+        all_curves[:, 1:4] = 1.0
+        all_curves[0, 4:6] = 1.0
+        mean = np.nanmean(all_curves, axis=0)
+        env_lo = mean.copy()
+        env_hi = mean.copy()
+        _apply_coverage_mask(all_curves, 0.95, mean, env_lo, env_hi)
+        # Trailing low-coverage points are blanked...
+        assert np.isnan(mean[4]) and np.isnan(mean[5])
+        assert np.isnan(env_lo[4]) and np.isnan(env_hi[5])
+        # ...the full-coverage core is kept...
+        assert np.all(np.isfinite(mean[1:4]))
+        # ...and the leading low-x point is preserved (keeps the range start).
+        assert np.isfinite(mean[0])
+        # The per-cell data is untouched.
+        assert np.isfinite(all_curves[0, 0]) and np.isfinite(all_curves[0, 5])
+
+    def test_disabled_when_fraction_zero(self):
+        all_curves = np.full((3, 5), np.nan)
+        all_curves[0, :] = 1.0  # only 1/3 coverage everywhere
+        mean = np.nanmean(all_curves, axis=0)
+        _apply_coverage_mask(all_curves, 0.0, mean)
+        assert np.all(np.isfinite(mean))  # nothing masked when disabled

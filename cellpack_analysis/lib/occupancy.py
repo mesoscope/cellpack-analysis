@@ -1,5 +1,6 @@
 import logging
 import pickle
+import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Literal
@@ -28,6 +29,42 @@ from cellpack_analysis.lib.stats import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _nanmean_nanstd(arr: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Column-wise ``nanmean``/``nanstd`` that silences benign all-NaN-slice warnings.
+
+    Grid points outside every cell's available-space support form all-NaN
+    columns (an expected consequence of restricting each cell to its own
+    support); numpy would otherwise emit ``Mean of empty slice`` and
+    ``Degrees of freedom <= 0`` ``RuntimeWarning``s. The result is still NaN
+    for those columns, which is the intended "no coverage" value.
+    """
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        mean = np.nanmean(arr, axis=0)
+        std = np.nanstd(arr, axis=0)
+    return mean, std
+
+
+def _nan_pointwise_envelope(
+    curves: np.ndarray, alpha: float = 0.05
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Pointwise ``[alpha/2, 1-alpha/2]`` envelope over the non-NaN entries per column.
+
+    Each cell contributes only where it has available-space support (its curve is
+    NaN elsewhere). Substituting NaN with 0 before quantiling would drag the lower
+    bound to 0 wherever coverage falls below ``1 - alpha/2`` — the band-collapse
+    artifact seen at the tails of the z occupancy. ``nanquantile`` computes the
+    band over just the covering cells; fully-uncovered columns stay NaN.
+    """
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        lo = np.nanquantile(curves, alpha / 2, axis=0)
+        hi = np.nanquantile(curves, 1 - alpha / 2, axis=0)
+    return lo, hi
 
 
 def get_cell_id_map_from_distance_kde_dict(
@@ -191,22 +228,25 @@ def get_kde_occupancy_for_single_cell(
     available_kde = distance_kde_dict[cell_id]["available"]
 
     if bandwidth is not None:
-        occupied_kde.set_bandwidth(bandwidth)
-        available_kde.set_bandwidth(bandwidth)
+        # Rebuild copies so the cached KDE objects are never mutated in place
+        # (set_bandwidth mutates state shared across modes and cells).
+        occupied_kde = gaussian_kde(occupied_kde.dataset, bw_method=bandwidth)
+        available_kde = gaussian_kde(available_kde.dataset, bw_method=bandwidth)
 
-    available_distances = available_kde.dataset
-    # occupied_distances = occupied_kde.dataset
-    # if np.max(occupied_distances) >= np.max(available_distances):
-    #     logger.warning(
-    #         f"Cell ID {cell_id} has max available distance {np.max(available_distances)} "
-    #         f"less than or equal to max occupied distance {np.max(occupied_distances)}. "
-    #         "Discarding invalid data points for this cell."
-    #     )
-    #     valid_mask = occupied_distances <= np.max(available_distances)
-    #     occupied_distances = occupied_distances[valid_mask]
+    available_distances = np.asarray(available_kde.dataset, dtype=float).ravel()
+    available_distances = available_distances[np.isfinite(available_distances)]
 
-    cell_lo = max(0, float(np.min(available_distances)))
-    cell_hi = float(np.percentile(available_distances, 95))
+    # The occupancy ratio is only defined where the cell actually has available
+    # space. Restrict evaluation to the available-data support
+    # ``[avail_min, avail_max]``; beyond it the denominator KDE is pure
+    # extrapolation and the ratio blows up. Every packed object is retained (it
+    # still informs the occupied KDE) — we simply never report a ratio outside
+    # the support, so no object filtering is needed.
+    avail_min = float(np.min(available_distances))
+    avail_max = float(np.max(available_distances))
+
+    cell_lo = max(0.0, avail_min)
+    cell_hi = avail_max
 
     cell_xvals = np.linspace(cell_lo, cell_hi, num_points)
     occupancy, pdf_occupied, pdf_available = pdf_ratio(
@@ -228,7 +268,7 @@ def get_kde_occupancy_for_single_cell(
     # Mask x_vals outside this cell's available-data support to NaN so that
     # nanmean across cells is naturally weighted by coverage and KDE tail
     # extrapolation beyond the data range cannot corrupt the aggregate.
-    out_of_support = common_xvals > cell_hi
+    out_of_support = (common_xvals < avail_min) | (common_xvals > avail_max)
     occ_common = occ_common.copy()
     occ_common[out_of_support] = np.nan
     pdf_occ_common = pdf_occ_common.copy()
@@ -242,6 +282,36 @@ def get_kde_occupancy_for_single_cell(
     return cell_id, result
 
 
+def _apply_coverage_mask(
+    all_curves: np.ndarray,
+    min_coverage_fraction: float,
+    *arrays: np.ndarray,
+) -> None:
+    """
+    Blank the sparse high-x tail of the combined aggregate (in place).
+
+    Cells drop out of the average at their own ``avail_max``, so in the sparse
+    high-x tail the mean and envelope are computed over a shrinking, changing
+    subset — producing a dropout "sawtooth". Each array in ``arrays`` is set to
+    NaN for grid points *beyond the last point* whose per-column coverage (the
+    fraction of non-NaN rows in ``all_curves``) is at least
+    ``min_coverage_fraction``. The leading low-x edge is deliberately left
+    intact so the reported range still starts at ``x_min`` (e.g. z = 0); the
+    per-cell data in ``all_curves`` is untouched.
+    """
+    n = all_curves.shape[0]
+    if n == 0 or min_coverage_fraction <= 0:
+        return
+    coverage = np.isfinite(all_curves).sum(axis=0)
+    ok = coverage >= min_coverage_fraction * n
+    if not ok.any():
+        return
+    last_ok = int(np.max(np.nonzero(ok)[0]))
+    tail = np.arange(coverage.shape[0]) > last_ok
+    for arr in arrays:
+        arr[tail] = np.nan
+
+
 def _compute_mode_kde_occupancy(
     mode: str,
     structure_id: str,
@@ -252,6 +322,7 @@ def _compute_mode_kde_occupancy(
     bandwidth: str | float | None,
     num_points: int,
     num_workers: int | None = None,
+    min_coverage_fraction: float = 0.95,
 ) -> dict[str, Any]:
     """
     Compute individual and combined KDE occupancy for one packing mode.
@@ -309,10 +380,11 @@ def _compute_mode_kde_occupancy(
 
     if all_occupancy_list:
         all_occ_arr = np.vstack(all_occupancy_list)
-        mean_occ = np.nanmean(all_occ_arr, axis=0)
-        std_occ = np.nanstd(all_occ_arr, axis=0)
-        arr_for_env = np.where(np.isnan(all_occ_arr), 0.0, all_occ_arr)
-        env_lo, env_hi, _, _ = pointwise_envelope(arr_for_env, alpha=0.05)
+        mean_occ, std_occ = _nanmean_nanstd(all_occ_arr)
+        env_lo, env_hi = _nan_pointwise_envelope(all_occ_arr, alpha=0.05)
+        # Trim the sparse high-x tail (dropout sawtooth) while keeping the low-x
+        # start (e.g. z = 0); the per-cell all_occupancy is left untouched.
+        _apply_coverage_mask(all_occ_arr, min_coverage_fraction, mean_occ, std_occ, env_lo, env_hi)
     else:
         all_occ_arr = np.empty((0, len(common_xvals)))
         mean_occ = np.zeros_like(common_xvals)
@@ -356,13 +428,13 @@ def _get_common_xvals_from_kde(
     num_points
         Number of points for the x-axis grid
     pct_min_cells
-        Fraction of cells that must have available data at a given distance for it to be included
-        in the common grid.
+        Deprecated and ignored; retained for backward-compatible signatures.
     x_min
         Minimum x value for the grid (default 0)
     x_max
-        Optional maximum x value for the grid. If None, it will be determined from the data
-        percentiles to ensure sufficient coverage across cells.
+        Maximum x value for the grid. When provided it is honored directly.
+        When ``None`` the upper bound falls back to the largest per-cell
+        maximum available distance.
 
     Returns
     -------
@@ -370,14 +442,21 @@ def _get_common_xvals_from_kde(
         A common x-axis grid (numpy array) spanning the range of available distances across cells
         with sufficient data.
     """
-    x_max_values = []
-    for _, cell_ids in cell_id_map.items():
-        for cell_id in cell_ids:
-            x_max_values.append(distance_kde_dict[cell_id]["available"].dataset.max())
-    x_max_values = np.array(x_max_values)
-    x_max_calc = np.percentile(x_max_values, pct_min_cells)
-    x_max_from_cells = np.max(x_max_values[x_max_values <= x_max_calc])
-    x_max_to_use = min(x_max_from_cells, x_max) if x_max is not None else x_max_calc
+    # Honor an explicit x_max (the workflow passes the per-measure xlim). Only
+    # when it is not provided do we fall back to a data-driven upper bound: the
+    # largest per-cell maximum available distance. (The previous percentile
+    # logic collapsed the grid to roughly the smallest cell's range.)
+    if x_max is not None:
+        x_max_to_use = float(x_max)
+    else:
+        x_max_values = np.array(
+            [
+                float(np.nanmax(distance_kde_dict[cell_id]["available"].dataset))
+                for cell_ids in cell_id_map.values()
+                for cell_id in cell_ids
+            ]
+        )
+        x_max_to_use = float(np.max(x_max_values))
 
     return np.linspace(x_min, x_max_to_use, num_points)
 
@@ -396,6 +475,7 @@ def get_kde_occupancy_dict(
     x_max: float | None = None,
     pct_min_cells: float = 0.05,
     num_workers: int | None = None,
+    min_coverage_fraction: float = 0.95,
 ) -> dict[str, dict[str, dict[str, Any]]]:
     """
     Load or compute occupancy ratio from distance distribution KDEs.
@@ -426,26 +506,34 @@ def get_kde_occupancy_dict(
     x_max
         Maximum x value for occupancy evaluation. Default is None
     pct_min_cells
-        Minimum percentage of cells that must have data at a given distance for it to be included in
-        the common x-axis grid (default 0.05 for 5%)
+        Deprecated and ignored. The common x-axis grid now spans
+        ``[x_min, x_max]`` (the per-measure ``xlim``); retained only for
+        backward-compatible call signatures.
     num_workers
         Number of worker threads for parallel per-cell KDE evaluation.
         ``None`` lets :class:`~concurrent.futures.ThreadPoolExecutor` choose
         (defaults to ``min(32, os.cpu_count() + 4)``).
+    min_coverage_fraction
+        Minimum fraction of cells that must cover a grid point for the combined
+        mean/envelope to be reported there. The sparse high-x tail beyond the
+        last point meeting this threshold is blanked (NaN) to remove the
+        cell-dropout sawtooth; the low-x start is preserved. Default 0.95.
+        Set to 0 to disable.
 
     Returns
     -------
     :
         ``{mode: {"individual": {cell_id: {"xvals", "occupancy",
-        "pdf_occupied", "pdf_available"}},
-        "combined": {"xvals", "occupancy", "occupancy_pooled",
-        "std_occupancy", "envelope_lo", "envelope_hi",
-        "pdf_occupied", "pdf_available", "all_occupancy"}}}``
+        "pdf_occupied", "pdf_available", "occupancy_common",
+        "pdf_occupied_common", "pdf_available_common"}},
+        "combined": {"xvals", "occupancy", "std_occupancy",
+        "envelope_lo", "envelope_hi", "all_occupancy"}}}``
 
-        ``combined["occupancy"]`` is the mean of per-cell ratio curves
-        evaluated on the shared ``x_vals`` grid.
-        ``combined["occupancy_pooled"]`` is the single ratio from the pooled
-        KDE across all cells.
+        ``combined["occupancy"]`` is the ``nanmean`` of the per-cell ratio
+        curves evaluated on the shared ``x_vals`` grid (each cell contributes
+        only within its own available-space support). Pooled-KDE ratios and
+        pooled PDFs are intentionally not computed here — they live on the
+        discrete/binned path.
         ``combined["all_occupancy"]`` has shape ``(n_cells, n_points)``.
     """
     save_path = (
@@ -482,6 +570,7 @@ def get_kde_occupancy_dict(
             bandwidth,
             num_points,
             num_workers=num_workers,
+            min_coverage_fraction=min_coverage_fraction,
         )
         for mode, structure_id in channel_map.items()
     }
@@ -960,7 +1049,9 @@ def _compute_single_cell_occupancy(
     pdf_avail_reg = np.maximum(pdf_avail, reg)
     log_ratio = np.log(pdf_occ_reg) - np.log(pdf_avail_reg)
     ratio = np.exp(log_ratio)
-    ratio = np.nan_to_num(ratio, nan=0.0, posinf=0.0, neginf=0.0)
+    # Align with the KDE path (pdf_ratio): an unreliable +inf ratio (denominator
+    # -> 0 with non-zero numerator) propagates as NaN rather than 0.
+    ratio = np.nan_to_num(ratio, nan=0.0, posinf=np.nan, neginf=0.0)
 
     if min_count > 0:
         ratio[raw_avail < min_count] = np.nan
@@ -1138,17 +1229,9 @@ def _prepare_cell_distances(
         available_concat = available_concat * PIXEL_SIZE_IN_UM
     available_concat = available_concat[np.isfinite(available_concat)]
 
-    if np.max(available_concat) < np.max(occupied_concat):
-        logger.warning(
-            "Cell %s, mode %s has max occupied distance %.2f greater than max available "
-            "distance %.2f — discarding invalid points.",
-            cell_id,
-            mode,
-            np.max(occupied_concat),
-            np.max(available_concat),
-        )
-        occupied_concat = occupied_concat[occupied_concat <= np.max(available_concat)]
-
+    # No object filtering: packed objects beyond the available-space range are
+    # retained. They fall outside the per-cell histogram grid (built from the
+    # available distances) and are simply not counted, rather than discarded.
     return occupied_concat, available_concat
 
 
@@ -1273,6 +1356,7 @@ def _aggregate_combined_occupancy(
     common_bin_edges: np.ndarray,
     pseudocount: float,
     min_count: int,
+    min_coverage_fraction: float = 0.95,
 ) -> dict[str, Any]:
     """
     Aggregate per-cell results into combined occupancy statistics.
@@ -1302,6 +1386,10 @@ def _aggregate_combined_occupancy(
     min_count
         Minimum raw pooled available-space count for a bin to be retained in
         ``"occupancy_pooled"``.
+    min_coverage_fraction
+        Minimum fraction of cells that must cover a grid point for the combined
+        mean/envelope to be reported there. The sparse high-x tail beyond the
+        last qualifying point is blanked; the low-x start is preserved.
 
     Returns
     -------
@@ -1324,11 +1412,10 @@ def _aggregate_combined_occupancy(
         }
 
     ratio_arr = np.vstack(interp_ratios)
-    mean_ratio = np.nanmean(ratio_arr, axis=0)
-    std_ratio = np.nanstd(ratio_arr, axis=0)
-    env_lo, env_hi, _, _ = pointwise_envelope(
-        np.where(np.isnan(ratio_arr), 0.0, ratio_arr), alpha=0.05
-    )
+    mean_ratio, std_ratio = _nanmean_nanstd(ratio_arr)
+    env_lo, env_hi = _nan_pointwise_envelope(ratio_arr, alpha=0.05)
+    # Trim the sparse high-x tail (dropout sawtooth); keep the low-x start.
+    _apply_coverage_mask(ratio_arr, min_coverage_fraction, mean_ratio, std_ratio, env_lo, env_hi)
 
     pooled_occupied = np.concatenate(all_occupied_distances)
     pooled_available = np.concatenate(all_available_distances)
@@ -1341,7 +1428,8 @@ def _aggregate_combined_occupancy(
     ratio_pooled = np.exp(
         np.log(np.maximum(pdf_occ_pooled, reg)) - np.log(np.maximum(pdf_avail_pooled, reg))
     )
-    ratio_pooled = np.nan_to_num(ratio_pooled, nan=0.0, posinf=0.0, neginf=0.0)
+    # Align with the KDE path: unreliable +inf pooled ratio propagates as NaN.
+    ratio_pooled = np.nan_to_num(ratio_pooled, nan=0.0, posinf=np.nan, neginf=0.0)
     if min_count > 0:
         ratio_pooled[raw_avail_pooled < min_count] = np.nan
 
@@ -1369,6 +1457,7 @@ def get_binned_occupancy_dict_from_distance_dict(
     num_cells: int | None = None,
     pseudocount: float = 1.0,
     min_count: int = 5,
+    min_coverage_fraction: float = 0.95,
     results_dir: Path | None = None,
     recalculate: bool = False,
     suffix: str = "",
@@ -1418,6 +1507,11 @@ def get_binned_occupancy_dict_from_distance_dict(
         Minimum raw count required in the *available-space* histogram for a bin
         to be included.  Bins below this threshold have their ratio set to
         ``NaN``.  Set to 0 to disable masking.  Default 5.
+    min_coverage_fraction
+        Minimum fraction of cells that must cover a grid point for the combined
+        mean/envelope to be reported there. The sparse high-x tail beyond the
+        last qualifying point is blanked; the low-x start is preserved.
+        Default 0.95. Set to 0 to disable.
     results_dir
         Directory to save the cached result.  No caching when ``None``.
     recalculate
@@ -1483,7 +1577,10 @@ def get_binned_occupancy_dict_from_distance_dict(
         bin_width,
     )
     common_bin_edges = np.concatenate(
-        [common_r_grid - bin_width / 2, [common_r_grid[-1] + bin_width / 2]]
+        [
+            common_r_grid - bin_width / 2,
+            [common_r_grid[-1] + bin_width / 2],
+        ]
     )
 
     occupancy_result: dict[str, dict[str, Any]] = {}
@@ -1513,6 +1610,7 @@ def get_binned_occupancy_dict_from_distance_dict(
                 common_bin_edges,
                 pseudocount,
                 min_count,
+                min_coverage_fraction,
             ),
         }
 
