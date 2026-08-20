@@ -1,0 +1,37 @@
+{
+    "name": "distance_analysis",
+    "structure_id": "RAB5A",
+    "packing_id": "endosome",
+    "structure_name": "endosome",
+    "packing_output_folder": "packing_outputs/8d_sphere_data/replicate_99_v2/",
+    "output_path": "replicate_99_v2/endosome/",
+    "channel_map": {
+        "RAB5A": "RAB5A",
+        "random": "RAB5A",
+        "nucleus_gradient": "RAB5A",
+        "membrane_gradient": "RAB5A",
+        "apical_gradient": "RAB5A"
+    },
+    "baseline_mode": "RAB5A",
+    "num_workers": 16,
+    "distance_backend": "process",
+    "envelope_test_params": {
+        "envelope_type": "pointwise",
+        "statistic": "intdev"
+    },
+    "distance_measures": [
+        "nucleus",
+        "z"
+    ],
+    "recalculate": {
+        "run_pairwise_envelope_test": true,
+        "run_emd_analysis": true,
+        "run_ks_analysis": true
+    },
+    "analysis_steps": [
+        "load_common_data",
+        "calculate_distances",
+        "plot_distance_distributions",
+        "run_per_cell_envelope_test"
+    ]
+}

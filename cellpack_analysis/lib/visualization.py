@@ -1980,6 +1980,254 @@ def plot_per_dm_rejection_bars(
     return fig, ax
 
 
+def plot_per_cell_rejection_bars(
+    per_cell_results: dict[str, Any],
+    joint_test: bool = False,
+    figsize: tuple[float, float] | None = None,
+    font_scale: float = 1.0,
+    figures_dir: Path | None = None,
+    suffix: str = "",
+    save_format: Literal["svg", "png", "pdf"] = "pdf",
+) -> tuple[Figure, Axes]:
+    """
+    Plot per-cell CSR rejection fractions of the baseline against each null model.
+
+    One horizontal group per null model.  ``joint_test=False`` draws one bar per
+    distance measure (colored by measure); ``joint_test=True`` draws a single bar
+    per null model (colored by mode) using the joint test.  Each bar stacks the
+    fraction of cells where the baseline lies *above* the null envelope (full
+    saturation) and *below* it (desaturated).
+
+    Parameters
+    ----------
+    per_cell_results
+        Output of :func:`~cellpack_analysis.lib.stats.per_cell_envelope_test`.
+    joint_test
+        Use the joint (all-measures) test instead of per-measure bars.
+    figsize
+        Figure size ``(width, height)`` in inches; auto-scaled if not given.
+    font_scale
+        Multiplicative scale factor applied to all font sizes.
+    figures_dir
+        Directory to save figure; figure is not saved when ``None``.
+    suffix
+        Suffix appended to the saved filename.
+    save_format
+        File format for saving.
+
+    Returns
+    -------
+    :
+        Tuple of (Figure, Axes).
+    """
+    summary = per_cell_results["summary"]
+    null_modes = list(per_cell_results["null_modes"])[::-1]  # reverse for y-axis ordering
+    distance_measures = per_cell_results["distance_measures"]
+    baseline_mode = per_cell_results["baseline_mode"]
+    n_modes = len(null_modes)
+    n_dm = len(distance_measures)
+
+    if figsize is None:
+        figsize = (
+            (5.0, max(2.0, 0.5 * n_modes)) if joint_test else (5.0, max(2.0, 0.6 * n_modes * n_dm))
+        )
+
+    fig, ax = plt.subplots(figsize=figsize, dpi=150)
+
+    if joint_test:
+        pos = summary["rejection_joint_positive"]
+        neg = summary["rejection_joint_negative"]
+        bar_height = 0.6
+        for mode_idx, ref_mode in enumerate(null_modes):
+            pos_val = float(pos.get(ref_mode, 0.0))
+            neg_val = float(neg.get(ref_mode, 0.0))
+            ref_color = label_tables.COLOR_PALETTE.get(
+                ref_mode, label_tables.COLOR_PALETTE.get("random", "#808080")
+            )
+            ref_neg_color = label_tables.adjust_color_saturation(ref_color, saturation=0.3)
+            ax.barh(mode_idx, pos_val, height=bar_height, color=ref_color, alpha=0.9)
+            ax.barh(
+                mode_idx, neg_val, height=bar_height, left=pos_val, color=ref_neg_color, alpha=0.9
+            )
+    else:
+        pos = summary["rejection_per_distance_measure_positive"]
+        neg = summary["rejection_per_distance_measure_negative"]
+        bar_height = 0.8 / n_dm
+        for mode_idx, ref_mode in enumerate(null_modes):
+            for dm_idx, dm in enumerate(distance_measures):
+                pos_val = float(pos.get((ref_mode, dm), 0.0))
+                neg_val = float(neg.get((ref_mode, dm), 0.0))
+                dm_color = label_tables.COLOR_PALETTE.get(dm, "#808080")
+                dm_neg_color = label_tables.adjust_color_saturation(dm_color, saturation=0.3)
+                dm_label = label_tables.DISTANCE_MEASURE_TITLES.get(dm, dm)
+                y = mode_idx + (dm_idx - n_dm / 2 + 0.5) * bar_height
+                ax.barh(
+                    y,
+                    pos_val,
+                    height=bar_height * 0.85,
+                    color=dm_color,
+                    alpha=0.9,
+                    label=dm_label if mode_idx == 0 else "",
+                )
+                ax.barh(
+                    y,
+                    neg_val,
+                    height=bar_height * 0.85,
+                    left=pos_val,
+                    color=dm_neg_color,
+                    alpha=0.9,
+                )
+        dm_handles = [
+            mpatches.Patch(
+                color=label_tables.COLOR_PALETTE.get(dm, "#808080"),
+                alpha=0.9,
+                label=label_tables.DISTANCE_MEASURE_TITLES.get(dm, dm),
+            )
+            for dm in distance_measures
+        ]
+        sign_handles = [
+            mpatches.Patch(color="gray", alpha=0.9, label="baseline > null envelope"),
+            mpatches.Patch(color="gray", alpha=0.3, label="baseline < null envelope"),
+        ]
+        ax.legend(
+            handles=dm_handles + sign_handles,
+            frameon=False,
+            fontsize=7 * font_scale,
+            bbox_to_anchor=(1, 1),
+            loc="upper left",
+            title="Distance measure",
+            title_fontsize=7 * font_scale,
+        )
+
+    ax.set_xlim(0, 1)
+    ax.set_yticks(np.arange(n_modes))
+    ax.set_yticklabels(
+        [label_tables.MODE_LABELS.get(rm, rm) or rm for rm in null_modes],
+        fontsize=8 * font_scale,
+    )
+    ax.set_xlabel("Fraction of cells rejected", fontsize=8 * font_scale)
+    base_label = label_tables.MODE_LABELS.get(baseline_mode, baseline_mode) or baseline_mode
+    ax.set_title(
+        f"Per-cell CSR rejection — {base_label} vs null envelopes",
+        fontsize=10 * font_scale,
+    )
+    sns.despine(ax=ax)
+    fig.tight_layout()
+    plt.show()
+
+    if figures_dir is not None:
+        figname = "joint" if joint_test else "per_dm"
+        filepath = figures_dir / f"per_cell_{figname}_rejection_bars{suffix}.{save_format}"
+        fig.savefig(filepath, format=save_format, bbox_inches="tight", transparent=True)
+        logger.info("Saved per-cell rejection bars to %s", filepath)
+
+    return fig, ax
+
+
+def plot_per_cell_envelope_examples(
+    per_cell_results: dict[str, Any],
+    select: Literal["most_rejected", "median"] = "most_rejected",
+    figsize: tuple[float, float] | None = None,
+    font_scale: float = 1.0,
+    figures_dir: Path | None = None,
+    suffix: str = "",
+    save_format: Literal["svg", "png", "pdf"] = "pdf",
+) -> tuple[Figure, np.ndarray]:
+    """
+    Overlay the baseline (experimental) ECDF on each null model's per-cell envelope.
+
+    Grid of subplots (rows = null models, columns = distance measures).  For each
+    ``(null model, distance measure)`` one representative cell is chosen and its
+    simulated replicate envelope (``lo..hi`` band + mean) is shaded with the
+    experimental ECDF drawn on top, annotated with the cell id and per-cell
+    p-value.  ``select="most_rejected"`` picks the smallest-p cell (clearest
+    example lying outside the band); ``select="median"`` picks the median-p cell.
+
+    Parameters
+    ----------
+    per_cell_results
+        Output of :func:`~cellpack_analysis.lib.stats.per_cell_envelope_test`
+        (must contain the full ``"per_cell_results"`` list).
+    select
+        Which example cell to show per panel.
+    figsize
+        Figure size ``(width, height)`` in inches; auto-scaled if not given.
+    font_scale
+        Multiplicative scale factor applied to all font sizes.
+    figures_dir
+        Directory to save figure; figure is not saved when ``None``.
+    suffix
+        Suffix appended to the saved filename.
+    save_format
+        File format for saving.
+
+    Returns
+    -------
+    :
+        Tuple of (Figure, 2-D ndarray of Axes).
+    """
+    per_cell = per_cell_results["per_cell_results"]
+    cell_ids = per_cell_results["cell_ids"]
+    null_modes = per_cell_results["null_modes"]
+    distance_measures = per_cell_results["distance_measures"]
+    n_rows = len(null_modes)
+    n_cols = len(distance_measures)
+
+    if figsize is None:
+        figsize = (3.0 * n_cols, 2.2 * n_rows)
+    fig, axs = plt.subplots(n_rows, n_cols, figsize=figsize, dpi=150, squeeze=False)
+
+    for r, mode in enumerate(null_modes):
+        for c, dm in enumerate(distance_measures):
+            ax = axs[r, c]
+            pvals = np.array(
+                [
+                    per_cell[i][mode]["per_distance_measure"][dm]["pval"]
+                    for i in range(len(per_cell))
+                ]
+            )
+            if select == "median":
+                idx = int(np.argsort(pvals)[len(pvals) // 2])
+            else:
+                idx = int(np.argmin(pvals))
+
+            d = per_cell[idx][mode]["per_distance_measure"][dm]
+            x = np.asarray(d["xvals"])
+            lo = np.asarray(d["lo"])
+            hi = np.asarray(d["hi"])
+            obs = np.asarray(d["obs_curve"])
+            mode_color = label_tables.COLOR_PALETTE.get(mode, "#4C72B0")
+
+            ax.fill_between(x, lo, hi, color=mode_color, alpha=0.25, label="null envelope")
+            ax.plot(x, np.asarray(d["mu"]), color=mode_color, lw=1.0, ls="--", label="null mean")
+            ax.plot(x, obs, color="k", lw=1.6, label="experimental")
+
+            mode_label = label_tables.MODE_LABELS.get(mode, mode) or mode
+            dm_label = label_tables.DISTANCE_MEASURE_TITLES.get(dm, dm)
+            ax.set_title(
+                f"{mode_label} / {dm_label}\ncell {cell_ids[idx]}  p={d['pval']:.3f}",
+                fontsize=8 * font_scale,
+            )
+            if r == n_rows - 1:
+                ax.set_xlabel(dm_label, fontsize=8 * font_scale)
+            if c == 0:
+                ax.set_ylabel("ECDF", fontsize=8 * font_scale)
+            ax.set_ylim(-0.02, 1.02)
+            ax.tick_params(labelsize=7 * font_scale)
+
+    axs[0, -1].legend(fontsize=6 * font_scale, frameon=False, loc="lower right")
+    sns.despine(fig=fig)
+    fig.tight_layout()
+    plt.show()
+
+    if figures_dir is not None:
+        filepath = figures_dir / f"per_cell_envelope_examples_{select}{suffix}.{save_format}"
+        fig.savefig(filepath, format=save_format, bbox_inches="tight", transparent=True)
+        logger.info("Saved per-cell envelope examples to %s", filepath)
+
+    return fig, axs
+
+
 def plot_per_dm_envelopes_overlaid(
     pairwise_results: dict[str, Any],
     figsize: tuple[float, float] | None = None,

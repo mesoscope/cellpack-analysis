@@ -24,6 +24,10 @@ Distance distribution analysis
   for every ordered pair of packing modes.
 - ``run_pairwise_envelope_test`` — Pairwise Monte Carlo rank-envelope tests comparing
   every ordered pair of packing modes.
+- ``run_per_cell_envelope_test`` — Per-cell Monte Carlo rank-envelope (CSR) test comparing
+  the baseline (experimental) distribution against each null model's own per-cell replicate
+  envelope, aggregated across cells with BH correction. This is the per-cell counterpart to
+  ``run_pairwise_envelope_test`` and is the correct test for replicate-per-cell packing designs.
 
 Occupancy analysis
 ~~~~~~~~~~~~~~~~~~
@@ -73,6 +77,7 @@ Usage::
 import argparse
 import json
 import logging
+import pickle
 import time
 from pathlib import Path
 
@@ -88,7 +93,7 @@ from cellpack_analysis.lib.io import format_time
 from cellpack_analysis.lib.label_tables import DISTANCE_LIMITS
 from cellpack_analysis.lib.load_data import get_position_data_from_outputs
 from cellpack_analysis.lib.mesh_tools import get_mesh_information_dict_for_structure
-from cellpack_analysis.lib.stats import pairwise_envelope_test
+from cellpack_analysis.lib.stats import pairwise_envelope_test, per_cell_envelope_test
 
 mpl.use("Agg")  # Use non-interactive backend for plotting
 plt.ioff()  # Disable interactive mode to prevent figures from displaying during analysis
@@ -137,6 +142,7 @@ class AnalysisConfig:
             "ingredient_key", f"membrane_interior_{self.structure_name}"
         )
         self.num_workers = self.config.get("num_workers", defaults.NUM_WORKERS)
+        self.distance_backend = self.config.get("distance_backend", defaults.DISTANCE_BACKEND)
 
     def _setup_analysis_params(self) -> None:
         """Set top-level analysis parameters."""
@@ -293,6 +299,7 @@ class AnalysisRunner:
             "run_emd_analysis": self._run_emd_analysis,
             "run_ks_analysis": self._run_ks_analysis,
             "run_pairwise_envelope_test": self._run_pairwise_envelope_test,
+            "run_per_cell_envelope_test": self._run_per_cell_envelope_test,
             "run_occupancy_analysis": self._run_occupancy_analysis,
             "run_occupancy_emd_analysis": self._run_occupancy_emd_analysis,
             "run_occupancy_pairwise_envelope_test": self._run_occupancy_pairwise_envelope_test,
@@ -366,6 +373,7 @@ class AnalysisRunner:
             results_dir=config.results_dir,
             recalculate=config.recalculate["calculate_distances"],
             num_workers=config.num_workers,
+            parallel_backend=config.distance_backend,
         )
 
         all_distance_dict = distance.filter_invalids_from_distance_distribution_dict(
@@ -623,6 +631,59 @@ class AnalysisRunner:
         )
 
         self.shared_data["pairwise_envelope_results"] = pairwise_results
+
+    def _run_per_cell_envelope_test(self, config: AnalysisConfig) -> None:
+        """Run the per-cell Monte Carlo rank-envelope (CSR) test: baseline vs each null model."""
+        if "all_distance_dict" not in self.shared_data:
+            logger.warning("Distance data not calculated. Calculating distances first.")
+            self._calculate_distances(config)
+
+        logger.info("Running per-cell envelope test (baseline=%s)", config.baseline_mode)
+        figures_dir = config.figures_dir / "distance" / "per_cell_envelope"
+        figures_dir.mkdir(exist_ok=True, parents=True)
+
+        per_cell_results = per_cell_envelope_test(
+            all_distance_dict=self.shared_data["all_distance_dict"],
+            baseline_mode=config.baseline_mode,
+            packing_modes=config.packing_modes,
+            distance_measures=config.distance_measures,
+            **config.envelope_test_params,
+        )
+        self.shared_data["per_cell_envelope_results"] = per_cell_results
+
+        # Persist the BH-corrected per-cell q-values (rows = cells) for the record.
+        summary = per_cell_results["summary"]
+        qvals = summary["per_distance_measure_qvals"].copy()
+        qvals.index = per_cell_results["cell_ids"]
+        csv_path = config.results_dir / f"per_cell_envelope_qvals{config.suffix}.csv"
+        qvals.to_csv(csv_path)
+        logger.info("Saved per-cell envelope q-values to %s", csv_path)
+
+        # Persist the full per-cell results (envelopes + p-values) for later inspection.
+        results_path = config.results_dir / f"per_cell_envelope_results{config.suffix}.dat"
+        with open(results_path, "wb") as f:
+            pickle.dump(per_cell_results, f, protocol=pickle.HIGHEST_PROTOCOL)
+        logger.info("Saved per-cell envelope results to %s", results_path)
+
+        # Rejection-fraction bars (per distance measure and joint across measures).
+        for joint_test in (False, True):
+            _ = visualization.plot_per_cell_rejection_bars(
+                per_cell_results=per_cell_results,
+                joint_test=joint_test,
+                figures_dir=figures_dir,
+                suffix=config.suffix,
+                save_format=config.save_format,
+            )
+
+        # Example per-cell envelope overlays (experimental ECDF vs each null band).
+        for select in ("most_rejected", "median"):
+            _ = visualization.plot_per_cell_envelope_examples(
+                per_cell_results=per_cell_results,
+                select=select,
+                figures_dir=figures_dir,
+                suffix=config.suffix,
+                save_format=config.save_format,
+            )
 
     def _run_occupancy_analysis(self, config: AnalysisConfig) -> None:
         """Run occupancy analysis (discrete histogram or KDE, per distribution_method)."""

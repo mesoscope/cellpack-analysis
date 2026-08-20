@@ -804,6 +804,246 @@ def summarize_across_cells(
     }
 
 
+def per_cell_envelope_test(
+    all_distance_dict: dict[str, dict[str, dict[str, dict[str, np.ndarray]]]],
+    baseline_mode: str,
+    packing_modes: list[str],
+    distance_measures: list[str],
+    alpha: float = 0.05,
+    r_grid_size: int = 150,
+    bin_width: float | None = None,
+    statistic: Literal["supremum", "intdev"] = "intdev",
+    envelope_type: EnvelopeType = "rank",
+    joint_r_grid_size: int | None = None,
+    min_replicates: int = 2,
+) -> dict[str, Any]:
+    """
+    Per-cell Monte Carlo envelope (CSR) test: baseline vs each null model.
+
+    For every cell present in both ``baseline_mode`` and every null model, the
+    baseline (experimental) distance distribution is compared against the Monte
+    Carlo envelope built from that *same cell's* simulated replicates, separately
+    for each null model and distance measure.  Per-cell p-values are aggregated
+    across cells with Benjamini-Hochberg correction.
+
+    This is the per-cell counterpart to :func:`pairwise_envelope_test`: instead of
+    pooling every cell and seed into one cross-cell envelope, each cell is paired
+    with its own replicates, which is what a replicate-per-cell packing design
+    (e.g. 99 seeds/cell) is built to support.  With ``envelope_type="rank"`` the
+    exact simultaneous rank-envelope p-value has resolution ``1/(R + 1)`` (e.g.
+    0.01 for 99 replicates).
+
+    Parameters
+    ----------
+    all_distance_dict
+        ``{distance_measure: {mode: {cell_id: {seed: distances}}}}``.
+    baseline_mode
+        Mode treated as the observed data (typically the experimental structure).
+    packing_modes
+        All modes; every mode other than ``baseline_mode`` is a null model.
+    distance_measures
+        Distance measures to test (per-measure and joint).
+    alpha
+        Significance level for BH correction across cells.
+    r_grid_size, bin_width, statistic, envelope_type, joint_r_grid_size
+        Forwarded to :func:`monte_carlo_per_cell`.  ``envelope_type`` defaults to
+        ``"rank"`` (``statistic`` is ignored when ``envelope_type="rank"``).
+    min_replicates
+        Minimum simulated replicates a cell must have, in every null model, to be
+        included.
+
+    Returns
+    -------
+    :
+        Dictionary containing:
+
+        - ``"summary"``: output of :func:`summarize_across_cells` (BH q-values and
+          rejection fractions per null model / distance measure and joint).
+        - ``"per_cell_results"``: list of per-cell :func:`monte_carlo_per_cell`
+          outputs, aligned with ``"cell_ids"``.
+        - ``"cell_ids"``: cell IDs actually tested (row order of the summary
+          DataFrames).
+        - ``"baseline_mode"``, ``"null_modes"``, ``"distance_measures"``,
+          ``"alpha"``, ``"statistic"``, ``"envelope_type"``.
+    """
+    logger = logging.getLogger(__name__)
+
+    null_modes = [m for m in packing_modes if m != baseline_mode]
+    if not null_modes:
+        raise ValueError(
+            "per_cell_envelope_test needs at least one null model besides "
+            f"baseline_mode={baseline_mode!r}"
+        )
+
+    def _cells_with_all_dms(mode: str) -> set[str]:
+        cell_sets = [
+            set(all_distance_dict.get(dm, {}).get(mode, {}).keys()) for dm in distance_measures
+        ]
+        return set.intersection(*cell_sets) if cell_sets else set()
+
+    shared_cells = _cells_with_all_dms(baseline_mode)
+    for mode in null_modes:
+        shared_cells = shared_cells & _cells_with_all_dms(mode)
+
+    logger.info(
+        "per_cell_envelope_test: %d cells shared across baseline %r + %d null models %s",
+        len(shared_cells),
+        baseline_mode,
+        len(null_modes),
+        null_modes,
+    )
+    if not shared_cells:
+        raise ValueError("No cell_ids shared between baseline and all null models")
+
+    all_results: list[dict[str, dict]] = []
+    cell_ids: list[str] = []
+    skipped = 0
+
+    for cell_id in sorted(shared_cells):
+        # Observed = all baseline points for this cell (pool any seeds).
+        observed: dict[str, np.ndarray] = {}
+        obs_ok = True
+        for dm in distance_measures:
+            seed_dict = all_distance_dict[dm][baseline_mode][cell_id]
+            if seed_dict:
+                obs_arr = np.concatenate([np.asarray(a).ravel() for a in seed_dict.values()])
+            else:
+                obs_arr = np.array([])
+            observed[dm] = obs_arr
+            if obs_arr.size == 0 or not np.any(np.isfinite(obs_arr)):
+                obs_ok = False
+        if not obs_ok:
+            skipped += 1
+            continue
+
+        # Per null model, build a replicate list keyed by the seeds available for
+        # every requested distance measure.
+        sim_by_mode: dict[str, list[dict[str, np.ndarray]]] = {}
+        modes_ok = True
+        for mode in null_modes:
+            seed_sets = [
+                set(all_distance_dict[dm][mode][cell_id].keys()) for dm in distance_measures
+            ]
+            seeds = sorted(set.intersection(*seed_sets)) if seed_sets else []
+            reps = [
+                {
+                    dm: np.asarray(all_distance_dict[dm][mode][cell_id][seed])
+                    for dm in distance_measures
+                }
+                for seed in seeds
+            ]
+            if len(reps) < min_replicates:
+                modes_ok = False
+                break
+            sim_by_mode[mode] = reps
+        if not modes_ok:
+            skipped += 1
+            continue
+
+        # monte_carlo_per_cell's joint test assumes equal replicate counts across
+        # modes; truncate every mode to the common minimum for this cell.
+        min_reps = min(len(reps) for reps in sim_by_mode.values())
+        if min_reps < min_replicates:
+            skipped += 1
+            continue
+        sim_by_mode = {mode: reps[:min_reps] for mode, reps in sim_by_mode.items()}
+
+        cell_result = monte_carlo_per_cell(
+            observed_distances=observed,
+            simulated_distances_by_mode=sim_by_mode,
+            alpha=alpha,
+            distance_measures=distance_measures,
+            r_grid_size=r_grid_size,
+            bin_width=bin_width,
+            statistic=statistic,
+            envelope_type=envelope_type,
+            joint_r_grid_size=joint_r_grid_size,
+        )
+        all_results.append(cell_result)
+        cell_ids.append(cell_id)
+
+    if not all_results:
+        raise ValueError("No cells had sufficient data for the per-cell envelope test")
+
+    logger.info(
+        "per_cell_envelope_test: tested %d cells (%d skipped for insufficient data)",
+        len(all_results),
+        skipped,
+    )
+
+    summary = summarize_across_cells(all_results, alpha=alpha)
+
+    return {
+        "summary": summary,
+        "per_cell_results": all_results,
+        "cell_ids": cell_ids,
+        "baseline_mode": baseline_mode,
+        "null_modes": null_modes,
+        "distance_measures": distance_measures,
+        "alpha": alpha,
+        "statistic": statistic,
+        "envelope_type": envelope_type,
+    }
+
+
+def _batch_test_obs_vs_sim(
+    obs_curves: np.ndarray,
+    sim_curves: np.ndarray,
+    statistic: Literal["supremum", "intdev"] = "intdev",
+    envelope_type: EnvelopeType = "pointwise",
+    alpha: float = 0.05,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Test many observed curves against one fixed simulation envelope.
+
+    Returns ``(pvals, signs)`` for each row of ``obs_curves``.  For the pointwise
+    (``supremum``/``intdev``) path the simulation-side statistic (``mu``, ``sd``
+    and the sorted ``t_sim`` distribution) is computed **once** and reused across
+    all observed curves, turning the pooled pairwise test from
+    ``O(M_obs * M_sim)`` into ``O(M_sim log M_sim + M_obs log M_sim)``.  The
+    ``rank`` path pools each observed curve with the simulations, so it is still
+    evaluated per observed curve via :func:`compute_rank_envelope`.
+
+    Results match :func:`get_test_statistic_and_pvalue` applied per row.
+    """
+    n_obs = obs_curves.shape[0]
+    if n_obs == 0:
+        return np.empty(0), np.empty(0, dtype=int)
+
+    if envelope_type == "rank":
+        pvals = np.empty(n_obs)
+        signs = np.empty(n_obs, dtype=int)
+        for i in range(n_obs):
+            _, _, p, s, _ = compute_rank_envelope(obs_curves[i], sim_curves, alpha=alpha)
+            pvals[i] = p
+            signs[i] = s
+        return pvals, signs
+
+    mu = sim_curves.mean(axis=0)
+    sd = sim_curves.std(axis=0, ddof=1)
+    sd[sd == 0] = 1e-9
+    dev = (obs_curves - mu) / sd  # (n_obs, L)
+
+    if statistic == "supremum":
+        abs_dev = np.abs(dev)
+        t_obs = np.max(abs_dev, axis=1)
+        signs = np.sign(dev[np.arange(n_obs), np.argmax(abs_dev, axis=1)]).astype(int)
+        t_sim = np.max(np.abs((sim_curves - mu) / sd), axis=1)
+    elif statistic == "intdev":
+        t_obs = integrate.trapezoid(np.abs(dev), axis=1)
+        signs = np.sign(np.mean(dev, axis=1)).astype(int)
+        t_sim = integrate.trapezoid(np.abs((sim_curves - mu) / sd), axis=1)
+    else:
+        raise ValueError(f"Invalid statistic: {statistic}")
+
+    signs[signs == 0] = 1
+    sorted_t_sim = np.sort(t_sim)
+    m = sorted_t_sim.size
+    # #{t_sim >= t_obs} via searchsorted (left => count strictly less than t_obs).
+    n_ge = m - np.searchsorted(sorted_t_sim, t_obs, side="left")
+    pvals = (n_ge + 1) / (m + 1)
+    return pvals, signs
+
+
 def _pairwise_test_on_curves(
     mode_curves: dict[str, dict[str, np.ndarray]],
     mode_xvals: dict[str, dict[str, np.ndarray]],
@@ -878,14 +1118,6 @@ def _pairwise_test_on_curves(
             return np.interp(joint_u, np.array([0.0, 1.0]), np.array([curve[0], curve[-1]]))
         return np.interp(joint_u, x_norm / x_max, curve)
 
-    def _run_test(obs: np.ndarray, sim: np.ndarray) -> tuple[float, int]:
-        """Return ``(p_value, sign)`` for one observed curve against the simulation envelope."""
-        if envelope_type == "rank":
-            _, _, pval, sign, _ = compute_rank_envelope(obs, sim, alpha=alpha)
-        else:
-            pval, _, _, sign = get_test_statistic_and_pvalue(obs, sim, statistic=statistic)
-        return pval, sign
-
     per_dm_results: dict[str, dict[tuple[str, str], dict[str, Any]]] = {
         dm: {} for dm in distance_measures
     }
@@ -905,15 +1137,9 @@ def _pairwise_test_on_curves(
                 if sim_curves.shape[0] < 2 or obs_curves.shape[0] == 0:
                     continue
 
-                pvals: list[float] = []
-                signs_list: list[int] = []
-                for obs_curve in obs_curves:
-                    pval, sign = _run_test(obs_curve, sim_curves)
-                    pvals.append(pval)
-                    signs_list.append(sign)
-
-                pvals_arr = np.array(pvals)
-                signs_arr = np.array(signs_list)
+                pvals_arr, signs_arr = _batch_test_obs_vs_sim(
+                    obs_curves, sim_curves, statistic, envelope_type, alpha
+                )
                 qvals_arr = false_discovery_control(pvals_arr, method="bh")
                 rejected = qvals_arr < alpha
                 per_dm_results[dm][(mode_a, mode_b)] = {
@@ -953,21 +1179,20 @@ def _pairwise_test_on_curves(
                 ]
             )
 
-            joint_pvals: list[float] = []
-            joint_signs: list[int] = []
-            for obs_idx in range(num_test):
-                obs_concat = np.concatenate(
-                    [
-                        _resample(mode_curves[mode_a][dm][obs_idx], mode_xvals[mode_a][dm])
-                        for dm in valid_dms
-                    ]
-                )
-                pval, sign = _run_test(obs_concat, sim_concat)
-                joint_pvals.append(pval)
-                joint_signs.append(sign)
-
-            jp = np.array(joint_pvals)
-            js = np.array(joint_signs)
+            obs_concat_all = np.vstack(
+                [
+                    np.concatenate(
+                        [
+                            _resample(mode_curves[mode_a][dm][obs_idx], mode_xvals[mode_a][dm])
+                            for dm in valid_dms
+                        ]
+                    )
+                    for obs_idx in range(num_test)
+                ]
+            )
+            jp, js = _batch_test_obs_vs_sim(
+                obs_concat_all, sim_concat, statistic, envelope_type, alpha
+            )
             jq = false_discovery_control(jp, method="bh")
             rej = jq < alpha
             joint_results[(mode_a, mode_b)] = {
