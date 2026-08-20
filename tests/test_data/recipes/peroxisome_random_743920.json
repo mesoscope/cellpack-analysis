@@ -24,7 +24,7 @@
             ],
             "representations": {
                 "mesh": {
-                    "path": "/allen/aics/animated-cell/Saurabh/dev/cellpack-analysis/data/structure_data/SLC25A17/meshes",
+                    "path": "/allen/aics/lumenoid/cellpack/cellpack-analysis/data/structure_data/SLC25A17/meshes",
                     "name": "mem_mesh_743920.obj",
                     "format": "obj"
                 }
@@ -39,7 +39,7 @@
             ],
             "representations": {
                 "mesh": {
-                    "path": "/allen/aics/animated-cell/Saurabh/dev/cellpack-analysis/data/structure_data/SLC25A17/meshes",
+                    "path": "/allen/aics/lumenoid/cellpack/cellpack-analysis/data/structure_data/SLC25A17/meshes",
                     "name": "nuc_mesh_743920.obj",
                     "format": "obj"
                 }
@@ -86,5 +86,5 @@
         }
     },
     "randomness_seed": 743920,
-    "grid_file_path": "/allen/aics/animated-cell/Saurabh/dev/cellpack-analysis/data/structure_data/SLC25A17/grids/743920_grid.dat"
+    "grid_file_path": "/allen/aics/lumenoid/cellpack/cellpack-analysis/data/structure_data/SLC25A17/grids/743920_grid.dat"
 }

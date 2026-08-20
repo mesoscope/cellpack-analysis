@@ -56,5 +56,5 @@
         "run_occupancy_emd_analysis"
     ],
     "recalculate": false,
-    "output_path": "/allen/aics/animated-cell/Saurabh/dev/cellpack-analysis/results/rule_interpolation_combine_prob/endosome/validation"
+    "output_path": "/allen/aics/lumenoid/cellpack/cellpack-analysis/results/rule_interpolation_combine_prob/endosome/validation"
 }

@@ -12,8 +12,8 @@
     "num_processes": 32,
     "skip_completed": true,
     "dry_run": false,
-    "recipe_template_path": "/allen/aics/animated-cell/Saurabh/dev/cellpack-analysis/data/templates/recipes/endosome_replicate_recipe_template.json",
-    "config_template_path": "/allen/aics/animated-cell/Saurabh/dev/cellpack-analysis/data/templates/configs/endosome_replicate_config_template.json",
+    "recipe_template_path": "/allen/aics/lumenoid/cellpack/cellpack-analysis/data/templates/recipes/endosome_replicate_recipe_template.json",
+    "config_template_path": "/allen/aics/lumenoid/cellpack/cellpack-analysis/data/templates/configs/endosome_replicate_config_template.json",
     "recipe_data": {
         "random": {},
         "nucleus_gradient": {

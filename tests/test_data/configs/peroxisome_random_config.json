@@ -1,6 +1,6 @@
 {
     "name": "rules_shape_with_seed",
-    "out": "/allen/aics/animated-cell/Saurabh/dev/cellpack-analysis/data/packing_outputs/8d_sphere_data/slurm_test/peroxisome/random",
+    "out": "/allen/aics/lumenoid/cellpack/cellpack-analysis/data/packing_outputs/8d_sphere_data/slurm_test/peroxisome/random",
     "save_analyze_result": true,
     "show_progress_bar": true,
     "save_plot_figures": false,

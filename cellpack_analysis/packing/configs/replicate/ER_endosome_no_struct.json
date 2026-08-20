@@ -15,7 +15,7 @@
     "number_of_replicates": 99,
     "skip_completed": true,
     "dry_run": false,
-    "config_template_path": "/allen/aics/animated-cell/Saurabh/dev/cellpack-analysis/data/templates/configs/replicate/ER_endosome_no_struct_replicate_config_template.json",
+    "config_template_path": "/allen/aics/lumenoid/cellpack/cellpack-analysis/data/templates/configs/replicate/ER_endosome_no_struct_replicate_config_template.json",
     "recipe_data": {
         "random": {},
         "nucleus_gradient": {
