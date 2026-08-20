@@ -20,6 +20,7 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 import trimesh
+from trimesh import proximity
 
 # ---------------------------------------------------------------------------
 # VTK stub – mesh_tools imports several vtkmodules sub-packages at module
@@ -591,3 +592,154 @@ class TestSingleSourceOfTruth:
                 "single source of truth invariant violated"
             ),
         )
+
+
+# ---------------------------------------------------------------------------
+# 11. Nucleus-only fast path — must equal the scaled path's nucleus values,
+#     reuse a supplied ProximityQuery, and skip the membrane ray-cast.
+# ---------------------------------------------------------------------------
+
+
+class TestNucleusOnlyFastPath:
+    """The nucleus-only branch skips on_surface + the membrane ray-cast but must
+    return exactly the nucleus values the full scaled routine produces.
+    """
+
+    @pytest.fixture(scope="class")
+    def batch_pts(self):
+        """Cytoplasmic points along all three axes."""
+        return np.vstack([_points_at_radii(_RADII, axis=ax) for ax in range(3)])
+
+    def test_fast_path_matches_scaled_path_nucleus(self, sphere_meshes, batch_pts):
+        """Nucleus-only output must match the nucleus output of the scaled path."""
+        fast = _compute_distances_for_points(
+            batch_pts,
+            sphere_meshes["nuc_mesh"],
+            sphere_meshes["mem_mesh"],
+            {"nucleus"},
+        )
+        full = _compute_distances_for_points(
+            batch_pts,
+            sphere_meshes["nuc_mesh"],
+            sphere_meshes["mem_mesh"],
+            {"nucleus", "scaled_nucleus"},
+        )
+        np.testing.assert_allclose(
+            fast["nucleus"],
+            full["nucleus"],
+            atol=1e-9,
+            equal_nan=True,
+            err_msg="Nucleus-only fast path differs from the scaled-path nucleus values",
+        )
+
+    def test_supplied_nuc_query_reused(self, sphere_meshes, batch_pts):
+        """A prebuilt nuc_query must produce results identical to building on demand."""
+        nuc_query = proximity.ProximityQuery(sphere_meshes["nuc_mesh"])
+        with_query = _compute_distances_for_points(
+            batch_pts,
+            sphere_meshes["nuc_mesh"],
+            sphere_meshes["mem_mesh"],
+            {"nucleus"},
+            nuc_query=nuc_query,
+        )
+        without_query = _compute_distances_for_points(
+            batch_pts,
+            sphere_meshes["nuc_mesh"],
+            sphere_meshes["mem_mesh"],
+            {"nucleus"},
+        )
+        np.testing.assert_allclose(
+            with_query["nucleus"],
+            without_query["nucleus"],
+            atol=1e-9,
+            equal_nan=True,
+            err_msg="Supplying a prebuilt nuc_query changed the nucleus result",
+        )
+
+    def test_fast_path_skips_membrane_ray_cast(self, sphere_meshes, batch_pts):
+        """The nucleus-only path must not invoke the membrane ray caster."""
+        mem_mesh = sphere_meshes["mem_mesh"]
+        with patch.object(
+            mem_mesh.ray,
+            "intersects_location",
+            side_effect=AssertionError("membrane ray-cast should not run for nucleus-only"),
+        ):
+            result = _compute_distances_for_points(
+                batch_pts,
+                sphere_meshes["nuc_mesh"],
+                mem_mesh,
+                {"nucleus"},
+            )
+        assert "nucleus" in result
+
+
+# ---------------------------------------------------------------------------
+# 12. Process backend mesh handoff — workers receive cache-clean mesh copies
+#     that survive pickling and yield identical distances. (No real subprocess
+#     is spawned here: multiprocessing + trimesh/embree segfaults at interpreter
+#     teardown under pytest. The end-to-end process path is exercised manually;
+#     this locks in the mesh.copy() fix that makes it correct.)
+# ---------------------------------------------------------------------------
+
+
+class TestProcessBackendMeshCopy:
+    """`_make_task_mesh_dict` must hand the process backend pickle-safe meshes."""
+
+    def test_thread_backend_returns_full_dict_unchanged(self, sphere_meshes):
+        from cellpack_analysis.lib.distance import _make_task_mesh_dict
+
+        full = {
+            "cellA": {
+                "nuc_mesh": sphere_meshes["nuc_mesh"],
+                "mem_mesh": sphere_meshes["mem_mesh"],
+            }
+        }
+        # Thread backend shares the dict in-memory: same object, no copies.
+        assert _make_task_mesh_dict("cellA", full, use_processes=False) is full
+
+    def test_missing_cell_returns_empty_dict(self):
+        from cellpack_analysis.lib.distance import _make_task_mesh_dict
+
+        assert _make_task_mesh_dict("absent", {}, use_processes=True) == {}
+
+    def test_process_mesh_copy_survives_pickle_and_matches(self, sphere_meshes):
+        import pickle
+
+        from cellpack_analysis.lib.distance import (
+            _calculate_distances_for_cell_id,
+            _make_task_mesh_dict,
+        )
+
+        nuc = sphere_meshes["nuc_mesh"]
+        mem = sphere_meshes["mem_mesh"]
+        pts = np.vstack([_points_at_radii([6.0, 7.0, 8.0], axis=ax) for ax in range(3)])
+        full = {"cellA": {"nuc_mesh": nuc, "mem_mesh": mem}}
+
+        # Reference distances from the live meshes.
+        _, ref = _calculate_distances_for_cell_id(
+            "cellA", pts, full, distance_measures=["nucleus", "z"]
+        )
+
+        # Populate the mesh cache the way the thread backend would. A plain
+        # subset dict (no copy) would now pickle a corrupted cache and raise
+        # IndexError inside the worker.
+        _ = proximity.ProximityQuery(nuc).signed_distance(pts)
+
+        # The process backend hands out copies; simulate the worker transfer
+        # with a pickle round-trip, then compute in the "worker".
+        task = _make_task_mesh_dict("cellA", full, use_processes=True)
+        task = pickle.loads(pickle.dumps(task))
+        _, got = _calculate_distances_for_cell_id(
+            "cellA", pts, task, distance_measures=["nucleus", "z"]
+        )
+
+        for dm in ("nucleus", "z"):
+            np.testing.assert_allclose(
+                got[dm],
+                ref[dm],
+                atol=1e-9,
+                equal_nan=True,
+                err_msg=f"process mesh-copy handoff changed '{dm}' values",
+            )
+
+

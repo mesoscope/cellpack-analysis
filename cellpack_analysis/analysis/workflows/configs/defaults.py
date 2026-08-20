@@ -108,6 +108,11 @@ RULE_INTERPOLATION_CV_PARAMS: dict = {
 NUM_WORKERS = 8
 """Default number of workers for parallel processing."""
 
+DISTANCE_BACKEND = "thread"
+"""Default executor backend for the per-cell distance calculation.
+Options: "thread" (shares meshes in-memory, GIL-bound) or "process" (bypasses the
+GIL via separate processes; faster for many cells at the cost of pickling meshes)."""
+
 DISTANCE_PDF_PARAMS: dict = {
     "bandwidth": 0.2,
     "envelope_alpha": 0.05,

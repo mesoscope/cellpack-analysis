@@ -845,7 +845,11 @@ def _compute_distances_for_points(
     # ------------------------------------------------------------------ #
     # Membrane distances                                                   #
     # ------------------------------------------------------------------ #
-    if mem_distances is None:
+    # The membrane signed distance is only needed for the 'membrane' measure
+    # itself or as the cytoplasm valid-mask input to 'scaled_nucleus'.
+    # Computing it rebuilds the membrane BVH, so skip it entirely when neither
+    # is requested (e.g. the nucleus-only / nucleus+z fast path).
+    if mem_distances is None and (need_mem or need_scaled_nuc):
         mem_distances = trimesh.proximity.signed_distance(mem_mesh, points)
 
     if need_mem and mem_distances is not None:
@@ -854,7 +858,11 @@ def _compute_distances_for_points(
     # ------------------------------------------------------------------ #
     # Nucleus / scaled_nucleus                                             #
     # ------------------------------------------------------------------ #
-    if need_nuc or need_scaled_nuc:
+    if need_scaled_nuc:
+        # scaled_nucleus needs the nucleus->membrane ray-cast to measure the
+        # cytoplasm thickness (the scaled-distance denominator). The plain
+        # nucleus signed distance is returned by the same routine, so it comes
+        # for free when it is also requested.
         nuc_surface_distances, scaled_nuc_distances, _ = calc_scaled_distance_to_nucleus_surface(
             points,
             nuc_mesh,
@@ -864,8 +872,16 @@ def _compute_distances_for_points(
         )
         if need_nuc:
             result["nucleus"] = nuc_surface_distances
-        if need_scaled_nuc:
-            result["scaled_nucleus"] = scaled_nuc_distances
+        result["scaled_nucleus"] = scaled_nuc_distances
+    elif need_nuc:
+        # Nucleus-only fast path: only the signed distance to the nucleus
+        # surface is needed. Skip the on_surface query and the membrane
+        # ray-cast that calc_scaled_distance_to_nucleus_surface performs solely
+        # to build the scaled-distance denominator. Reuse nuc_query when
+        # provided so the BVH is not rebuilt for every call.
+        if nuc_query is None:
+            nuc_query = proximity.ProximityQuery(nuc_mesh)
+        result["nucleus"] = -nuc_query.signed_distance(points)
 
     # ------------------------------------------------------------------ #
     # Z / scaled_z                                                         #

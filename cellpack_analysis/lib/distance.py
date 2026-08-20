@@ -1,6 +1,6 @@
 import logging
 import pickle
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +10,7 @@ from scipy.spatial import KDTree
 from scipy.spatial.distance import cdist, squareform
 from scipy.stats import gaussian_kde, ks_2samp
 from tqdm import tqdm
+from trimesh import proximity
 
 from cellpack_analysis.lib import label_tables
 from cellpack_analysis.lib.default_values import PIXEL_SIZE_IN_UM
@@ -363,6 +364,7 @@ def _calculate_distances_for_cell_id(
     positions: np.ndarray,
     mesh_dict: dict[str, Any],
     distance_measures: list[str] | None = None,
+    nuc_query: proximity.ProximityQuery | None = None,
 ) -> tuple[str, dict[str, np.ndarray]]:
     """
     Calculate various distance measures for particles in a single cell.
@@ -385,6 +387,10 @@ def _calculate_distances_for_cell_id(
         List of distance measures to compute. When ``None`` all measures are
         computed. Supported values: 'pairwise', 'nearest', 'nucleus',
         'scaled_nucleus', 'membrane', 'z', 'scaled_z'
+    nuc_query
+        Pre-built :class:`trimesh.proximity.ProximityQuery` for the cell's
+        nucleus mesh, reused across seeds to avoid rebuilding the BVH. Built
+        on demand when ``None``.
 
     Returns
     -------
@@ -430,11 +436,18 @@ def _calculate_distances_for_cell_id(
             requested & frozenset({"nucleus", "scaled_nucleus", "membrane"})
         )
 
+        # Membrane distances are only needed for the 'membrane' measure or for
+        # 'scaled_nucleus' (which uses them as its cytoplasm valid-mask). For a
+        # nucleus-only / nucleus+z request we deliberately skip the membrane
+        # signed-distance: it would rebuild the membrane BVH for every seed just
+        # to feed the debug cytoplasm-fraction warning, and packed/experimental
+        # particles are inside the membrane by construction.
+        need_membrane = _needed("membrane") or _needed("scaled_nucleus")
+
         prim_measures: set[str] = set()
         if need_proximity:
-            # Always include 'membrane' so we can emit the cytoplasm-fraction
-            # warning even when 'membrane' was not explicitly requested.
-            prim_measures.add("membrane")
+            if need_membrane:
+                prim_measures.add("membrane")
             if _needed("nucleus"):
                 prim_measures.add("nucleus")
             if _needed("scaled_nucleus"):
@@ -449,26 +462,32 @@ def _calculate_distances_for_cell_id(
             nuc_mesh,
             mem_mesh,
             prim_measures,
+            nuc_query=nuc_query,
         )
 
         # Cytoplasm-fraction warning (uses raw, unfiltered arrays).
         # Only meaningful for proximity-based measures.
         if need_proximity:
-            mem_distances_raw = prim_result["membrane"]
+            num_points = len(positions)
             # nucleus distances are positive outside the nucleus surface.
             nuc_distances_raw = prim_result.get("nucleus", prim_result.get("scaled_nucleus"))
-            num_points = len(positions)
-            outside_membrane_mask = mem_distances_raw < 0
-            num_outside_membrane = int(outside_membrane_mask.sum())
-            fraction_outside_membrane = num_outside_membrane / num_points
-
             if nuc_distances_raw is not None:
-                inside_nucleus_mask = nuc_distances_raw < 0
-                num_inside_nucleus = int(inside_nucleus_mask.sum())
+                num_inside_nucleus = int((nuc_distances_raw < 0).sum())
                 fraction_inside_nucleus = num_inside_nucleus / num_points
             else:
                 num_inside_nucleus = 0
                 fraction_inside_nucleus = 0.0
+
+            # The membrane term is only available when the membrane distance was
+            # computed ('membrane' or 'scaled_nucleus' requested); for a
+            # nucleus-only request it is skipped for performance.
+            mem_distances_raw = prim_result.get("membrane")
+            if mem_distances_raw is not None:
+                num_outside_membrane = int((mem_distances_raw < 0).sum())
+                fraction_outside_membrane = num_outside_membrane / num_points
+            else:
+                num_outside_membrane = 0
+                fraction_outside_membrane = 0.0
 
             fraction_non_cytoplasm = fraction_inside_nucleus + fraction_outside_membrane
             logger.debug(f"Fraction non-cytoplasm positions: {fraction_non_cytoplasm:.2f}")
@@ -528,7 +547,7 @@ def process_cell(
     mode: str,
     distance_measures: list[str],
     mode_mesh_dict: dict[str, Any],
-):
+) -> tuple[str, dict[str, dict[str, np.ndarray]]]:
     """
     Process a single cell ID with all its seeds.
 
@@ -552,7 +571,16 @@ def process_cell(
         Tuple of (cell_id, cell_results) where cell_results is
         {distance_measure: {seed: distances}}
     """
-    cell_results = {dm: {} for dm in distance_measures}
+    cell_results: dict[str, dict[str, np.ndarray]] = {dm: {} for dm in distance_measures}
+
+    # Build the nucleus ProximityQuery once per cell and reuse it across every
+    # seed; the nucleus mesh is constant per cell, so rebuilding the BVH for
+    # each seed is wasted work.
+    nuc_query: proximity.ProximityQuery | None = None
+    if any(dm in {"nucleus", "scaled_nucleus"} for dm in distance_measures):
+        cell_mesh = mode_mesh_dict.get(cell_id)
+        if cell_mesh is not None and "nuc_mesh" in cell_mesh:
+            nuc_query = proximity.ProximityQuery(cell_mesh["nuc_mesh"])
 
     for seed, seed_positions in seed_positions_dict.items():
         try:
@@ -561,6 +589,7 @@ def process_cell(
                 positions=seed_positions,
                 mesh_dict=mode_mesh_dict,
                 distance_measures=distance_measures,
+                nuc_query=nuc_query,
             )
         except Exception as e:
             logger.error(
@@ -580,6 +609,38 @@ def process_cell(
     return cell_id, cell_results
 
 
+def _make_task_mesh_dict(
+    cell_id: str,
+    mode_mesh_dict: dict[str, Any],
+    use_processes: bool,
+) -> dict[str, Any]:
+    """Return the mesh dict to hand to a single ``process_cell`` task.
+
+    For the thread backend the full ``mode_mesh_dict`` is shared in-memory at no
+    cost. For the process backend only the target cell's nucleus and membrane
+    meshes are included so the pickled payload sent to each worker stays small
+    (the full mode mesh dict holds every cell's meshes plus grid-distance
+    arrays). A cell missing from ``mode_mesh_dict`` yields an empty dict so the
+    downstream "mesh information not found" error matches the thread backend.
+
+    The meshes are passed through ``Trimesh.copy()``: a mesh whose cache has been
+    populated by a prior ``ProximityQuery`` pickles a corrupted cache (trimesh
+    restores candidate index arrays as floats, breaking ``closest_point`` with an
+    ``IndexError``). Copying drops the cache so the worker rebuilds it cleanly.
+    """
+    if not use_processes:
+        return mode_mesh_dict
+    cell_mesh = mode_mesh_dict.get(cell_id)
+    if cell_mesh is None:
+        return {}
+    return {
+        cell_id: {
+            "nuc_mesh": cell_mesh["nuc_mesh"].copy(),
+            "mem_mesh": cell_mesh["mem_mesh"].copy(),
+        }
+    }
+
+
 def _run_calculation_for_mode(
     mode: str,
     dms_for_mode: list[str],
@@ -587,13 +648,22 @@ def _run_calculation_for_mode(
     mode_mesh_dict: dict[str, Any],
     all_distance_dict: dict[str, dict[str, dict[str, dict[str, np.ndarray]]]],
     num_workers: int,
+    parallel_backend: str = "thread",
 ) -> None:
     """Compute distances for *mode* for the given subset of distance measures.
 
     Results are written in-place into ``all_distance_dict``.
+
+    ``parallel_backend`` selects the executor when ``num_workers > 1``:
+    ``"thread"`` (default) shares meshes in-memory and parallelises only the
+    GIL-releasing sections; ``"process"`` uses separate processes to bypass the
+    GIL for the Python-heavy proximity work, at the cost of pickling each cell's
+    meshes and results.
     """
     if num_workers > 1:
-        with ThreadPoolExecutor(max_workers=num_workers) as executor:
+        use_processes = parallel_backend == "process"
+        executor_cls = ProcessPoolExecutor if use_processes else ThreadPoolExecutor
+        with executor_cls(max_workers=num_workers) as executor:
             futures = {
                 executor.submit(
                     process_cell,
@@ -601,7 +671,7 @@ def _run_calculation_for_mode(
                     seed_positions_dict,
                     mode,
                     dms_for_mode,
-                    mode_mesh_dict,
+                    _make_task_mesh_dict(cell_id, mode_mesh_dict, use_processes),
                 ): cell_id
                 for cell_id, seed_positions_dict in position_dict.items()
             }
@@ -647,6 +717,7 @@ def get_distance_dictionary(
     results_dir: Path | None = None,
     recalculate: bool = False,
     num_workers: int = 1,
+    parallel_backend: str = "thread",
 ) -> dict[str, dict[str, dict[str, dict[str, np.ndarray]]]]:
     """
     Calculate or load distance measures between particles in different modes.
@@ -677,6 +748,12 @@ def get_distance_dictionary(
         If True, recalculate all distance measures regardless of cache
     num_workers
         Number of parallel workers for distance calculations
+    parallel_backend
+        Executor backend for the per-cell distance calculation when
+        ``num_workers > 1``. ``"thread"`` (default) shares meshes in-memory;
+        ``"process"`` uses separate processes to bypass the GIL for the
+        Python-heavy proximity work (faster for many cells, at the cost of
+        pickling each cell's meshes and results).
 
     Returns
     -------
@@ -782,6 +859,7 @@ def get_distance_dictionary(
             mode_mesh_dict=mode_mesh_dict,
             all_distance_dict=all_distance_dict,
             num_workers=num_workers,
+            parallel_backend=parallel_backend,
         )
 
         # Write only the newly computed (dm, mode) files
@@ -1773,7 +1851,10 @@ def compute_distance_pdfs(
             r_grid = make_r_grid_from_pooled(all_arrays, n=n_grid, bin_width=measure_bin_width)
 
         bin_edges = np.concatenate(
-            [r_grid - measure_bin_width / 2, [r_grid[-1] + measure_bin_width / 2]]
+            [
+                r_grid - measure_bin_width / 2,
+                [r_grid[-1] + measure_bin_width / 2],
+            ]
         )
 
         result[dm] = {}
