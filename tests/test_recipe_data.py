@@ -1,9 +1,15 @@
+import copy
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 import pytest
 
-from cellpack_analysis.packing.generate_cellpack_input_files import update_and_save_recipe
+from cellpack_analysis.packing import rule_repository
+from cellpack_analysis.packing.generate_cellpack_input_files import (
+    process_gradient_data,
+    update_and_save_recipe,
+)
 
 
 @pytest.fixture
@@ -328,3 +334,60 @@ class TestUpdateAndSaveRecipe:
         mock_process_rule_dict.assert_called_once_with(
             result, sample_rule_dict, gradient_structure_name
         )
+
+
+class TestResolveGradientCenterIsolation:
+    """Regression tests for the apical gradient center-leak mutation bug.
+
+    ``resolve_gradient_names`` used to return gradient definitions from
+    ``rule_repository.GRADIENTS`` by reference (no copy). ``set_gradient_mode_center``
+    then mutated the shared ``mode_settings`` dict in place, so every cell generated
+    after the first in the same process silently inherited the first cell's resolved
+    apical gradient center instead of getting its own.
+    """
+
+    def test_different_bboxes_get_different_resolved_apical_centers(self) -> None:
+        """Two cells with different bounding boxes must resolve different centers.
+
+        Drives the real ``resolve_gradient_names`` -> ``set_gradient_mode_center``
+        path twice in a row (simulating two cells generated back-to-back) with
+        bounding boxes whose max z differs, and checks each cell's resolved "max"
+        center (mean x, mean y, max z for direction [0, 0, 1]) against its own
+        bounding box rather than the other cell's.
+        """
+        bbox_1 = [[0.0, 0.0, 0.0], [100.0, 100.0, 100.0]]
+        bbox_2 = [[0.0, 0.0, 0.0], [100.0, 100.0, 200.0]]
+
+        recipe_1: dict[str, Any] = {"bounding_box": bbox_1, "objects": {"peroxisome": {}}}
+        recipe_2: dict[str, Any] = {"bounding_box": bbox_2, "objects": {"peroxisome": {}}}
+
+        process_gradient_data(["apical_gradient"], recipe_1, "peroxisome")
+        process_gradient_data(["apical_gradient"], recipe_2, "peroxisome")
+
+        center_1 = recipe_1["gradients"]["apical_gradient"]["mode_settings"]["center"]
+        center_2 = recipe_2["gradients"]["apical_gradient"]["mode_settings"]["center"]
+
+        expected_center_1 = [50.0, 50.0, 100.0]
+        expected_center_2 = [50.0, 50.0, 200.0]
+
+        assert center_1 != center_2
+        assert center_1 == pytest.approx(expected_center_1)
+        assert center_2 == pytest.approx(expected_center_2)
+
+    def test_gradients_repository_unmutated_after_generation(self) -> None:
+        """rule_repository.GRADIENTS must be unchanged by resolving/generating a recipe."""
+        gradients_snapshot = copy.deepcopy(rule_repository.GRADIENTS)
+
+        recipe: dict[str, Any] = {
+            "bounding_box": [[0.0, 0.0, 0.0], [100.0, 100.0, 100.0]],
+            "objects": {"peroxisome": {}},
+        }
+        process_gradient_data(["apical_gradient"], recipe, "peroxisome")
+
+        assert rule_repository.GRADIENTS == gradients_snapshot
+
+        apical_gradient_def = rule_repository.GRADIENTS["apical_gradient"]
+        assert isinstance(apical_gradient_def, dict)
+        apical_mode_settings = apical_gradient_def["mode_settings"]
+        assert isinstance(apical_mode_settings, dict)
+        assert apical_mode_settings["center"] == "max"

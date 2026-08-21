@@ -89,7 +89,10 @@ def resolve_gradient_names(gradient_list: list[str]) -> dict[str, Any]:
     resolved_gradient_dict = {}
     for gradient in gradient_list:
         if gradient in rule_repository.GRADIENTS:
-            resolved_gradient_dict[gradient] = rule_repository.GRADIENTS[gradient]
+            # Deep-copy so callers (e.g. process_gradient_data -> set_gradient_mode_center)
+            # can mutate the returned dict in place without aliasing/corrupting the shared
+            # module-level rule_repository.GRADIENTS definitions.
+            resolved_gradient_dict[gradient] = copy.deepcopy(rule_repository.GRADIENTS[gradient])
         else:
             logger.error(f"Gradient {gradient} not found in GRADIENTS")
 
