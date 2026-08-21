@@ -871,6 +871,121 @@ def plot_occupancy_ratio(
     return fig, ax
 
 
+def plot_virtual_mixture_comparison(
+    xvals: np.ndarray,
+    virtual_mean: np.ndarray,
+    virtual_envelope_lo: np.ndarray,
+    virtual_envelope_hi: np.ndarray,
+    expected_mean: np.ndarray,
+    coefficients: dict[str, float],
+    distance_measure: str = "nucleus",
+    normalization: str | None = None,
+    figures_dir: Path | None = None,
+    suffix: str = "",
+    save_format: str = "png",
+    fig_params: dict[str, Any] | None = None,
+) -> tuple[Figure, Axes]:
+    """
+    Plot virtual-mixture occupancy against the expected NNLS mixture (mixing D2).
+
+    The solid curve (with 95% pointwise envelope across cells) is the occupancy of the
+    virtual mixture — puncta resampled per cell/seed from the single-rule packings in
+    the fitted proportions. The dashed curve is the per-cell expected mixture
+    ``sum(c_i * occ_i)`` averaged across cells. By the mixture identity the two should
+    coincide up to seed noise, previewing the achievable packed-vs-expected match.
+
+    Parameters
+    ----------
+    xvals
+        Shared x grid of the occupancy curves.
+    virtual_mean
+        Mean virtual-mixture occupancy across cells.
+    virtual_envelope_lo, virtual_envelope_hi
+        Pointwise 95% envelope of the per-cell virtual-mixture occupancy curves.
+    expected_mean
+        Mean across cells of the per-cell expected mixture ``sum(c_i * occ_i)``.
+    coefficients
+        Mixture coefficients (annotated in the legend).
+    distance_measure
+        Distance measure being plotted.
+    normalization
+        Distance normalization used, for the x-axis label.
+    figures_dir
+        Directory to save the figure; not saved if None.
+    suffix
+        Suffix for the saved file name.
+    save_format
+        Image format for saving.
+    fig_params
+        Optional figure kwargs (dpi, figsize).
+
+    Returns
+    -------
+    :
+        The figure and axes.
+    """
+    if fig_params is None:
+        fig_params = {"dpi": 300, "figsize": (3.5, 2.5)}
+
+    plt.rcParams.update({"font.size": 8})
+    fig, ax = plt.subplots(**fig_params)
+
+    color = label_tables.COLOR_PALETTE.get("virtual_mixed", "#555555")
+    ax.fill_between(
+        xvals,
+        np.nan_to_num(virtual_envelope_lo),
+        np.nan_to_num(virtual_envelope_hi),
+        alpha=0.15,
+        color=color,
+        linewidth=0,
+        label="_nolegend_",
+        zorder=1,
+    )
+    ax.plot(
+        xvals,
+        np.nan_to_num(virtual_mean),
+        color=color,
+        linewidth=1.5,
+        label=label_tables.MODE_LABELS.get("virtual_mixed", "Virtual mixture"),
+        zorder=2,
+    )
+    mixture_label = " + ".join(
+        f"{c:.2f} {label_tables.MODE_LABELS.get(rule, rule)}"
+        for rule, c in sorted(coefficients.items(), key=lambda kv: -kv[1])
+        if c > 0
+    )
+    ax.plot(
+        xvals,
+        np.nan_to_num(expected_mean),
+        color="black",
+        linewidth=1.5,
+        linestyle="--",
+        label=f"Expected: {mixture_label}",
+        zorder=3,
+    )
+
+    ax.xaxis.set_major_locator(MaxNLocator(4, integer=True))
+    ax.yaxis.set_major_locator(MaxNLocator(3, integer=True))
+    ax.axhline(1, linewidth=1, color="gray", linestyle="--", zorder=1)
+    distance_label = get_distance_label(distance_measure, normalization)
+    ax.set_xlabel(distance_label)
+    ax.set_ylabel("Occupancy Ratio")
+    ax.legend(fontsize=6, frameon=False)
+    sns.despine(fig=fig)
+    fig.tight_layout()
+    if figures_dir is not None:
+        fig.savefig(
+            figures_dir / f"{distance_measure}_virtual_mixture_comparison{suffix}.{save_format}",
+            dpi=300,
+            bbox_inches="tight",
+            transparent=True,
+        )
+
+    plt.show()
+
+    return fig, ax
+
+
 def add_baseline_occupancy_interpolation_to_plot(
     ax: Axes,
     interpolated_occupancy_dict: dict[str, Any],

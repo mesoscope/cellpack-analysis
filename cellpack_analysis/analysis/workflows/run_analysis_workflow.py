@@ -41,6 +41,15 @@ Occupancy analysis
   on per-cell occupancy ratio distributions.
 - ``run_rule_interpolation_cv`` — K-fold cross-validation for NNLS rule-mixing
   coefficients (works with both KDE and discrete occupancy).
+- ``build_virtual_mixture_mode`` — Inject a virtual-mixture mode into the shared distance
+  data: per cell and seed, draw ``round(c_i * N)`` puncta from rule *i*'s existing
+  single-rule packing (coefficients from a rule-interpolation CV pickle, configured via
+  ``virtual_mixture_params``). Must run after ``calculate_distances`` and before
+  ``run_occupancy_analysis``.
+- ``compare_virtual_mixture_occupancy`` — Compare the virtual-mixture mode's occupancy
+  against the expected NNLS mixture ``sum(c_i * occ_i)`` computed per cell from the same
+  run's single-rule occupancy curves (mixing-handoff diagnostic D2: the achievable
+  packed-vs-expected ceiling). Must run after ``run_occupancy_analysis``.
 
 Config key: ``distribution_method``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -79,16 +88,24 @@ import json
 import logging
 import pickle
 import time
+import warnings
 from pathlib import Path
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 
 from cellpack_analysis import setup_logging
 from cellpack_analysis.analysis.workflows.configs import defaults
-from cellpack_analysis.lib import distance, occupancy, rule_interpolation, visualization
-from cellpack_analysis.lib.file_io import get_project_root
+from cellpack_analysis.lib import (
+    distance,
+    mixture_diagnostics,
+    occupancy,
+    rule_interpolation,
+    visualization,
+)
+from cellpack_analysis.lib.file_io import get_project_root, get_results_path
 from cellpack_analysis.lib.io import format_time
 from cellpack_analysis.lib.label_tables import DISTANCE_LIMITS
 from cellpack_analysis.lib.load_data import get_position_data_from_outputs
@@ -152,6 +169,7 @@ class AnalysisConfig:
         if self.normalization:
             self.suffix += f"_norm_{self.normalization}"
         self.distance_measures = self.config.get("distance_measures", defaults.DISTANCE_MEASURES)
+        self.virtual_mixture_params = self.config.get("virtual_mixture_params", {})
         self.save_format = self.config.get("save_format", defaults.SAVE_FORMAT)
         self.distribution_method = self.config.get(
             "distribution_method", defaults.DISTRIBUTION_METHOD
@@ -305,6 +323,8 @@ class AnalysisRunner:
             "run_occupancy_pairwise_envelope_test": self._run_occupancy_pairwise_envelope_test,
             "run_occupancy_ks_analysis": self._run_occupancy_ks_analysis,
             "run_rule_interpolation_cv": self._run_rule_interpolation_cv,
+            "build_virtual_mixture_mode": self._build_virtual_mixture_mode,
+            "compare_virtual_mixture_occupancy": self._compare_virtual_mixture_occupancy,
         }
 
         if step in step_method_map:
@@ -1143,6 +1163,151 @@ class AnalysisRunner:
         self.shared_data["pairwise_occupancy_ks_bootstrap_df"] = pd.concat(
             pairwise_occ_ks_bootstrap_dfs, ignore_index=True
         )
+
+    def _build_virtual_mixture_mode(self, config: AnalysisConfig) -> None:
+        """Inject a virtual-mixture mode into the shared distance data (mixing D2)."""
+        if "all_distance_dict" not in self.shared_data:
+            logger.warning("Distance data not calculated. Calculating distances first.")
+            self._calculate_distances(config)
+
+        params = config.virtual_mixture_params
+        cv_path_value = params.get("cv_results_path")
+        if not cv_path_value:
+            raise ValueError(
+                "build_virtual_mixture_mode requires 'virtual_mixture_params.cv_results_path' "
+                "(a rule_interpolation_cv pickle, relative to the results root or absolute)"
+            )
+        cv_path = Path(cv_path_value)
+        if not cv_path.is_absolute():
+            cv_path = get_results_path() / cv_path
+        scope = params.get("scope", "joint")
+        mode_name = params.get("mode_name", "virtual_mixed")
+        base_seed = params.get("base_seed", 42)
+
+        coefficients = mixture_diagnostics.load_mixture_coefficients(cv_path, scope=scope)
+        missing_nonzero = [
+            rule for rule, c in coefficients.items() if c > 0 and rule not in config.channel_map
+        ]
+        if missing_nonzero:
+            raise ValueError(
+                f"Mixture rules {missing_nonzero} have nonzero coefficients but are not "
+                f"in this config's channel_map ({list(config.channel_map)})"
+            )
+        coefficients = {rule: c for rule, c in coefficients.items() if rule in config.channel_map}
+
+        mixed = mixture_diagnostics.build_virtual_mixture_distances(
+            all_distance_dict=self.shared_data["all_distance_dict"],
+            coefficients=coefficients,
+            distance_measures=config.distance_measures,
+            base_seed=base_seed,
+        )
+        for distance_measure in config.distance_measures:
+            self.shared_data["all_distance_dict"][distance_measure][mode_name] = mixed[
+                distance_measure
+            ]
+        config.channel_map[mode_name] = config.structure_id
+        config.packing_modes = list(config.channel_map.keys())
+        self.shared_data["virtual_mixture"] = {
+            "mode_name": mode_name,
+            "coefficients": coefficients,
+            "cv_results_path": str(cv_path),
+            "scope": scope,
+            "base_seed": base_seed,
+        }
+        n_cells = len(mixed[config.distance_measures[0]])
+        logger.info(
+            "Injected virtual-mixture mode %r (%d cells, coefficients %s)",
+            mode_name,
+            n_cells,
+            {rule: round(c, 4) for rule, c in coefficients.items()},
+        )
+
+    def _compare_virtual_mixture_occupancy(self, config: AnalysisConfig) -> None:
+        """Compare virtual-mixture occupancy with the expected NNLS mixture (mixing D2)."""
+        if "virtual_mixture" not in self.shared_data:
+            raise ValueError(
+                "Run build_virtual_mixture_mode (and run_occupancy_analysis) before "
+                "compare_virtual_mixture_occupancy"
+            )
+        if not self.shared_data.get("occupancy_dict"):
+            logger.warning("Occupancy not computed. Running occupancy analysis first.")
+            self._run_occupancy_analysis(config)
+
+        info = self.shared_data["virtual_mixture"]
+        mode_name = info["mode_name"]
+        coefficients = {rule: c for rule, c in info["coefficients"].items() if rule != mode_name}
+        figures_dir = config.figures_dir / "occupancy" / "virtual_mixture"
+        figures_dir.mkdir(exist_ok=True, parents=True)
+
+        comparison_summaries = {}
+        for distance_measure, occupancy_dict in self.shared_data["occupancy_dict"].items():
+            expected_by_cell = mixture_diagnostics.expected_mixture_occupancy(
+                occupancy_dict, coefficients
+            )
+            virtual_individual = occupancy_dict[mode_name]["individual"]
+            shared_cells = sorted(set(expected_by_cell) & set(virtual_individual))
+            if not shared_cells:
+                logger.warning(
+                    "No shared cells between virtual mixture and expected mixture for %s",
+                    distance_measure,
+                )
+                continue
+
+            xvals = np.asarray(occupancy_dict[mode_name]["combined"]["xvals"])
+            virtual_all = np.vstack(
+                [np.asarray(virtual_individual[cell]["occupancy_common"]) for cell in shared_cells]
+            )
+            expected_all = np.vstack([expected_by_cell[cell] for cell in shared_cells])
+
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", category=RuntimeWarning)
+                virtual_mean = np.nanmean(virtual_all, axis=0)
+                expected_mean = np.nanmean(expected_all, axis=0)
+                virtual_lo = np.nanpercentile(virtual_all, 2.5, axis=0)
+                virtual_hi = np.nanpercentile(virtual_all, 97.5, axis=0)
+                per_cell_rmse = np.sqrt(np.nanmean((virtual_all - expected_all) ** 2, axis=1))
+
+            mean_diff = virtual_mean - expected_mean
+            summary = {
+                "n_cells": len(shared_cells),
+                "max_abs_mean_diff": float(np.nanmax(np.abs(mean_diff))),
+                "mean_abs_mean_diff": float(np.nanmean(np.abs(mean_diff))),
+                "median_per_cell_rmse": float(np.nanmedian(per_cell_rmse)),
+            }
+            comparison_summaries[distance_measure] = summary
+            logger.info("Virtual-mixture vs expected occupancy (%s): %s", distance_measure, summary)
+
+            comparison_df = pd.DataFrame(
+                {
+                    "xvals": xvals,
+                    "virtual_mean": virtual_mean,
+                    "virtual_envelope_lo": virtual_lo,
+                    "virtual_envelope_hi": virtual_hi,
+                    "expected_mean": expected_mean,
+                    "mean_diff": mean_diff,
+                }
+            )
+            csv_path = (
+                config.results_dir
+                / f"{distance_measure}_virtual_mixture_comparison{config.suffix}.csv"
+            )
+            comparison_df.to_csv(csv_path, index=False)
+            logger.info("Saved virtual-mixture comparison to %s", csv_path)
+
+            _ = visualization.plot_virtual_mixture_comparison(
+                xvals=xvals,
+                virtual_mean=virtual_mean,
+                virtual_envelope_lo=virtual_lo,
+                virtual_envelope_hi=virtual_hi,
+                expected_mean=expected_mean,
+                coefficients=coefficients,
+                distance_measure=distance_measure,
+                figures_dir=figures_dir,
+                suffix=config.suffix,
+                save_format=config.save_format,
+            )
+
+        self.shared_data["virtual_mixture_comparison"] = comparison_summaries
 
 
 def main():

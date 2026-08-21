@@ -1,0 +1,52 @@
+{
+    "name": "replicate_99_v2",
+    "structure_id": "SLC25A17",
+    "packing_id": "peroxisome",
+    "structure_name": "peroxisome",
+    "packing_output_folder": "packing_outputs/8d_sphere_data/replicate_99_v2/",
+    "output_path": "replicate_99_v2/peroxisome/",
+    "suffix": "_virtualmix",
+    "channel_map": {
+        "SLC25A17": "SLC25A17",
+        "random": "SLC25A17",
+        "nucleus_gradient": "SLC25A17",
+        "membrane_gradient": "SLC25A17",
+        "apical_gradient": "SLC25A17"
+    },
+    "baseline_mode": "SLC25A17",
+    "num_workers": 16,
+    "distance_measures": [
+        "nucleus",
+        "z"
+    ],
+    "distribution_method": "kde",
+    "occupancy_distance_measures": [
+        "nucleus",
+        "z"
+    ],
+    "occupancy_params": {
+        "nucleus": {
+            "xlim": 6,
+            "ylim": 3.2,
+            "bandwidth": 0.2
+        },
+        "z": {
+            "xlim": 8,
+            "ylim": 2,
+            "bandwidth": 0.2
+        }
+    },
+    "virtual_mixture_params": {
+        "cv_results_path": "rule_interpolation_combine_prob/peroxisome/rule_interpolation_cv.pkl",
+        "scope": "joint",
+        "mode_name": "virtual_mixed",
+        "base_seed": 42
+    },
+    "analysis_steps": [
+        "load_common_data",
+        "calculate_distances",
+        "build_virtual_mixture_mode",
+        "run_occupancy_analysis",
+        "compare_virtual_mixture_occupancy"
+    ]
+}
