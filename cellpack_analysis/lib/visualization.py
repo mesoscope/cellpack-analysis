@@ -2938,7 +2938,12 @@ def plot_rule_interpolation_fit(
     ax.axhline(1, linewidth=1, color="gray", linestyle="--", zorder=1)
     ax.set_xlabel(get_distance_label(distance_measure))
     ax.set_ylabel("Occupancy Ratio")
-    ax.set_title(f"{plot_type.capitalize()}, MSE: {mse:.4f}")
+    # Name the quantity: this is the raw NNLS least-squares MSE, i.e. the error of
+    # `reconstructed_occupancy`, NOT the distance from the dash-dot curve drawn
+    # above.  That curve is `expected_occupancy`, the same solution divided by
+    # sum(c) so it is realizable by the recipe's gradient_weights (D1.5).  When
+    # sum(c) != 1 the two differ, and the label must not imply otherwise.
+    ax.set_title(f"{plot_type.capitalize()}, NNLS fit MSE: {mse:.4f}")
 
     contrib_text = "\n".join(
         f"{label_tables.MODE_LABELS.get(k, k)}: {v:.0%}" for k, v in relative_contribs.items()
@@ -3058,7 +3063,12 @@ def plot_validation_occupancy(
         if plot_type == "individual"
         else fit_result.train_mse_joint[distance_measure]
     )
-    ax.set_title(f"{plot_type.capitalize()}, MSE: {mse:.4f}")
+    # Provenance, not a property of this panel: `mse` is the *fit phase's* training
+    # MSE (observed vs raw NNLS reconstruction).  It describes neither curve drawn
+    # here -- not the packed mixed-rule occupancy, and not the sum-normalized
+    # `expected_occupancy` dash-dot line.  Label it as carried-over fit-phase
+    # provenance so it is not read as the packed-vs-expected discrepancy.
+    ax.set_title(f"{plot_type.capitalize()}, fit-phase NNLS MSE: {mse:.4f}")
 
     ax.plot(
         common_xvals,
