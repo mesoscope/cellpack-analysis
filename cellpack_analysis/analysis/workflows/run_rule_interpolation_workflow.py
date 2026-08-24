@@ -225,9 +225,7 @@ def _merge_fit_and_validation_occupancy(
         fit_xvals = fit_dm_dict.get(baseline_mode, {}).get("combined", {}).get("xvals")
         val_xvals = val_dm_dict.get(baseline_mode, {}).get("combined", {}).get("xvals")
         missing = [
-            name
-            for name, xvals in (("fit", fit_xvals), ("validation", val_xvals))
-            if xvals is None
+            name for name, xvals in (("fit", fit_xvals), ("validation", val_xvals)) if xvals is None
         ]
         if missing:
             raise ValueError(

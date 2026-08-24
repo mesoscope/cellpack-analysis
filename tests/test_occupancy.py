@@ -616,9 +616,7 @@ class TestOccupancyCacheStamp:
 
     def test_x_max_mismatch_is_rejected(self, tmp_path):
         save_path = self._write_cache(tmp_path, self._meta(x_max=5.17))
-        loaded = _load_cached_occupancy(
-            save_path, {"real": "S"}, expected_meta=self._meta(x_max=6)
-        )
+        loaded = _load_cached_occupancy(save_path, {"real": "S"}, expected_meta=self._meta(x_max=6))
         assert loaded is None
 
     def test_missing_sidecar_is_rejected(self, tmp_path):
