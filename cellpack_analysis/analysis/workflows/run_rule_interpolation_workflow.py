@@ -197,8 +197,9 @@ def _merge_fit_and_validation_occupancy(
     FileNotFoundError
         If a fit-phase occupancy cache is missing.
     ValueError
-        If the two runs used different common grids, in which case their curves
-        cannot be combined at all.
+        If either side is missing the baseline mode's common grid, or the two runs
+        used different common grids -- in both cases their curves cannot be shown
+        to be commensurable, so they must not be combined.
     """
     merged: dict[str, Any] = {}
     for dm in distance_measures:
@@ -216,19 +217,37 @@ def _merge_fit_and_validation_occupancy(
         val_dm_dict = validation_occupancy_dict.get(dm, {})
 
         # Both runs must share one common grid, or nothing can be combined.
+        # A missing grid is the malformed-cache case this check exists to catch, so
+        # it must raise rather than skip: `baseline_mode` defaults to the config's
+        # structure_id and is a member of every validation channel_map, so both
+        # sides carry it in normal operation (and `fit_result_from_cv` would fail
+        # on it a few lines later regardless, with a less informative message).
         fit_xvals = fit_dm_dict.get(baseline_mode, {}).get("combined", {}).get("xvals")
         val_xvals = val_dm_dict.get(baseline_mode, {}).get("combined", {}).get("xvals")
-        if fit_xvals is not None and val_xvals is not None:
-            if len(fit_xvals) != len(val_xvals) or not np.allclose(fit_xvals, val_xvals):
-                raise ValueError(
-                    f"Fit and validation occupancy grids differ for '{dm}' "
-                    f"(fit: {len(fit_xvals)} points spanning "
-                    f"[{float(fit_xvals[0]):.4g}, {float(fit_xvals[-1]):.4g}]; validation: "
-                    f"{len(val_xvals)} points spanning "
-                    f"[{float(val_xvals[0]):.4g}, {float(val_xvals[-1]):.4g}]). "
-                    "The two phases used different occupancy_params; re-run both with "
-                    "matching settings."
-                )
+        missing = [
+            name
+            for name, xvals in (("fit", fit_xvals), ("validation", val_xvals))
+            if xvals is None
+        ]
+        if missing:
+            raise ValueError(
+                f"Cannot verify the occupancy grid for '{dm}': no "
+                f"['{baseline_mode}']['combined']['xvals'] in the "
+                f"{' and '.join(missing)} occupancy data "
+                f"(fit cache: {cache_path}). Without both grids the two phases' "
+                "curves cannot be shown to be commensurable, so they must not be "
+                "merged. Re-run --phase fit to rebuild the cache."
+            )
+        if len(fit_xvals) != len(val_xvals) or not np.allclose(fit_xvals, val_xvals):
+            raise ValueError(
+                f"Fit and validation occupancy grids differ for '{dm}' "
+                f"(fit: {len(fit_xvals)} points spanning "
+                f"[{float(fit_xvals[0]):.4g}, {float(fit_xvals[-1]):.4g}]; validation: "
+                f"{len(val_xvals)} points spanning "
+                f"[{float(val_xvals[0]):.4g}, {float(val_xvals[-1]):.4g}]). "
+                "The two phases used different occupancy_params; re-run both with "
+                "matching settings."
+            )
 
         dm_merged = dict(fit_dm_dict)
         # Modes the fit never saw (the mixed rule) come from the validation run.

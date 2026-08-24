@@ -144,6 +144,49 @@ class TestMergeFitAndValidationOccupancy:
                 baseline_mode="real",
             )
 
+    def test_missing_validation_grid_raises(self, tmp_path: Path) -> None:
+        """A malformed side must fail the grid check, not slip past it (F7).
+
+        The old check was ``if fit_xvals is not None and val_xvals is not None``,
+        which skipped exactly the case it exists to catch.
+        """
+        self._write_fit_cache(tmp_path)
+        validation: dict[str, Any] = {"nucleus": {"interpolated": self._mode_entry(0.9)}}
+        with pytest.raises(ValueError, match="Cannot verify the occupancy grid"):
+            _merge_fit_and_validation_occupancy(
+                results_dir=tmp_path,
+                fit_suffix="",
+                distance_measures=["nucleus"],
+                validation_occupancy_dict=validation,
+                baseline_mode="real",
+            )
+
+    def test_missing_fit_grid_raises(self, tmp_path: Path) -> None:
+        """Same for a fit cache that has no baseline grid."""
+        path = _fit_occupancy_cache_path(tmp_path, "nucleus", "")
+        with open(path, "wb") as fh:
+            pickle.dump({"membrane_gradient": self._mode_entry(1.1644)}, fh)
+        with pytest.raises(ValueError, match="Cannot verify the occupancy grid"):
+            _merge_fit_and_validation_occupancy(
+                results_dir=tmp_path,
+                fit_suffix="",
+                distance_measures=["nucleus"],
+                validation_occupancy_dict=self._validation_dict(),
+                baseline_mode="real",
+            )
+
+    def test_missing_grid_error_names_the_offending_side(self, tmp_path: Path) -> None:
+        self._write_fit_cache(tmp_path)
+        validation: dict[str, Any] = {"nucleus": {"interpolated": self._mode_entry(0.9)}}
+        with pytest.raises(ValueError, match="validation occupancy data"):
+            _merge_fit_and_validation_occupancy(
+                results_dir=tmp_path,
+                fit_suffix="",
+                distance_measures=["nucleus"],
+                validation_occupancy_dict=validation,
+                baseline_mode="real",
+            )
+
     def test_suffix_is_used_for_the_cache_filename(self, tmp_path: Path) -> None:
         """The suffix must be the composed one, matching AnalysisConfig.suffix."""
         self._write_fit_cache(tmp_path, suffix="_norm_max")
