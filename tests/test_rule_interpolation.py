@@ -19,6 +19,7 @@ from cellpack_analysis.lib.rule_interpolation import (
     _compute_mean_occupancy_from_cells,
     _fit_single_rule,
     _get_baseline_cell_ids,
+    _get_gradient_weights_from_coefficients,
     _masked_mse,
     _masked_reconstruction,
     _normalize_coefficients,
@@ -397,6 +398,92 @@ class TestMaskedLeastSquares:
         assert np.all(np.isnan(recon[~supported]))
         # MSE is computed over supported rows only -> an exact fit is exactly 0.
         assert fit.train_mse["individual"]["nucleus"] == pytest.approx(0.0)
+
+
+# ---------------------------------------------------------------------------
+# Tests: D1.5 — the "expected" curve and the recipe weights share a normalization
+# ---------------------------------------------------------------------------
+
+
+class TestExpectedOccupancyNormalization:
+    """D1.5: the drawn expected curve must be realizable by the recipe."""
+
+    @staticmethod
+    def _fit_two_mode(scale_a: float, scale_b: float):
+        """Fit a baseline that is `scale_a`*mode_a + `scale_b`*mode_b exactly."""
+        common = np.linspace(0, 6, 40)
+        mode_a = np.linspace(1.0, 2.0, 40)
+        mode_b = np.linspace(2.0, 0.5, 40)
+        target = scale_a * mode_a + scale_b * mode_b
+        individual = {
+            f"c{i}": {"xvals": common.copy(), "occupancy": target.copy()} for i in range(4)
+        }
+        occ = {
+            "nucleus": {
+                "real": {
+                    "individual": individual,
+                    "combined": {"xvals": common, "occupancy": target},
+                },
+                "mode_a": {
+                    "individual": {},
+                    "combined": {"xvals": common, "occupancy": mode_a},
+                },
+                "mode_b": {
+                    "individual": {},
+                    "combined": {"xvals": common, "occupancy": mode_b},
+                },
+            }
+        }
+        cm = _make_channel_map("real", ["mode_a", "mode_b"])
+        return fit_rule_interpolation(occ, cm, "real"), occ, {"mode_a": mode_a, "mode_b": mode_b}
+
+    def test_expected_equals_recipe_weighted_mixture(self):
+        """expected_occupancy == sum(gradient_weights_i * M_i), exactly."""
+        fit, _, curves = self._fit_two_mode(0.8, 0.4)  # sum(c) = 1.2 != 1
+        for plot_type in ("individual", "joint"):
+            coeffs = (
+                fit.coefficients_individual["nucleus"]
+                if plot_type == "individual"
+                else fit.coefficients_joint
+            )
+            weights = _get_gradient_weights_from_coefficients(
+                coeffs, fit.packing_modes, {m: m for m in fit.packing_modes}
+            )
+            assert sum(weights.values()) == pytest.approx(1.0)
+            realizable = sum(weights[m] * curves[m] for m in fit.packing_modes)
+            np.testing.assert_allclose(fit.expected_occupancy("nucleus", plot_type), realizable)
+
+    def test_expected_differs_from_raw_reconstruction_when_sum_not_one(self):
+        """The raw reconstruction is the un-realizable target this fixes."""
+        fit, _, _ = self._fit_two_mode(0.8, 0.4)
+        raw = fit.reconstructed_occupancy["nucleus"]["joint"]
+        expected = fit.expected_occupancy("nucleus", "joint")
+        total = sum(fit.coefficients_joint.values())
+        assert total == pytest.approx(1.2)
+        np.testing.assert_allclose(expected, raw / total)
+        # Raw sits high by exactly the coefficient sum's excess.
+        assert np.nanmax(raw) > np.nanmax(expected)
+
+    def test_expected_matches_raw_when_coefficients_sum_to_one(self):
+        fit, _, _ = self._fit_two_mode(0.6, 0.4)  # sum(c) = 1
+        np.testing.assert_allclose(
+            fit.expected_occupancy("nucleus", "joint"),
+            fit.reconstructed_occupancy["nucleus"]["joint"],
+        )
+
+    def test_expected_preserves_nan_mask(self):
+        fit, _, _ = self._fit_two_mode(0.8, 0.4)
+        fit.reconstructed_occupancy["nucleus"]["joint"][:3] = np.nan
+        assert np.all(np.isnan(fit.expected_occupancy("nucleus", "joint")[:3]))
+
+    def test_expected_returns_reconstruction_when_all_coefficients_zero(self):
+        fit, _, _ = self._fit_two_mode(0.8, 0.4)
+        for mode in fit.packing_modes:
+            fit.coefficients[mode]["joint"] = 0.0
+        np.testing.assert_allclose(
+            fit.expected_occupancy("nucleus", "joint"),
+            fit.reconstructed_occupancy["nucleus"]["joint"],
+        )
 
 
 # ---------------------------------------------------------------------------

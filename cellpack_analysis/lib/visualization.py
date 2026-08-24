@@ -2892,8 +2892,12 @@ def plot_rule_interpolation_fit(
                 zorder=0,
             )
 
-    # ── Overlay NNLS reconstruction ──────────────────────────────────────────
-    recon: np.ndarray = fit_result.reconstructed_occupancy[distance_measure][plot_type]
+    # ── Overlay the realizable ("expected") mixture ──────────────────────────
+    # Drawn from sum-normalized coefficients, matching the recipe's
+    # gradient_weights and the percent labels below.  The raw reconstruction is a
+    # target no packing can meet when sum(c) != 1.  See
+    # FitResult.expected_occupancy.
+    recon: np.ndarray = fit_result.expected_occupancy(distance_measure, plot_type)
     common_xvals: np.ndarray = dm_occ[baseline_mode]["combined"]["xvals"]
 
     mse: float = (
@@ -3031,9 +3035,11 @@ def plot_validation_occupancy(
         show_envelope=show_envelope,
     )
 
-    # ── Overlay NNLS reconstruction (dash-dot) ───────────────────────────
+    # ── Overlay the realizable ("expected") mixture (dash-dot) ───────────
+    # Sum-normalized, so this curve is what a packing built from the recipe's
+    # gradient_weights can actually attain.  See FitResult.expected_occupancy.
     dm_occ = occupancy_dict[distance_measure]
-    recon: np.ndarray = fit_result.reconstructed_occupancy[distance_measure][plot_type]
+    recon: np.ndarray = fit_result.expected_occupancy(distance_measure, plot_type)
     common_xvals: np.ndarray = dm_occ[baseline_mode]["combined"]["xvals"]
     relative_contribs: dict[str, float] = (
         fit_result.relative_contributions_individual[distance_measure]

@@ -141,6 +141,45 @@ class FitResult:
         """Joint-fit training MSE per distance measure: ``{dm: mse}``."""
         return self.train_mse["joint"]
 
+    def expected_occupancy(self, distance_measure: str, plot_type: str = "joint") -> np.ndarray:
+        r"""Occupancy the *realizable* mixture attains, on the common grid.
+
+        ``reconstructed_occupancy`` is the raw NNLS fit :math:`\sum_i c_i M_i`, and
+        that is deliberately what every model is scored against (MSE, RSS, AIC/BIC)
+        -- it is the actual least-squares solution.  A packing, though, realizes the
+        recipe's ``gradient_weights``, and those are **sum-normalized** (see
+        :func:`_get_gradient_weights_from_coefficients`), so the mixture a packing
+        can actually produce is
+
+        .. math::
+            \sum_i \frac{c_i}{\sum_j c_j} M_i = \frac{\text{recon}}{\sum_j c_j}
+
+        Drawing the "expected" curve from the raw coefficients instead sets a target
+        no packing can ever meet whenever :math:`\sum c \neq 1`: for the peroxisome
+        joint fit :math:`\sum c = 1.0665`, putting the dashed curve ~6.7% high while
+        the percent labels on the same axes already used the normalized values.
+
+        Parameters
+        ----------
+        distance_measure
+            Distance measure to return the curve for.
+        plot_type
+            ``"joint"`` for the joint fit, or ``"individual"`` for the
+            per-distance-measure fit.
+
+        Returns
+        -------
+        np.ndarray
+            The reconstruction rescaled by :math:`1/\sum c`, NaN-preserving.
+            Returned unchanged if the coefficients sum to zero.
+        """
+        recon = np.asarray(self.reconstructed_occupancy[distance_measure][plot_type], dtype=float)
+        scope_key = "joint" if plot_type == "joint" else distance_measure
+        total = float(sum(self.coefficients[mode][scope_key] for mode in self.packing_modes))
+        if total <= 0:
+            return recon
+        return recon / total
+
 
 @dataclass
 class FoldResult:
