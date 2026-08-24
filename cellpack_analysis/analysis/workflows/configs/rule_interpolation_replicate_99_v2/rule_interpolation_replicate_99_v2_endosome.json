@@ -17,6 +17,10 @@
         "nucleus",
         "z"
     ],
+    "distance_measures": [
+        "nucleus",
+        "z"
+    ],
     "occupancy_params": {
         "nucleus": {
             "xlim": 6,
