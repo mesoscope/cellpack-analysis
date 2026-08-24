@@ -18,6 +18,7 @@ from cellpack_analysis.lib.rule_interpolation import (
     _compute_bic,
     _compute_mean_occupancy_from_cells,
     _fit_single_rule,
+    _count_nonzero_coeffs,
     _get_baseline_cell_ids,
     _get_gradient_weights_from_coefficients,
     _masked_mse,
@@ -1081,26 +1082,37 @@ class TestComputeAIC:
 class TestFitSingleRule:
     """Tests for the single-mode NNLS helper."""
 
-    def test_returns_rss_and_n(self):
+    def test_returns_rss_n_and_coeff(self):
         rng = np.random.default_rng(42)
         b = rng.random(30)
         mode_occ = rng.random(30)
-        rss, n = _fit_single_rule(b, mode_occ)
+        rss, n, coeff = _fit_single_rule(b, mode_occ)
         assert n == 30
         assert rss >= 0.0
+        assert coeff >= 0.0
 
     def test_perfect_fit_gives_zero_rss(self):
         mode_occ = np.array([1.0, 2.0, 3.0])
         b = 2.0 * mode_occ
-        rss, _ = _fit_single_rule(b, mode_occ)
+        rss, _, coeff = _fit_single_rule(b, mode_occ)
         assert rss == pytest.approx(0.0, abs=1e-10)
+        assert coeff == pytest.approx(2.0)
 
     def test_rss_nonnegative(self):
         rng = np.random.default_rng(99)
         b = rng.random(50)
         mode_occ = rng.random(50)
-        rss, _ = _fit_single_rule(b, mode_occ)
+        rss, _, _ = _fit_single_rule(b, mode_occ)
         assert rss >= 0.0
+
+    def test_n_counts_only_unmasked_rows(self):
+        """Masked grid points are excluded from n, not scored as zero residuals."""
+        mode_occ = np.concatenate([np.full(20, 2.0), np.full(10, np.nan)])
+        b = np.concatenate([np.full(20, 5.0), np.full(10, 5.0)])
+        rss, n, coeff = _fit_single_rule(b, mode_occ)
+        assert n == 20
+        assert coeff == pytest.approx(2.5)
+        assert rss == pytest.approx(0.0, abs=1e-10)
 
 
 # ---------------------------------------------------------------------------
@@ -1235,6 +1247,89 @@ class TestComputeAICComparison:
         m1 = [m for m in result.comparisons["individual"][dm] if m.model_name == "mixed_rule"][0]
         m2 = [m for m in result2.comparisons["individual"][dm] if m.model_name == "mixed_rule"][0]
         assert m1.aic == pytest.approx(m2.aic)
+
+
+# ---------------------------------------------------------------------------
+# Tests: D1.4 — consistent AIC/BIC scoring (k = nonzero coeffs, n = fitted rows)
+# ---------------------------------------------------------------------------
+
+
+class TestAICScoringConsistency:
+    """D1.4: every model is scored on the same rows, and k counts real parameters."""
+
+    @staticmethod
+    def _occ_with_masked_tail(n_points: int = 40, supported_to: float = 4.0):
+        """Baseline exactly reproducible from mode_a; mode_b masked in the tail."""
+        common = np.linspace(0, 6, n_points)
+        supported = common <= supported_to
+        mode_a = np.linspace(1.0, 2.0, n_points)
+        mode_b = np.where(supported, np.linspace(2.0, 0.5, n_points), np.nan)
+        # Rises faster than mode_a, so the unconstrained fit wants a negative
+        # mode_b weight and NNLS clamps it to zero -- with a non-zero residual,
+        # avoiding the degenerate log(RSS=0) case.
+        target = np.linspace(0.5, 3.0, n_points)
+        individual = {
+            f"c{i}": {"xvals": common.copy(), "occupancy": target.copy()} for i in range(4)
+        }
+        occ = {
+            "nucleus": {
+                "real": {
+                    "individual": individual,
+                    "combined": {"xvals": common, "occupancy": target},
+                },
+                "mode_a": {
+                    "individual": {},
+                    "combined": {"xvals": common, "occupancy": mode_a},
+                },
+                "mode_b": {
+                    "individual": {},
+                    "combined": {"xvals": common, "occupancy": mode_b},
+                },
+            }
+        }
+        return occ, _make_channel_map("real", ["mode_a", "mode_b"]), int(supported.sum())
+
+    def test_count_nonzero_coeffs(self):
+        coeffs = {"a": 0.5, "b": 0.0, "c": 1.2}
+        assert _count_nonzero_coeffs(coeffs, ["a", "b", "c"]) == 2
+        assert _count_nonzero_coeffs(coeffs, ["b"]) == 0
+
+    def test_n_reflects_fitted_rows_not_grid_length(self):
+        occ, cm, n_supported = self._occ_with_masked_tail()
+        result = compute_aic_comparison(occ, cm, "real")
+        for model in result.comparisons["individual"]["nucleus"]:
+            assert model.n == n_supported, model.model_name
+
+    def test_all_models_share_one_row_count(self):
+        """Comparable information criteria require an identical n across models."""
+        occ, cm, _ = self._occ_with_masked_tail()
+        result = compute_aic_comparison(occ, cm, "real")
+        for scope_dict in result.comparisons.values():
+            for models in scope_dict.values():
+                assert len({m.n for m in models}) == 1
+
+    def test_k_counts_only_nonzero_coefficients(self):
+        """A mode NNLS drives to zero is not charged as a free parameter."""
+        occ, cm, _ = self._occ_with_masked_tail()
+        fit = fit_rule_interpolation(occ, cm, "real")
+        n_nonzero = _count_nonzero_coeffs(fit.coefficients_joint, fit.packing_modes)
+        assert n_nonzero == 1  # NNLS zeroes mode_b
+        assert fit.coefficients_joint["mode_b"] < 1e-8
+        result = compute_aic_comparison(occ, cm, "real", fit_result=fit)
+        mixed = next(
+            m for m in result.comparisons["joint"]["joint"] if m.model_name == "mixed_rule"
+        )
+        assert mixed.k == n_nonzero
+
+    def test_joint_n_is_sum_of_per_dm_fitted_rows(self):
+        """Joint n sums covered points across DMs, not len(grid) * n_dms."""
+        occ, cm, n_supported = self._occ_with_masked_tail()
+        occ["z"] = occ["nucleus"]
+        result = compute_aic_comparison(occ, cm, "real", distance_measures=["nucleus", "z"])
+        joint_mixed = next(
+            m for m in result.comparisons["joint"]["joint"] if m.model_name == "mixed_rule"
+        )
+        assert joint_mixed.n == 2 * n_supported
 
 
 # ---------------------------------------------------------------------------

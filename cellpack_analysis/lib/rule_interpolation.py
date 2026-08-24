@@ -1720,31 +1720,74 @@ def _compute_bic(n: int, k: int, rss: float) -> float:
     return n * np.log(rss / n) + k_eff * np.log(n)
 
 
+#: Coefficients at or below this fraction of the coefficient sum are treated as
+#: zero when counting free parameters.  NNLS returns floating-point noise rather
+#: than exact zeros for modes it excludes -- values around 1e-16 are routine --
+#: and charging those as free parameters would inflate ``k`` for every model.
+COEFF_ZERO_RTOL = 1e-8
+
+
+def _count_nonzero_coeffs(
+    coefficients: dict[str, float], modes: list[str], rtol: float = COEFF_ZERO_RTOL
+) -> int:
+    """Count the coefficients a model actually spends on the fit.
+
+    NNLS drives excluded modes to zero (up to floating-point noise); those modes
+    contribute nothing and must not be charged as free parameters in AIC/BIC.
+    The threshold is relative to the coefficient sum, so it is scale-free.
+
+    Parameters
+    ----------
+    coefficients
+        ``{mode: coeff}``.
+    modes
+        Modes to count over.
+    rtol
+        Fraction of the coefficient sum below which a coefficient counts as zero.
+
+    Returns
+    -------
+    int
+        Number of coefficients materially above zero.
+    """
+    total = sum(coefficients[mode] for mode in modes)
+    if total <= 0:
+        return 0
+    return sum(1 for mode in modes if coefficients[mode] > rtol * total)
+
+
 def _fit_single_rule(
     baseline_occupancy: np.ndarray,
     mode_occupancy: np.ndarray,
-) -> tuple[float, int]:
-    """Fit a single-mode NNLS model and return (RSS, n).
+) -> tuple[float, int, float]:
+    """Fit a single-mode NNLS model and return (RSS, n, coefficient).
+
+    Rows where either input is masked are excluded, so ``n`` counts only the grid
+    points that actually informed the fit.
 
     Parameters
     ----------
     baseline_occupancy
-        Target vector (mean baseline occupancy), shape ``(n,)``.
+        Target vector (mean baseline occupancy), shape ``(n_points,)``.
     mode_occupancy
-        Single simulated mode's combined occupancy on the same grid, shape ``(n,)``.
+        Single simulated mode's combined occupancy on the same grid.
 
     Returns
     -------
     rss
-        Residual sum of squares.
+        Residual sum of squares over the fitted rows.
     n
-        Number of data points.
+        Number of fitted data points.
+    coeff
+        The fitted non-negative coefficient.
     """
-    mode_occ_matrix = mode_occupancy.reshape(-1, 1)
-    coeff, _ = nnls(mode_occ_matrix, baseline_occupancy)
-    recon = mode_occ_matrix @ coeff
-    rss = float(np.sum((baseline_occupancy - recon) ** 2))
-    return rss, len(baseline_occupancy)
+    mode_occ_matrix = np.asarray(mode_occupancy, dtype=float).reshape(-1, 1)
+    coeff_arr, valid = _solve_nnls_masked(
+        np.asarray(baseline_occupancy, dtype=float), mode_occ_matrix, "a single-rule model"
+    )
+    recon = mode_occ_matrix[valid] @ coeff_arr
+    rss = float(np.sum((np.asarray(baseline_occupancy, dtype=float)[valid] - recon) ** 2))
+    return rss, int(valid.sum()), float(coeff_arr[0])
 
 
 def _compute_model_weights(
@@ -1810,8 +1853,6 @@ def compute_aic_comparison(
             occupancy_dict, channel_map, baseline_mode, distance_measures=distance_measures
         )
 
-    n_modes = len(packing_modes)
-
     # Pre-compute per-DM baseline targets and design matrices
     dm_baseline: dict[str, np.ndarray] = {}
     dm_sim_cols: dict[str, dict[str, np.ndarray]] = {}
@@ -1833,10 +1874,10 @@ def compute_aic_comparison(
             mode_xvals = dm_data[mode]["combined"]["xvals"]
             mode_occ = dm_data[mode]["combined"]["occupancy"]
             if len(mode_xvals) != len(common_xvals) or not np.allclose(mode_xvals, common_xvals):
-                col = np.interp(common_xvals, mode_xvals, mode_occ, right=0.0, left=0.0)
+                col = np.interp(common_xvals, mode_xvals, mode_occ, left=np.nan, right=np.nan)
             else:
-                col = mode_occ
-            cols[mode] = np.nan_to_num(col, nan=0.0)
+                col = np.asarray(mode_occ, dtype=float)
+            cols[mode] = col
         dm_sim_cols[dm] = cols
 
     # Collect results per scope/dm
@@ -1847,43 +1888,51 @@ def compute_aic_comparison(
 
     for dm in distance_measures:
         b = dm_baseline[dm]
-        n = len(b)
+        # Every model in a comparison must be scored on the same rows, or the
+        # information criteria are not comparable.  Use the rows the mixed-rule
+        # fit itself could use: target and all design columns finite.
+        design = np.column_stack([dm_sim_cols[dm][mode] for mode in packing_modes])
+        valid = _valid_row_mask(b, design)
+        n = int(valid.sum())
+        b_valid = b[valid]
 
         models: list[AICModelResult] = []
 
         # Mixed rule (individual scope)
-        recon_ind = fit_result.reconstructed_occupancy[dm]["individual"]
-        rss_mixed = float(np.sum((b - recon_ind) ** 2))
+        recon_ind = np.asarray(fit_result.reconstructed_occupancy[dm]["individual"], dtype=float)
+        rss_mixed = float(np.sum((b_valid - recon_ind[valid]) ** 2))
+        k_mixed = _count_nonzero_coeffs(fit_result.coefficients_individual[dm], packing_modes)
         models.append(
             AICModelResult(
                 model_name="mixed_rule",
-                k=n_modes,
+                k=k_mixed,
                 n=n,
                 rss=rss_mixed,
-                aic=_compute_aic(n, n_modes, rss_mixed),
-                aicc=_compute_aicc(n, n_modes, rss_mixed),
-                bic=_compute_bic(n, n_modes, rss_mixed),
+                aic=_compute_aic(n, k_mixed, rss_mixed),
+                aicc=_compute_aicc(n, k_mixed, rss_mixed),
+                bic=_compute_bic(n, k_mixed, rss_mixed),
             )
         )
 
-        # Single-rule models
+        # Single-rule models, refitted on the same rows
         for mode in packing_modes:
-            rss_s, n_s = _fit_single_rule(b, dm_sim_cols[dm][mode])
+            rss_s, n_s, coeff_s = _fit_single_rule(b_valid, dm_sim_cols[dm][mode][valid])
+            k_s = 1 if coeff_s > 0 else 0
             models.append(
                 AICModelResult(
                     model_name=f"single:{mode}",
-                    k=1,
+                    k=k_s,
                     n=n_s,
                     rss=rss_s,
-                    aic=_compute_aic(n_s, 1, rss_s),
-                    aicc=_compute_aicc(n_s, 1, rss_s),
-                    bic=_compute_bic(n_s, 1, rss_s),
+                    aic=_compute_aic(n_s, k_s, rss_s),
+                    aicc=_compute_aicc(n_s, k_s, rss_s),
+                    bic=_compute_bic(n_s, k_s, rss_s),
                 )
             )
 
         # Null model: predict constant mean of baseline occupancy
-        mean_val = float(np.mean(b))
-        rss_null = float(np.sum((b - mean_val) ** 2))
+        mean_val = float(np.mean(b_valid))
+        rss_null = float(np.sum((b_valid - mean_val) ** 2))
         models.append(
             AICModelResult(
                 model_name="null",
@@ -1899,39 +1948,54 @@ def compute_aic_comparison(
         comparisons["individual"][dm] = models
 
     # Joint scope: stack all DMs
-    b_joint = np.concatenate([dm_baseline[dm] for dm in distance_measures])
-    n_joint = len(b_joint)
+    b_joint_full = np.concatenate([dm_baseline[dm] for dm in distance_measures])
+    design_joint = np.vstack(
+        [
+            np.column_stack([dm_sim_cols[dm][mode] for mode in packing_modes])
+            for dm in distance_measures
+        ]
+    )
+    valid_joint = _valid_row_mask(b_joint_full, design_joint)
+    # n is the number of covered grid points summed over distance measures, not
+    # len(grid) * n_distance_measures.
+    n_joint = int(valid_joint.sum())
+    b_joint = b_joint_full[valid_joint]
 
     # Mixed rule (joint scope) — use joint reconstructed occupancy
-    recon_joint = np.concatenate(
-        [fit_result.reconstructed_occupancy[dm]["joint"] for dm in distance_measures]
+    recon_joint_full = np.concatenate(
+        [
+            np.asarray(fit_result.reconstructed_occupancy[dm]["joint"], dtype=float)
+            for dm in distance_measures
+        ]
     )
-    rss_mixed_joint = float(np.sum((b_joint - recon_joint) ** 2))
+    rss_mixed_joint = float(np.sum((b_joint - recon_joint_full[valid_joint]) ** 2))
+    k_mixed_joint = _count_nonzero_coeffs(fit_result.coefficients_joint, packing_modes)
     joint_models: list[AICModelResult] = [
         AICModelResult(
             model_name="mixed_rule",
-            k=n_modes,
+            k=k_mixed_joint,
             n=n_joint,
             rss=rss_mixed_joint,
-            aic=_compute_aic(n_joint, n_modes, rss_mixed_joint),
-            aicc=_compute_aicc(n_joint, n_modes, rss_mixed_joint),
-            bic=_compute_bic(n_joint, n_modes, rss_mixed_joint),
+            aic=_compute_aic(n_joint, k_mixed_joint, rss_mixed_joint),
+            aicc=_compute_aicc(n_joint, k_mixed_joint, rss_mixed_joint),
+            bic=_compute_bic(n_joint, k_mixed_joint, rss_mixed_joint),
         )
     ]
 
-    # Single-rule (joint scope): stack all DMs per mode
+    # Single-rule (joint scope): stack all DMs per mode, same rows as above
     for mode in packing_modes:
         stacked_mode = np.concatenate([dm_sim_cols[dm][mode] for dm in distance_measures])
-        rss_s, n_s = _fit_single_rule(b_joint, stacked_mode)
+        rss_s, n_s, coeff_s = _fit_single_rule(b_joint, stacked_mode[valid_joint])
+        k_s = 1 if coeff_s > 0 else 0
         joint_models.append(
             AICModelResult(
                 model_name=f"single:{mode}",
-                k=1,
+                k=k_s,
                 n=n_s,
                 rss=rss_s,
-                aic=_compute_aic(n_s, 1, rss_s),
-                aicc=_compute_aicc(n_s, 1, rss_s),
-                bic=_compute_bic(n_s, 1, rss_s),
+                aic=_compute_aic(n_s, k_s, rss_s),
+                aicc=_compute_aicc(n_s, k_s, rss_s),
+                bic=_compute_bic(n_s, k_s, rss_s),
             )
         )
 
