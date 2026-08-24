@@ -44,6 +44,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 from cellpack_analysis import setup_logging
 from cellpack_analysis.analysis.workflows.run_analysis_workflow import (
     AnalysisConfig,
@@ -146,6 +148,98 @@ def _resolve_validation_config_path(raw_config: dict[str, Any]) -> Path:
     return _validation_config_path(suffix=f"_{packing_id}")
 
 
+def _fit_occupancy_cache_path(results_dir: Path, distance_measure: str, fit_suffix: str) -> Path:
+    """Path of the fit phase's cached occupancy curves for one distance measure."""
+    return results_dir / f"{distance_measure}_occupancy{fit_suffix}.dat"
+
+
+def _merge_fit_and_validation_occupancy(
+    results_dir: Path,
+    fit_suffix: str,
+    distance_measures: list[str],
+    validation_occupancy_dict: dict[str, Any],
+    baseline_mode: str,
+) -> dict[str, Any]:
+    """Pin the component-rule occupancy curves to the ones the fit actually used.
+
+    The validate phase runs its own occupancy analysis in its own results
+    directory, so ``runner.shared_data["occupancy_dict"]`` is a *second*,
+    independently built set of curves.  Pairing the fit phase's coefficients with
+    those curves silently evaluates a fit against data it was never fitted to;
+    two caches built a day apart were measured to disagree by up to 0.06 in
+    occupancy ratio (membrane_gradient 1.2244 vs 1.1644).
+
+    So every component mode is taken from the fit phase's own cache, and only the
+    modes the fit could not have seen -- ``"interpolated"``, the mixed rule packed
+    afterwards -- come from the validation run.
+
+    Parameters
+    ----------
+    results_dir
+        The **fit** phase results directory (where the CV pickle also lives).
+    fit_suffix
+        Suffix composed exactly as ``AnalysisConfig.suffix`` composes it, i.e.
+        including any ``_norm_<normalization>`` part.
+    distance_measures
+        Occupancy distance measures to merge.
+    validation_occupancy_dict
+        ``{dm: {mode: ...}}`` from the validation run.
+    baseline_mode
+        Baseline mode key, used for the grid consistency check.
+
+    Returns
+    -------
+    dict
+        ``{dm: {mode: ...}}`` with component modes pinned to the fit cache.
+
+    Raises
+    ------
+    FileNotFoundError
+        If a fit-phase occupancy cache is missing.
+    ValueError
+        If the two runs used different common grids, in which case their curves
+        cannot be combined at all.
+    """
+    merged: dict[str, Any] = {}
+    for dm in distance_measures:
+        cache_path = _fit_occupancy_cache_path(results_dir, dm, fit_suffix)
+        if not cache_path.exists():
+            raise FileNotFoundError(
+                f"Fit-phase occupancy cache not found: {cache_path}\n"
+                "Re-run --phase fit to generate it. The validate phase must score the "
+                "fitted coefficients against the same occupancy curves the fit used."
+            )
+        logger.info("Loading pinned fit-phase occupancy curves from: %s", cache_path)
+        with open(cache_path, "rb") as fh:
+            fit_dm_dict = pickle.load(fh)
+
+        val_dm_dict = validation_occupancy_dict.get(dm, {})
+
+        # Both runs must share one common grid, or nothing can be combined.
+        fit_xvals = fit_dm_dict.get(baseline_mode, {}).get("combined", {}).get("xvals")
+        val_xvals = val_dm_dict.get(baseline_mode, {}).get("combined", {}).get("xvals")
+        if fit_xvals is not None and val_xvals is not None:
+            if len(fit_xvals) != len(val_xvals) or not np.allclose(fit_xvals, val_xvals):
+                raise ValueError(
+                    f"Fit and validation occupancy grids differ for '{dm}' "
+                    f"(fit: {len(fit_xvals)} points spanning "
+                    f"[{float(fit_xvals[0]):.4g}, {float(fit_xvals[-1]):.4g}]; validation: "
+                    f"{len(val_xvals)} points spanning "
+                    f"[{float(val_xvals[0]):.4g}, {float(val_xvals[-1]):.4g}]). "
+                    "The two phases used different occupancy_params; re-run both with "
+                    "matching settings."
+                )
+
+        dm_merged = dict(fit_dm_dict)
+        # Modes the fit never saw (the mixed rule) come from the validation run.
+        for mode, mode_data in val_dm_dict.items():
+            if mode not in dm_merged:
+                dm_merged[mode] = mode_data
+        merged[dm] = dm_merged
+
+    return merged
+
+
 # ---------------------------------------------------------------------------
 # Fit phase
 # ---------------------------------------------------------------------------
@@ -173,6 +267,23 @@ def _build_fit_config_dict(raw_config: dict[str, Any]) -> dict[str, Any]:
     cv_params = dict(fit_config.get("rule_interpolation_cv_params", {}))
     cv_params["generate_packing_configs"] = False
     fit_config["rule_interpolation_cv_params"] = cv_params
+
+    # The fit phase defines the pinned occupancy curves and the coefficients fitted
+    # to them, and the validate phase consumes both.  A stale cache on either side
+    # silently pairs coefficients with curves they were never fitted to, so force
+    # both to be rebuilt.  Recalculating occupancy alone is not enough: a fresh
+    # occupancy cache next to a stale CV pickle means run_rule_interpolation_cv
+    # loads the old pickle and never refits.
+    recalculate = fit_config.get("recalculate")
+    if isinstance(recalculate, dict):
+        forced = dict(recalculate)
+    elif isinstance(recalculate, bool):
+        forced = dict.fromkeys(_REQUIRED_FIT_ANALYSIS_STEPS, recalculate)
+    else:
+        forced = {}
+    for step in _REQUIRED_FIT_ANALYSIS_STEPS:
+        forced[step] = True
+    fit_config["recalculate"] = forced
 
     return fit_config
 
@@ -423,6 +534,19 @@ def validate(config_path: str) -> None:
 
         with open(cv_pickle_path, "rb") as fh:
             _cv_result = pickle.load(fh)
+
+        # The coefficients above were fitted to the fit phase's occupancy curves,
+        # so score them against those same curves rather than the validation run's
+        # independently built ones.  The mixed rule ("interpolated") can only come
+        # from the validation run.
+        occupancy_dict = _merge_fit_and_validation_occupancy(
+            results_dir=results_dir,
+            fit_suffix=fit_suffix,
+            distance_measures=occupancy_dm,
+            validation_occupancy_dict=occupancy_dict,
+            baseline_mode=baseline_mode,
+        )
+
         cv_fit_result = rule_interpolation.fit_result_from_cv(
             cv_result=_cv_result,
             occupancy_dict=occupancy_dict,

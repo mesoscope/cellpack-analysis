@@ -1,3 +1,4 @@
+import json
 import logging
 import pickle
 import warnings
@@ -99,18 +100,68 @@ def get_cell_id_map_from_distance_kde_dict(
     return cell_id_map
 
 
+def _occupancy_cache_meta_path(save_path: Path) -> Path:
+    """Sidecar path recording the grid parameters a cached occupancy dict was built with.
+
+    A sidecar rather than a key inside the pickle: ``_load_cached_occupancy``
+    compares ``set(occupancy_dict.keys())`` against the requested modes, and every
+    consumer iterates those keys as modes, so an extra key would break both.
+    """
+    return save_path.with_suffix(".meta.json")
+
+
+def _write_occupancy_cache_meta(save_path: Path, meta: dict[str, Any]) -> None:
+    """Record the grid parameters alongside a freshly written occupancy cache."""
+    try:
+        with open(_occupancy_cache_meta_path(save_path), "w") as f:
+            json.dump(meta, f, indent=2, sort_keys=True)
+    except OSError as e:  # pragma: no cover - non-fatal bookkeeping
+        logger.warning(f"Could not write occupancy cache metadata for {save_path}: {e}")
+
+
 def _load_cached_occupancy(
     save_path: Path,
     channel_map: dict[str, str],
+    expected_meta: dict[str, Any] | None = None,
 ) -> dict[str, dict[str, dict[str, Any]]] | None:
     """
     Load and validate a cached KDE occupancy dict from disk.
 
     Returns the cached dict when it is valid, or ``None`` when the cache is
     absent, outdated, or corrupt (logging a warning in the latter cases).
+
+    When ``expected_meta`` is given, the cache is also rejected unless its sidecar
+    records the same grid parameters. Without this the cache key is effectively
+    only the file name, so changing ``num_points``, ``x_max`` or ``bandwidth``
+    silently reloads a grid built with the old settings.
     """
     if not save_path.exists():
         return None
+    if expected_meta is not None:
+        meta_path = _occupancy_cache_meta_path(save_path)
+        if not meta_path.exists():
+            logger.warning(
+                f"Cached occupancy data at {save_path} has no {meta_path.name} sidecar, so "
+                "the grid it was built with is unknown. Recalculating occupancy."
+            )
+            return None
+        try:
+            with open(meta_path) as f:
+                cached_meta = json.load(f)
+        except (OSError, json.JSONDecodeError) as e:
+            logger.warning(f"Could not read {meta_path}: {e}. Recalculating occupancy.")
+            return None
+        differing = {
+            key: (cached_meta.get(key), value)
+            for key, value in expected_meta.items()
+            if cached_meta.get(key) != value
+        }
+        if differing:
+            logger.warning(
+                f"Cached occupancy data at {save_path} was built with different grid "
+                f"parameters {differing} (cached, requested). Recalculating occupancy."
+            )
+            return None
     try:
         with open(save_path, "rb") as f:
             occupancy_dict = pickle.load(f)
@@ -542,8 +593,17 @@ def get_kde_occupancy_dict(
         else None
     )
 
+    cache_meta: dict[str, Any] = {
+        "distance_measure": distance_measure,
+        "num_points": num_points,
+        "x_min": x_min,
+        "x_max": x_max,
+        "bandwidth": bandwidth,
+        "min_coverage_fraction": min_coverage_fraction,
+    }
+
     if not recalculate and save_path is not None:
-        cached = _load_cached_occupancy(save_path, channel_map)
+        cached = _load_cached_occupancy(save_path, channel_map, expected_meta=cache_meta)
         if cached is not None:
             return cached
 
@@ -578,6 +638,7 @@ def get_kde_occupancy_dict(
     if save_path is not None:
         with open(save_path, "wb") as f:
             pickle.dump(kde_occupancy_dict, f)
+        _write_occupancy_cache_meta(save_path, cache_meta)
 
     return kde_occupancy_dict
 

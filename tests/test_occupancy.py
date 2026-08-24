@@ -1,5 +1,7 @@
 """Tests for the refactored histogram-based occupancy functions."""
 
+import pickle
+
 import numpy as np
 import pytest
 from scipy.stats import gaussian_kde
@@ -9,6 +11,9 @@ from cellpack_analysis.lib.occupancy import (
     _apply_coverage_mask,
     _compute_single_cell_occupancy,
     _get_common_xvals_from_kde,
+    _load_cached_occupancy,
+    _occupancy_cache_meta_path,
+    _write_occupancy_cache_meta,
     get_binned_occupancy_dict_from_distance_dict,
     get_kde_occupancy_dict,
     get_kde_occupancy_for_single_cell,
@@ -555,3 +560,86 @@ class TestOccupancyGridResolution:
         assert grid[0] == 0.0
         assert grid[-1] == pytest.approx(8.0)
         assert grid.size == 1000
+
+
+# ---------------------------------------------------------------------------
+# Tests: D1.3 — the occupancy cache is keyed by its grid parameters
+# ---------------------------------------------------------------------------
+
+
+class TestOccupancyCacheStamp:
+    """D1.3: a cache built with different grid parameters must not be reused."""
+
+    @staticmethod
+    def _write_cache(tmp_path, meta):
+        """Write a minimally valid occupancy cache plus its sidecar."""
+        save_path = tmp_path / "nucleus_occupancy.dat"
+        payload = {
+            "real": {
+                "individual": {},
+                "combined": {
+                    "xvals": np.linspace(0, 6, 10),
+                    "occupancy": np.ones(10),
+                    "all_occupancy": np.ones((1, 10)),
+                },
+            }
+        }
+        with open(save_path, "wb") as f:
+            pickle.dump(payload, f)
+        if meta is not None:
+            _write_occupancy_cache_meta(save_path, meta)
+        return save_path
+
+    @staticmethod
+    def _meta(num_points=1000, x_max=6):
+        return {
+            "distance_measure": "nucleus",
+            "num_points": num_points,
+            "x_min": 0,
+            "x_max": x_max,
+            "bandwidth": 0.2,
+            "min_coverage_fraction": 0.95,
+        }
+
+    def test_matching_meta_is_accepted(self, tmp_path):
+        save_path = self._write_cache(tmp_path, self._meta())
+        loaded = _load_cached_occupancy(save_path, {"real": "S"}, expected_meta=self._meta())
+        assert loaded is not None
+
+    def test_num_points_mismatch_is_rejected(self, tmp_path):
+        """The 250 -> 1000 grid change must invalidate the old cache, not be ignored."""
+        save_path = self._write_cache(tmp_path, self._meta(num_points=250))
+        loaded = _load_cached_occupancy(
+            save_path, {"real": "S"}, expected_meta=self._meta(num_points=1000)
+        )
+        assert loaded is None
+
+    def test_x_max_mismatch_is_rejected(self, tmp_path):
+        save_path = self._write_cache(tmp_path, self._meta(x_max=5.17))
+        loaded = _load_cached_occupancy(
+            save_path, {"real": "S"}, expected_meta=self._meta(x_max=6)
+        )
+        assert loaded is None
+
+    def test_missing_sidecar_is_rejected(self, tmp_path):
+        """A legacy cache with unknown provenance is treated as invalid."""
+        save_path = self._write_cache(tmp_path, None)
+        assert not _occupancy_cache_meta_path(save_path).exists()
+        loaded = _load_cached_occupancy(save_path, {"real": "S"}, expected_meta=self._meta())
+        assert loaded is None
+
+    def test_missing_sidecar_still_loads_when_no_meta_requested(self, tmp_path):
+        """Callers that pass no expected_meta keep the old, mode-set-only behaviour."""
+        save_path = self._write_cache(tmp_path, None)
+        assert _load_cached_occupancy(save_path, {"real": "S"}) is not None
+
+    def test_mode_set_check_still_applies(self, tmp_path):
+        save_path = self._write_cache(tmp_path, self._meta())
+        loaded = _load_cached_occupancy(
+            save_path, {"real": "S", "extra": "S"}, expected_meta=self._meta()
+        )
+        assert loaded is None
+
+    def test_sidecar_path_is_beside_the_cache(self, tmp_path):
+        save_path = tmp_path / "nucleus_occupancy.dat"
+        assert _occupancy_cache_meta_path(save_path) == tmp_path / "nucleus_occupancy.meta.json"
