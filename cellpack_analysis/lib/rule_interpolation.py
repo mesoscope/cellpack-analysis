@@ -703,7 +703,27 @@ def fit_rule_interpolation(
 
         common_xvals: np.ndarray = baseline_dm["combined"]["xvals"]
 
-        # Build target: mean of training baseline cells on common_xvals
+        # Build target: mean of training baseline cells on common_xvals.
+        #
+        # This is the same NaN-aware estimator that produces the *plotted*
+        # combined curve (`occupancy._compute_mode_kde_occupancy`), restricted to
+        # the fold's training cells -- using the all-cell curve directly would
+        # leak every test cell into every fold's target.
+        #
+        # One deliberate asymmetry: the plotted curve is additionally
+        # coverage-masked (`occupancy._apply_coverage_mask`,
+        # min_coverage_fraction 0.95), and the target here is NOT. So in the
+        # sparse high-x tail the target is finite where the plotted curve is NaN.
+        # That is inert today, because every design column below is built from
+        # those same coverage-masked combined curves and is therefore NaN across
+        # the same band, so `_valid_row_mask` drops those rows regardless of the
+        # target. It stops being inert the moment a design column is built from a
+        # different cell set or a different support rule -- then those rows would
+        # enter the fit with a target the plotted curve does not show. The
+        # alternative (masking the target here) was rejected: it needs either
+        # `min_coverage_fraction` plumbed in, whose default could silently diverge
+        # from the occupancy run's, or the all-cell mask, which reintroduces a
+        # (weaker) CV leak. See TestFitTargetMatchesProductionCombinedCurve.
         baseline_occupancy, _ = _compute_mean_occupancy_from_cells(
             mode_individual_dict=baseline_dm["individual"],
             cell_ids=train_cell_ids,

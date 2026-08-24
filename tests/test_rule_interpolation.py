@@ -2,12 +2,15 @@
 
 import json
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
 import pytest
 from scipy.optimize import nnls
+from scipy.stats import gaussian_kde
 
+from cellpack_analysis.lib.occupancy import get_kde_occupancy_dict
 from cellpack_analysis.lib.rule_interpolation import (
     AICComparisonResult,
     AICModelResult,
@@ -17,8 +20,8 @@ from cellpack_analysis.lib.rule_interpolation import (
     _compute_aicc,
     _compute_bic,
     _compute_mean_occupancy_from_cells,
-    _fit_single_rule,
     _count_nonzero_coeffs,
+    _fit_single_rule,
     _get_baseline_cell_ids,
     _get_gradient_weights_from_coefficients,
     _masked_mse,
@@ -239,6 +242,116 @@ def _make_short_support_individual(
     return individual
 
 
+def _production_occupancy(
+    n_full: int = 4,
+    n_short: int = 3,
+    short_avail_max: float = 4.5,
+    full_avail_max: float = 6.0,
+    num_points: int = 40,
+    modes: tuple[str, ...] = ("real", "random"),
+) -> dict[str, dict[str, Any]]:
+    """Run the *production* occupancy pipeline over synthetic heterogeneous cells.
+
+    ``get_kde_occupancy_for_single_cell`` NaNs each cell outside
+    ``[min, max]`` of its own ``"available"`` KDE **dataset**, so support is
+    controlled by the range of the available distances, not by the KDE itself
+    (a Gaussian KDE has infinite support). Short cells therefore get available
+    distances capped at *short_avail_max*.
+
+    Returns the real ``get_kde_occupancy_dict`` output, so the per-cell
+    ``individual`` rows and the aggregated, coverage-masked ``combined`` curve
+    are both produced by production code rather than re-implemented here.
+    """
+    rng = np.random.default_rng(11)
+    kde_dict: dict[str, dict[str, gaussian_kde]] = {}
+
+    def _add(cell_id: str, avail_max: float) -> None:
+        available = rng.uniform(0.02, avail_max, size=400)
+        entry: dict[str, gaussian_kde] = {"available": gaussian_kde(available)}
+        for mode in modes:
+            # Occupied distances drawn from the same range, biased low, so the
+            # occupancy ratio is a smooth O(1) curve.
+            occupied = rng.uniform(0.02, avail_max, size=200) ** 1.3
+            entry[mode] = gaussian_kde(occupied)
+        kde_dict[cell_id] = entry
+
+    for i in range(n_full):
+        _add(f"full_{i:03d}", full_avail_max)
+    for i in range(n_short):
+        _add(f"short_{i:03d}", short_avail_max)
+
+    return get_kde_occupancy_dict(
+        distance_kde_dict=kde_dict,
+        channel_map=dict.fromkeys(modes, "ST001"),
+        num_points=num_points,
+        x_min=0,
+        x_max=full_avail_max,
+        min_coverage_fraction=0.95,
+    )
+
+
+class TestFitTargetMatchesProductionCombinedCurve:
+    """D1.1 against production code on both sides, not a re-implemented mean.
+
+    The brief asks for the fit target to be "the same NaN-aware nanmean combined
+    curve that is plotted". Asserting that against a hand-rolled ``np.nanmean``
+    only proves the test's own arithmetic; these assert against
+    ``combined["occupancy"]`` as ``lib.occupancy`` actually builds it.
+    """
+
+    def test_target_equals_plotted_combined_curve_where_finite(self):
+        occ = _production_occupancy()
+        individual = occ["real"]["individual"]
+        combined = np.asarray(occ["real"]["combined"]["occupancy"], dtype=float)
+        common = np.asarray(occ["real"]["combined"]["xvals"], dtype=float)
+
+        target, _ = _compute_mean_occupancy_from_cells(
+            individual, sorted(individual.keys()), common
+        )
+        finite = np.isfinite(combined)
+        assert finite.sum() > 0.5 * common.size  # not a vacuous comparison
+        np.testing.assert_allclose(target[finite], combined[finite], rtol=1e-10)
+
+    def test_coverage_mask_divergence_exists_and_is_inert(self):
+        """F8: the target is *not* coverage-masked; today that changes nothing.
+
+        The plotted combined curve is additionally coverage-masked
+        (``occupancy._apply_coverage_mask``, min_coverage_fraction 0.95), so it
+        is NaN in the sparse high-x tail where the fit target is still finite.
+        Those rows drop out of the fit anyway, because every design column is
+        built from the same coverage-masked combined curves and is therefore NaN
+        there too. This test asserts both halves: that the divergence band is
+        real in production-shaped data, and that it is inert for the solution.
+
+        It cannot detect a *future* divergence driven by different data (a design
+        column built from a different cell set or support rule) -- the comment at
+        the target site is the guard for that.
+        """
+        occ = _production_occupancy()
+        combined = np.asarray(occ["real"]["combined"]["occupancy"], dtype=float)
+        common = np.asarray(occ["real"]["combined"]["xvals"], dtype=float)
+        individual = occ["real"]["individual"]
+        target, _ = _compute_mean_occupancy_from_cells(
+            individual, sorted(individual.keys()), common
+        )
+
+        divergence = np.isfinite(target) & ~np.isfinite(combined)
+        assert divergence.any(), "fixture must produce a coverage-masked tail band"
+
+        # Every design column is NaN across that band, so _valid_row_mask drops it.
+        design = np.column_stack(
+            [np.asarray(occ[m]["combined"]["occupancy"], dtype=float) for m in ("random",)]
+        )
+        assert not _valid_row_mask(target, design)[divergence].any()
+
+        # And the fit is identical whether or not the target is masked there.
+        fit_unmasked, _ = _solve_nnls_masked(target, design, "unmasked")
+        target_masked = target.copy()
+        target_masked[~np.isfinite(combined)] = np.nan
+        fit_masked, _ = _solve_nnls_masked(target_masked, design, "masked")
+        np.testing.assert_allclose(fit_unmasked, fit_masked, atol=1e-12)
+
+
 class TestFitTargetShortSupport:
     """D1.1: the fit target is the NaN-aware mean, not a zero-filled mean."""
 
@@ -349,6 +462,63 @@ class TestMaskedLeastSquares:
         )
         assert zf_mse == pytest.approx(masked_mse / 2.0)
         assert int(valid.sum()) == 10 and target.size == 20
+
+    def test_production_geometry_zero_row_positive_target(self):
+        """The geometry the old code actually produced, and what dropping it does.
+
+        This is the case the other fixtures in this class miss: they mask the
+        target *and* the design row, which makes a masked row genuinely
+        low-residual. Production was asymmetric. Beyond a cell's available
+        support the old code zero-filled the design columns
+        (``rule_interpolation.py:543-548``) but built the target from a *mean of
+        zero-filled per-cell curves*, which is deflated yet still positive --
+        A3 measured tail target 0.418-0.443 against a plotted 0.851-0.859.
+
+        So an old-code tail row compared a positive target against an all-zero
+        design row: residual ~= target**2, among the *largest* on the grid, not
+        near zero. Two consequences, both asserted here:
+
+        1. All-zero design rows are **inert for the solution** -- they add a
+           constant to the objective, so dropping them cannot move a coefficient.
+        2. Dropping them therefore removes the grid's worst residuals, so the
+           reported MSE **falls**. It does not rise.
+
+        Point 2 is the direction the D1 report first predicted backwards; this
+        test pins it in code so a future reader does not have to re-derive it.
+        """
+        common = np.linspace(0, 6, 50)
+        supported = common <= 4.0
+        # Two modes with a shared support, coverage-masked in the tail as the
+        # production combined curves are.
+        col_a = np.where(supported, 1.0 + 0.1 * common, np.nan)
+        col_b = np.where(supported, 0.5 + 0.2 * common, np.nan)
+        design_masked = np.column_stack([col_a, col_b])
+        # What the old code fed to nnls: NaN -> 0 on the design side.
+        design_zero_filled = np.nan_to_num(design_masked, nan=0.0)
+        # Target: a not-quite-exact fit inside the support, and in the tail the
+        # deflated-but-positive value the old zero-filled mean produced.
+        true_c = np.array([1.2, 0.4])
+        target = np.where(
+            supported,
+            design_zero_filled @ true_c + 0.02 * np.cos(4.0 * common),
+            0.43,
+        )
+
+        coeffs_masked, valid = _solve_nnls_masked(target, design_masked, "test")
+        coeffs_zero_filled, _ = nnls(design_zero_filled, target)
+
+        # (1) The zero rows were inert: the same coefficients either way.
+        assert int(valid.sum()) == int(supported.sum()) < common.size
+        np.testing.assert_allclose(coeffs_masked, coeffs_zero_filled, atol=1e-9)
+
+        # (2) MSE falls when they are dropped, because they were the worst rows.
+        mse_masked = _masked_mse(target, _masked_reconstruction(design_masked, coeffs_masked))
+        mse_zero_filled = float(np.mean((target - design_zero_filled @ coeffs_zero_filled) ** 2))
+        assert mse_masked < mse_zero_filled
+        # The dropped rows dominate: they alone account for nearly all the old MSE.
+        dropped_contribution = float(np.sum(target[~supported] ** 2) / common.size)
+        assert dropped_contribution == pytest.approx(mse_zero_filled, rel=0.05)
+        assert mse_masked < 0.05 * mse_zero_filled
 
     def test_reconstruction_is_nan_on_masked_rows(self):
         design = np.array([[1.0, 2.0], [1.0, 2.0], [np.nan, 2.0]])
