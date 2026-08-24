@@ -27,6 +27,7 @@ import logging
 import os
 import pickle
 import subprocess
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -369,17 +370,162 @@ def _get_baseline_cell_ids(
     return cell_ids
 
 
+def _nanmean_quiet(matrix: np.ndarray, axis: int = 0) -> np.ndarray:
+    """``np.nanmean`` that silences the benign all-NaN-slice ``RuntimeWarning``.
+
+    Grid points outside every contributing cell's support form all-NaN slices --
+    an expected consequence of restricting each cell to its own available-space
+    support. The result stays NaN there, which is the intended "no coverage"
+    value. Mirrors ``occupancy._nanmean_nanstd``.
+    """
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        return np.asarray(np.nanmean(matrix, axis=axis))
+
+
+def _resample_cell_onto_common_grid(
+    cell_data: dict[str, np.ndarray],
+    common_xvals: np.ndarray,
+) -> np.ndarray:
+    """Resample one cell's occupancy curve onto ``common_xvals``, NaN outside support.
+
+    Prefers a precomputed ``occupancy_common`` row: both the KDE and the discrete
+    occupancy pipelines emit one, already NaN-masked outside that cell's
+    available-space support. Falls back to a NaN-edged interpolation of the cell's
+    native curve, matching the convention the discrete pipeline uses internally
+    (``np.interp(..., left=np.nan, right=np.nan)``).
+
+    Zero-filling outside a cell's support -- the previous behaviour -- makes every
+    short-support cell vote "occupancy 0" in the tail, biasing the mean toward
+    zero exactly where coverage is thinnest.
+
+    Parameters
+    ----------
+    cell_data
+        ``{"xvals": array, "occupancy": array}``, optionally with
+        ``"occupancy_common"`` already on the common grid.
+    common_xvals
+        Target x-axis grid.
+
+    Returns
+    -------
+    np.ndarray
+        Shape ``(len(common_xvals),)``, NaN where the cell has no support.
+    """
+    occ_common = cell_data.get("occupancy_common")
+    if occ_common is not None:
+        occ_arr = np.asarray(occ_common, dtype=float)
+        if occ_arr.shape == common_xvals.shape:
+            return occ_arr
+        logger.warning(
+            f"Ignoring 'occupancy_common' of length {occ_arr.size}; expected "
+            f"{common_xvals.size} to match the common grid. Falling back to interpolation."
+        )
+    return np.interp(
+        common_xvals,
+        cell_data["xvals"],
+        cell_data["occupancy"],
+        left=np.nan,
+        right=np.nan,
+    )
+
+
+def _valid_row_mask(target: np.ndarray, design_matrix: np.ndarray) -> np.ndarray:
+    """Rows of a least-squares system where the target and every column are finite.
+
+    Masked support must be *excluded* from the fit, not zeroed: a zero row carries
+    no information but still inflates ``n`` for AIC/BIC and deflates MSE.
+
+    Parameters
+    ----------
+    target
+        Shape ``(n_points,)``.
+    design_matrix
+        Shape ``(n_points, n_modes)``.
+
+    Returns
+    -------
+    np.ndarray
+        Boolean mask of shape ``(n_points,)``.
+    """
+    return np.isfinite(target) & np.all(np.isfinite(design_matrix), axis=1)
+
+
+def _solve_nnls_masked(
+    target: np.ndarray, design_matrix: np.ndarray, label: str
+) -> tuple[np.ndarray, np.ndarray]:
+    """Solve ``nnls`` using only rows where the target and all columns are finite.
+
+    Parameters
+    ----------
+    target
+        Shape ``(n_points,)``.
+    design_matrix
+        Shape ``(n_points, n_modes)``.
+    label
+        Context string used in the error message.
+
+    Returns
+    -------
+    coefficients
+        Shape ``(n_modes,)``.
+    valid_mask
+        Boolean mask of the rows actually used, shape ``(n_points,)``.
+    """
+    valid = _valid_row_mask(target, design_matrix)
+    n_valid = int(valid.sum())
+    n_modes = design_matrix.shape[1]
+    if n_valid < n_modes:
+        raise ValueError(
+            f"Only {n_valid} grid point(s) have finite target and design-matrix "
+            f"values for {label}, fewer than the {n_modes} coefficient(s) being "
+            "fitted. The occupancy curves may share too little common support."
+        )
+    coefficients, _ = nnls(design_matrix[valid], target[valid])
+    return coefficients, valid
+
+
+def _masked_mse(target: np.ndarray, reconstruction: np.ndarray) -> float:
+    """Mean squared error over grid points where both curves are finite.
+
+    Masked support contributes nothing rather than a spurious zero residual,
+    which would otherwise deflate the reported MSE.
+    """
+    resid_sq = (target - reconstruction) ** 2
+    if not np.any(np.isfinite(resid_sq)):
+        return float("nan")
+    return float(_nanmean_quiet(resid_sq, axis=0))
+
+
+def _masked_reconstruction(design_matrix: np.ndarray, coefficients: np.ndarray) -> np.ndarray:
+    """Reconstruct ``design_matrix @ coefficients``, NaN where any column is masked.
+
+    Keeping the result full-length (rather than dropping rows) lets plots align it
+    with the common grid; the NaN gap renders as a break instead of a plunge to zero.
+    """
+    filled = np.where(np.isfinite(design_matrix), design_matrix, 0.0)
+    recon = np.asarray(filled @ coefficients, dtype=float)
+    recon[~np.all(np.isfinite(design_matrix), axis=1)] = np.nan
+    return recon
+
+
 def _compute_mean_occupancy_from_cells(
     mode_individual_dict: dict[str, dict[str, np.ndarray]],
     cell_ids: list[str],
     common_xvals: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Compute mean occupancy from a subset of cells interpolated onto a common grid.
+    """Compute mean occupancy from a subset of cells resampled onto a common grid.
+
+    The mean is NaN-aware: each cell contributes only over its own support, so the
+    result is the same estimator as the plotted combined occupancy curve
+    (``occupancy.py`` ``nanmean`` over per-cell ``occupancy_common`` rows),
+    restricted to ``cell_ids``. Grid points no contributing cell covers are NaN.
 
     Parameters
     ----------
     mode_individual_dict
-        ``{cell_id: {"xvals": array, "occupancy": array}}``.
+        ``{cell_id: {"xvals": array, "occupancy": array}}``, optionally with
+        ``"occupancy_common"``.
     cell_ids
         Subset of cell IDs to use.
     common_xvals
@@ -388,10 +534,10 @@ def _compute_mean_occupancy_from_cells(
     Returns
     -------
     mean_occupancy
-        Shape ``(len(common_xvals),)``.
+        Shape ``(len(common_xvals),)``, NaN where no cell has support.
     per_cell_matrix
-        Shape ``(n_cells, len(common_xvals))`` — each row is one cell's
-        interpolated occupancy curve.
+        Shape ``(n_cells, len(common_xvals))`` -- each row is one cell's
+        resampled occupancy curve, NaN outside that cell's support.
     """
     rows: list[np.ndarray] = []
     for cell_id in cell_ids:
@@ -399,16 +545,13 @@ def _compute_mean_occupancy_from_cells(
         if cell_data is None:
             logger.warning(f"Cell '{cell_id}' not found in individual dict; skipping.")
             continue
-        interp = np.interp(
-            common_xvals, cell_data["xvals"], cell_data["occupancy"], right=0.0, left=0.0
-        )
-        rows.append(interp)
+        rows.append(_resample_cell_onto_common_grid(cell_data, common_xvals))
 
     if not rows:
         raise ValueError(f"No valid cells found for the given cell_id subset ({cell_ids[:3]} ...)")
 
     per_cell_matrix = np.vstack(rows)
-    mean_occupancy = np.nan_to_num(np.nanmean(per_cell_matrix, axis=0), nan=0.0)
+    mean_occupancy = _nanmean_quiet(per_cell_matrix, axis=0)
     return mean_occupancy, per_cell_matrix
 
 
@@ -541,21 +684,28 @@ def fit_rule_interpolation(
                 mode_combined_xvals, common_xvals
             ):
                 col = np.interp(
-                    common_xvals, mode_combined_xvals, mode_combined_occ, right=0.0, left=0.0
+                    common_xvals,
+                    mode_combined_xvals,
+                    mode_combined_occ,
+                    left=np.nan,
+                    right=np.nan,
                 )
             else:
-                col = mode_combined_occ
-            col = np.nan_to_num(col, nan=0.0)
+                col = np.asarray(mode_combined_occ, dtype=float)
+            # NaN (not 0) outside a mode's support: masked rows are dropped from
+            # the least-squares system rather than contributing a zero residual.
             simulated_occupancy_cols.append(col)
 
         simulated_occupancy_matrix = np.column_stack(
             simulated_occupancy_cols
         )  # shape (n_bins, n_modes)
 
-        # Per-distance-measure NNLS
-        coeffs_ind, _ = nnls(simulated_occupancy_matrix, baseline_occupancy)
-        recon_ind = simulated_occupancy_matrix @ coeffs_ind
-        mse_ind = float(np.mean((baseline_occupancy - recon_ind) ** 2))
+        # Per-distance-measure NNLS, fitted only over rows with full coverage
+        coeffs_ind, _ = _solve_nnls_masked(
+            baseline_occupancy, simulated_occupancy_matrix, f"distance measure '{dm}'"
+        )
+        recon_ind = _masked_reconstruction(simulated_occupancy_matrix, coeffs_ind)
+        mse_ind = _masked_mse(baseline_occupancy, recon_ind)
 
         coeff_dict_ind, rel_dict_ind = _normalize_coefficients(coeffs_ind, packing_modes)
         _coefficients_individual[dm] = coeff_dict_ind
@@ -569,7 +719,9 @@ def fit_rule_interpolation(
     # Joint NNLS across all distance measures
     baseline_occupancy_joint = np.concatenate(stacked_baseline_occupancy)
     simulated_occupancy_joint = np.vstack(stacked_simulated_occupancy)
-    coeffs_joint, _ = nnls(simulated_occupancy_joint, baseline_occupancy_joint)
+    coeffs_joint, _ = _solve_nnls_masked(
+        baseline_occupancy_joint, simulated_occupancy_joint, "the joint fit"
+    )
     coeff_dict_joint, rel_dict_joint = _normalize_coefficients(coeffs_joint, packing_modes)
 
     # Evaluate joint fit per distance measure
@@ -579,8 +731,8 @@ def fit_rule_interpolation(
         n = len(stacked_baseline_occupancy[i])
         baseline_occupancy_dm = stacked_baseline_occupancy[i]
         simulated_occupancy_dm = stacked_simulated_occupancy[i]
-        recon_joint = simulated_occupancy_dm @ coeffs_joint
-        train_mse_joint[dm] = float(np.mean((baseline_occupancy_dm - recon_joint) ** 2))
+        recon_joint = _masked_reconstruction(simulated_occupancy_dm, coeffs_joint)
+        train_mse_joint[dm] = _masked_mse(baseline_occupancy_dm, recon_joint)
         reconstructed_occupancy[dm]["joint"] = recon_joint
         idx += n
 
@@ -679,14 +831,11 @@ def fit_result_from_cv(
         baseline_dm = dm_data[baseline_mode]
         common_xvals: np.ndarray = baseline_dm["combined"]["xvals"]
 
-        # Reference target: all baseline cells' combined occupancy curve
-        baseline_occ = np.nan_to_num(
-            np.interp(
-                common_xvals,
-                baseline_dm["combined"]["xvals"],
-                baseline_dm["combined"]["occupancy"],
-            )
-        )
+        # Reference target: all baseline cells' combined occupancy curve.  This is
+        # already on common_xvals (they are the same array), so it is taken as-is:
+        # zero-filling would erase the coverage mask that marks grid points no cell
+        # supports.
+        baseline_occ = np.asarray(baseline_dm["combined"]["occupancy"], dtype=float)
 
         # Build design matrix (same construction as fit_rule_interpolation)
         simulated_occupancy_cols: list[np.ndarray] = []
@@ -697,18 +846,22 @@ def fit_result_from_cv(
                 mode_combined_xvals, common_xvals
             ):
                 col = np.interp(
-                    common_xvals, mode_combined_xvals, mode_combined_occ, right=0.0, left=0.0
+                    common_xvals,
+                    mode_combined_xvals,
+                    mode_combined_occ,
+                    left=np.nan,
+                    right=np.nan,
                 )
             else:
-                col = mode_combined_occ
-            simulated_occupancy_cols.append(np.nan_to_num(col, nan=0.0))
+                col = np.asarray(mode_combined_occ, dtype=float)
+            simulated_occupancy_cols.append(col)
 
         design_matrix = np.column_stack(simulated_occupancy_cols)  # (n_bins, n_modes)
 
         # Reconstruct using mean individual coefficients
         coeffs_ind = np.array([mean_coeffs_individual[dm][mode] for mode in packing_modes])
-        recon_ind = design_matrix @ coeffs_ind
-        train_mse_individual[dm] = float(np.mean((baseline_occ - recon_ind) ** 2))
+        recon_ind = _masked_reconstruction(design_matrix, coeffs_ind)
+        train_mse_individual[dm] = _masked_mse(baseline_occ, recon_ind)
         reconstructed_occupancy[dm] = {"individual": recon_ind}
 
         stacked_simulated_occupancy.append(design_matrix)
@@ -717,8 +870,8 @@ def fit_result_from_cv(
     # Reconstruct using mean joint coefficients (applied per-dm)
     coeffs_joint = np.array([mean_coeffs_joint[mode] for mode in packing_modes])
     for i, dm in enumerate(distance_measures):
-        recon_joint = stacked_simulated_occupancy[i] @ coeffs_joint
-        train_mse_joint[dm] = float(np.mean((stacked_baseline_occupancy[i] - recon_joint) ** 2))
+        recon_joint = _masked_reconstruction(stacked_simulated_occupancy[i], coeffs_joint)
+        train_mse_joint[dm] = _masked_mse(stacked_baseline_occupancy[i], recon_joint)
         reconstructed_occupancy[dm]["joint"] = recon_joint
 
     # Build consolidated coefficients and relative_contributions
@@ -830,19 +983,19 @@ def _evaluate_on_cells(
                     f"for distance measure '{dm}'; skipping."
                 )
                 continue
-            cell_occ = np.interp(
-                common_xvals, cell_data["xvals"], cell_data["occupancy"], right=0.0, left=0.0
-            )
-            cell_occ = np.nan_to_num(cell_occ, nan=0.0)
-            per_cell_mse_ind.append(float(np.mean((cell_occ - recon_ind) ** 2)))
-            per_cell_mse_joint.append(float(np.mean((cell_occ - recon_joint) ** 2)))
+            cell_occ = _resample_cell_onto_common_grid(cell_data, common_xvals)
+            per_cell_mse_ind.append(_masked_mse(cell_occ, recon_ind))
+            per_cell_mse_joint.append(_masked_mse(cell_occ, recon_joint))
             test_cell_occs.append(cell_occ)
+        # NaN-aware mean: each test cell contributes only over its own support.
         mean_cell_occ = (
-            np.mean(test_cell_occs, axis=0) if test_cell_occs else np.zeros_like(common_xvals)
+            _nanmean_quiet(np.vstack(test_cell_occs), axis=0)
+            if test_cell_occs
+            else np.full_like(np.asarray(common_xvals, dtype=float), np.nan)
         )
         if grouping == "combined":
-            mse_ind = float(np.mean((mean_cell_occ - recon_ind) ** 2))
-            mse_joint = float(np.mean((mean_cell_occ - recon_joint) ** 2))
+            mse_ind = _masked_mse(mean_cell_occ, recon_ind)
+            mse_joint = _masked_mse(mean_cell_occ, recon_joint)
             test_mse["individual"][dm] = np.array([mse_ind])
             test_mse["joint"][dm] = np.array([mse_joint])
         else:

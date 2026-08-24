@@ -6,6 +6,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
+from scipy.optimize import nnls
 
 from cellpack_analysis.lib.rule_interpolation import (
     AICComparisonResult,
@@ -18,7 +19,11 @@ from cellpack_analysis.lib.rule_interpolation import (
     _compute_mean_occupancy_from_cells,
     _fit_single_rule,
     _get_baseline_cell_ids,
+    _masked_mse,
+    _masked_reconstruction,
     _normalize_coefficients,
+    _solve_nnls_masked,
+    _valid_row_mask,
     compute_aic_comparison,
     fit_rule_interpolation,
     generate_mixed_rule_packing_configs,
@@ -152,11 +157,17 @@ class TestComputeMeanOccupancyFromCells:
         assert matrix.shape == (6, NUM_BINS)
 
     def test_mean_matches_manual_computation(self):
+        """The mean is the NaN-aware column mean of the per-cell matrix.
+
+        Jittered per-cell grids can end just inside the common grid, so edge
+        points fall outside some cells' support and are NaN in those rows --
+        `nanmean`, not `mean`, is the estimator under test.
+        """
         occ = _make_occupancy_dict("real", ["random"], n_baseline_cells=5, seed=42)
         individual = occ["nucleus"]["real"]["individual"]
         cell_ids = list(individual.keys())
         mean_occ, matrix = _compute_mean_occupancy_from_cells(individual, cell_ids, XVALS)
-        np.testing.assert_allclose(mean_occ, np.mean(matrix, axis=0))
+        np.testing.assert_allclose(mean_occ, np.nanmean(matrix, axis=0))
 
     def test_interpolation_handles_nonuniform_xvals(self):
         """Cells with jittered grids are correctly interpolated onto common_xvals."""
@@ -185,6 +196,207 @@ class TestComputeMeanOccupancyFromCells:
     def test_raises_when_no_valid_cells(self):
         with pytest.raises(ValueError, match="No valid cells"):
             _compute_mean_occupancy_from_cells({}, ["nonexistent"], XVALS)
+
+
+# ---------------------------------------------------------------------------
+# Tests: D1.1 — NaN-aware fit target with short-support cells
+# ---------------------------------------------------------------------------
+
+
+def _make_short_support_individual(
+    n_full: int,
+    n_short: int,
+    level: float = 2.0,
+    short_x_max: float = 3.0,
+    x_max: float = 6.0,
+    common_xvals: np.ndarray | None = None,
+) -> dict[str, dict[str, np.ndarray]]:
+    """Individual dict where ``n_short`` cells' support stops at ``short_x_max``.
+
+    Every cell carries constant occupancy ``level``, so the NaN-aware mean is
+    exactly ``level`` at every grid point, whereas zero-filling the unsupported
+    tail drags the mean down to ``level * n_full / (n_full + n_short)`` beyond
+    ``short_x_max``.  Passing ``common_xvals`` also attaches a per-cell
+    ``occupancy_common`` row (NaN outside support), as the production occupancy
+    pipelines do.
+    """
+    individual: dict[str, dict[str, np.ndarray]] = {}
+
+    def _entry(hi: float, n: int) -> dict[str, np.ndarray]:
+        entry = {"xvals": np.linspace(0.0, hi, n), "occupancy": np.full(n, level)}
+        if common_xvals is not None:
+            occ_common = np.full(common_xvals.shape, level)
+            occ_common[common_xvals > hi] = np.nan
+            entry["occupancy_common"] = occ_common
+        return entry
+
+    for i in range(n_full):
+        individual[f"full_{i:03d}"] = _entry(x_max, 40)
+    for i in range(n_short):
+        individual[f"short_{i:03d}"] = _entry(short_x_max, 20)
+    return individual
+
+
+class TestFitTargetShortSupport:
+    """D1.1: the fit target is the NaN-aware mean, not a zero-filled mean."""
+
+    def test_target_does_not_decay_in_tail(self):
+        common = np.linspace(0, 6, 60)
+        individual = _make_short_support_individual(n_full=2, n_short=2)
+        mean_occ, matrix = _compute_mean_occupancy_from_cells(
+            individual, list(individual.keys()), common
+        )
+        # Constant-level cells => the NaN-aware mean is `level` everywhere.
+        np.testing.assert_allclose(mean_occ, 2.0)
+        # Short cells contribute NaN beyond their support, never 0.
+        tail = common > 3.0
+        assert np.isnan(matrix[:, tail]).sum() == 2 * tail.sum()
+
+    def test_target_matches_nanmean_combined_curve(self):
+        """Target == the plotted `nanmean` combined curve wherever it is finite."""
+        common = np.linspace(0, 6, 60)
+        individual = _make_short_support_individual(n_full=3, n_short=2, common_xvals=common)
+        # Mirror occupancy.py: combined = nanmean over per-cell `occupancy_common`.
+        combined = np.nanmean(
+            np.vstack([v["occupancy_common"] for v in individual.values()]), axis=0
+        )
+        mean_occ, _ = _compute_mean_occupancy_from_cells(
+            individual, list(individual.keys()), common
+        )
+        finite = np.isfinite(combined)
+        assert finite.any()
+        np.testing.assert_allclose(mean_occ[finite], combined[finite])
+
+    def test_prefers_precomputed_occupancy_common(self):
+        """When present, `occupancy_common` is used verbatim (no re-interpolation)."""
+        common = np.linspace(0, 6, 60)
+        sentinel = np.linspace(1.0, 2.0, 60)
+        individual = {
+            "c0": {
+                "xvals": np.linspace(0, 6, 40),
+                "occupancy": np.full(40, 99.0),
+                "occupancy_common": sentinel.copy(),
+            }
+        }
+        mean_occ, matrix = _compute_mean_occupancy_from_cells(individual, ["c0"], common)
+        np.testing.assert_allclose(mean_occ, sentinel)
+        np.testing.assert_allclose(matrix[0], sentinel)
+
+    def test_ignores_mismatched_occupancy_common_length(self):
+        """A stale `occupancy_common` of the wrong length falls back to interp."""
+        common = np.linspace(0, 6, 60)
+        individual = {
+            "c0": {
+                "xvals": np.linspace(0, 6, 40),
+                "occupancy": np.full(40, 2.0),
+                "occupancy_common": np.full(11, 99.0),
+            }
+        }
+        mean_occ, _ = _compute_mean_occupancy_from_cells(individual, ["c0"], common)
+        np.testing.assert_allclose(mean_occ, 2.0)
+
+
+# ---------------------------------------------------------------------------
+# Tests: D1.2 — masked rows are dropped from the least-squares system
+# ---------------------------------------------------------------------------
+
+
+class TestMaskedLeastSquares:
+    """D1.2: masked support is excluded from the fit, not driven to zero."""
+
+    def test_valid_row_mask_requires_target_and_all_columns(self):
+        target = np.array([1.0, np.nan, 3.0, 4.0])
+        design = np.array([[1.0, 1.0], [1.0, 1.0], [np.nan, 1.0], [1.0, 1.0]])
+        np.testing.assert_array_equal(_valid_row_mask(target, design), [True, False, False, True])
+
+    def test_solved_row_count_excludes_masked_rows(self):
+        rng = np.random.default_rng(3)
+        design = np.abs(rng.normal(size=(20, 2))) + 0.5
+        target = design @ np.array([1.5, 0.5])
+        design[15:, 0] = np.nan  # 5 rows lose a column
+        target[2] = np.nan  # 1 more row loses the target
+        coeffs, valid = _solve_nnls_masked(target, design, "test")
+        assert int(valid.sum()) == 14
+        expected, _ = nnls(design[valid], target[valid])
+        np.testing.assert_allclose(coeffs, expected)
+
+    def test_dropping_differs_from_zero_filling(self):
+        """The drop-vs-zero distinction changes the coefficient, so it is not cosmetic."""
+        design = np.full((20, 1), 2.0)
+        target = np.concatenate([np.full(10, 3.0), np.full(10, np.nan)])
+        coeffs, valid = _solve_nnls_masked(target, design, "test")
+        assert int(valid.sum()) == 10
+        # Only the 10 supported rows are fitted: 3.0 / 2.0.
+        np.testing.assert_allclose(coeffs, [1.5])
+        # Zero-filling the unsupported half instead makes those rows vote
+        # "occupancy 0", halving the fitted coefficient.
+        zero_filled, _ = nnls(design, np.nan_to_num(target, nan=0.0))
+        np.testing.assert_allclose(zero_filled, [0.75])
+
+    def test_zero_rows_deflate_mse_and_inflate_n(self):
+        """A fully zero-filled row is a free perfect fit: deflates MSE, inflates n."""
+        design = np.vstack([np.full((10, 1), 2.0), np.full((10, 1), np.nan)])
+        target = np.concatenate([np.full(10, 5.0), np.full(10, np.nan)])
+        coeffs, valid = _solve_nnls_masked(target, design, "test")
+        recon = _masked_reconstruction(design, coeffs)
+        masked_mse = _masked_mse(target, recon)
+        # Zero-filling both sides turns the masked half into 10 zero-residual
+        # rows: same total squared error spread over twice as many points.
+        zf_mse = float(
+            np.mean((np.nan_to_num(target, nan=0.0) - np.nan_to_num(recon, nan=0.0)) ** 2)
+        )
+        assert zf_mse == pytest.approx(masked_mse / 2.0)
+        assert int(valid.sum()) == 10 and target.size == 20
+
+    def test_reconstruction_is_nan_on_masked_rows(self):
+        design = np.array([[1.0, 2.0], [1.0, 2.0], [np.nan, 2.0]])
+        recon = _masked_reconstruction(design, np.array([1.0, 0.5]))
+        np.testing.assert_allclose(recon[:2], [2.0, 2.0])
+        assert np.isnan(recon[2])
+
+    def test_masked_mse_ignores_masked_points(self):
+        target = np.array([1.0, 2.0, np.nan, 4.0])
+        recon = np.array([1.0, 3.0, 100.0, 4.0])
+        assert _masked_mse(target, recon) == pytest.approx(1.0 / 3.0)
+
+    def test_masked_mse_all_masked_is_nan(self):
+        assert np.isnan(_masked_mse(np.array([np.nan, np.nan]), np.array([1.0, 2.0])))
+
+    def test_raises_when_too_few_valid_rows(self):
+        target = np.array([1.0, np.nan, np.nan])
+        design = np.ones((3, 2))
+        with pytest.raises(ValueError, match="fewer than the 2 coefficient"):
+            _solve_nnls_masked(target, design, "test")
+
+    def test_fit_recovers_coefficient_despite_masked_tail(self):
+        """End-to-end: a mode masked in the tail is fitted on its support only."""
+        common = np.linspace(0, 6, 50)
+        supported = common <= 4.0
+        mode_curve = np.where(supported, 2.0, np.nan)
+        # Baseline cells are exactly 1.5x the mode over the full grid.
+        individual = {
+            f"c{i}": {"xvals": common.copy(), "occupancy": np.full(common.size, 3.0)}
+            for i in range(4)
+        }
+        occ = {
+            "nucleus": {
+                "real": {
+                    "individual": individual,
+                    "combined": {"xvals": common, "occupancy": np.full(common.size, 3.0)},
+                },
+                "random": {
+                    "individual": {},
+                    "combined": {"xvals": common, "occupancy": mode_curve},
+                },
+            }
+        }
+        fit = fit_rule_interpolation(occ, _make_channel_map("real", ["random"]), "real")
+        assert fit.coefficients["random"]["nucleus"] == pytest.approx(1.5)
+        recon = fit.reconstructed_occupancy["nucleus"]["individual"]
+        np.testing.assert_allclose(recon[supported], 3.0)
+        assert np.all(np.isnan(recon[~supported]))
+        # MSE is computed over supported rows only -> an exact fit is exactly 0.
+        assert fit.train_mse["individual"]["nucleus"] == pytest.approx(0.0)
 
 
 # ---------------------------------------------------------------------------
