@@ -640,6 +640,29 @@ class TestOccupancyCacheStamp:
         )
         assert loaded is None
 
+    def test_unserializable_stamp_does_not_raise_or_poison_the_cache(self, tmp_path):
+        """F5: a bad stamp value must not propagate after the pickle is written.
+
+        The sidecar is written *after* the pickle (deliberately -- the reverse
+        order could pair a stale pickle with a fresh-looking stamp), so a raise
+        here would abort the caller with the cache already on disk. It must
+        degrade to "no sidecar", which the loader then rejects.
+        """
+        save_path = tmp_path / "nucleus_occupancy.dat"
+        with open(save_path, "wb") as f:
+            pickle.dump({"real": {"individual": {}, "combined": {}}}, f)
+        bad_meta = {"distance_measure": "nucleus", "bandwidth": {1, 2, 3}}  # set: not JSON
+        _write_occupancy_cache_meta(save_path, bad_meta)  # must not raise
+        # No half-written sidecar left behind, so the cache fails safe on reload.
+        assert not _occupancy_cache_meta_path(save_path).exists()
+        assert _load_cached_occupancy(save_path, {"real": "S"}, expected_meta=self._meta()) is None
+
+    def test_corrupt_sidecar_is_rejected(self, tmp_path):
+        """Belt and braces: unparseable JSON must recompute, not crash."""
+        save_path = self._write_cache(tmp_path, self._meta())
+        _occupancy_cache_meta_path(save_path).write_text("{not json")
+        assert _load_cached_occupancy(save_path, {"real": "S"}, expected_meta=self._meta()) is None
+
     def test_sidecar_path_is_beside_the_cache(self, tmp_path):
         save_path = tmp_path / "nucleus_occupancy.dat"
         assert _occupancy_cache_meta_path(save_path) == tmp_path / "nucleus_occupancy.meta.json"

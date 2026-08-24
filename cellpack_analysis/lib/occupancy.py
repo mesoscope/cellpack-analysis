@@ -111,11 +111,28 @@ def _occupancy_cache_meta_path(save_path: Path) -> Path:
 
 
 def _write_occupancy_cache_meta(save_path: Path, meta: dict[str, Any]) -> None:
-    """Record the grid parameters alongside a freshly written occupancy cache."""
+    """Record the grid parameters alongside a freshly written occupancy cache.
+
+    Deliberately called *after* the pickle, and deliberately non-fatal. Writing
+    the sidecar first would be worse: the cache filename does not encode
+    ``num_points``, so a crash between the two writes would leave a stale pickle
+    under a sidecar matching the *new* parameters, and the next load would accept
+    the wrong grid -- exactly the silent reload the stamp exists to prevent. In
+    this order a crash leaves a stampless pickle, which ``_load_cached_occupancy``
+    rejects, so it fails safe.
+
+    ``TypeError`` is caught alongside ``OSError`` for the same reason: a
+    non-serializable value in *meta* (a numpy scalar, say) must not propagate
+    after the pickle has been written. A missing sidecar only costs a recompute;
+    an unhandled raise here would abort the caller *after* the pickle landed.
+    Serializing before opening the file also means a non-serializable value can
+    never leave a half-written sidecar behind (``_load_cached_occupancy`` would
+    reject one, but not creating it is better).
+    """
     try:
-        with open(_occupancy_cache_meta_path(save_path), "w") as f:
-            json.dump(meta, f, indent=2, sort_keys=True)
-    except OSError as e:  # pragma: no cover - non-fatal bookkeeping
+        payload = json.dumps(meta, indent=2, sort_keys=True)
+        _occupancy_cache_meta_path(save_path).write_text(payload)
+    except (OSError, TypeError, ValueError) as e:  # pragma: no cover - bookkeeping
         logger.warning(f"Could not write occupancy cache metadata for {save_path}: {e}")
 
 
