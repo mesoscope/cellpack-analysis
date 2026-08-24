@@ -45,9 +45,30 @@ OCCUPANCY_DISTANCE_MEASURES = [
     "z",
 ]
 """Default distance measures for occupancy analysis."""
+OCCUPANCY_NUM_POINTS = 1000
+"""Number of points on the common occupancy grid.
+
+Used as the fallback whenever a config's ``occupancy_params[dm]`` omits
+``num_points``, which is the common case: the merge in
+``AnalysisConfig._setup_occupancy_params`` is shallow, so a config that overrides
+any key of an inner dict replaces the whole dict.
+"""
+
 OCCUPANCY_PARAMS = {
-    "nucleus": {"xlim": 6, "ylim": 3, "bandwidth": 0.2, "num_points": 250, "x_min": 0},
-    "z": {"xlim": 8, "ylim": 2, "bandwidth": 0.2, "num_points": 250, "x_min": 0},
+    "nucleus": {
+        "xlim": 6,
+        "ylim": 3,
+        "bandwidth": 0.2,
+        "num_points": OCCUPANCY_NUM_POINTS,
+        "x_min": 0,
+    },
+    "z": {
+        "xlim": 8,
+        "ylim": 2,
+        "bandwidth": 0.2,
+        "num_points": OCCUPANCY_NUM_POINTS,
+        "x_min": 0,
+    },
     "fig_params": {"dpi": 300, "figsize": [3.5, 2.5]},
     "plot_individual": False,
     "show_legend": True,

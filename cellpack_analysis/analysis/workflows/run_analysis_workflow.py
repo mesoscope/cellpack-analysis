@@ -824,7 +824,12 @@ class AnalysisRunner:
             suffix=config.suffix,
             distance_measure=occupancy_distance_measure,
             bandwidth=config.occupancy_params[occupancy_distance_measure]["bandwidth"],
-            num_points=250,
+            # .get(), not subscript: the occupancy_params merge is shallow, so a
+            # config that overrides any key of occupancy_params[dm] replaces the
+            # whole inner dict and drops num_points.
+            num_points=config.occupancy_params[occupancy_distance_measure].get(
+                "num_points", defaults.OCCUPANCY_NUM_POINTS
+            ),
             x_min=0,
             x_max=config.occupancy_params[occupancy_distance_measure]["xlim"],
             num_workers=config.num_workers,

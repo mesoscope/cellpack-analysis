@@ -4,9 +4,11 @@ import numpy as np
 import pytest
 from scipy.stats import gaussian_kde
 
+from cellpack_analysis.analysis.workflows.configs import defaults
 from cellpack_analysis.lib.occupancy import (
     _apply_coverage_mask,
     _compute_single_cell_occupancy,
+    _get_common_xvals_from_kde,
     get_binned_occupancy_dict_from_distance_dict,
     get_kde_occupancy_dict,
     get_kde_occupancy_for_single_cell,
@@ -485,3 +487,71 @@ class TestApplyCoverageMask:
         mean = np.nanmean(all_curves, axis=0)
         _apply_coverage_mask(all_curves, 0.0, mean)
         assert np.all(np.isfinite(mean))  # nothing masked when disabled
+
+
+# ---------------------------------------------------------------------------
+# Tests: D2 — grid density and full-support range
+# ---------------------------------------------------------------------------
+
+
+class TestOccupancyGridResolution:
+    """D2: num_points is 1000 and the grid spans the full [0, xlim] support."""
+
+    def test_default_num_points_is_1000(self):
+        assert defaults.OCCUPANCY_NUM_POINTS == 1000
+        for dm in ("nucleus", "z"):
+            assert defaults.OCCUPANCY_PARAMS[dm]["num_points"] == 1000
+
+    def test_default_xlims_span_full_support(self):
+        assert defaults.OCCUPANCY_PARAMS["nucleus"]["xlim"] == 6
+        assert defaults.OCCUPANCY_PARAMS["z"]["xlim"] == 8
+        for dm in ("nucleus", "z"):
+            assert defaults.OCCUPANCY_PARAMS[dm]["x_min"] == 0
+
+    def test_shallow_merge_drops_num_points_so_fallback_is_needed(self):
+        """The real configs omit num_points; the shallow merge must not KeyError.
+
+        `AnalysisConfig._setup_occupancy_params` does defaults.copy() then
+        .update(), so a config overriding any key of occupancy_params[dm]
+        replaces the whole inner dict. Reading num_points must therefore use
+        .get() with the module default, which is what the workflow does.
+        """
+        config_params = {
+            "nucleus": {"xlim": 6, "ylim": 3, "bandwidth": 0.2},
+            "z": {"xlim": 8, "ylim": 2, "bandwidth": 0.2},
+        }
+        merged = defaults.OCCUPANCY_PARAMS.copy()
+        merged.update(config_params)
+        for dm in ("nucleus", "z"):
+            assert "num_points" not in merged[dm]
+            assert merged[dm].get("num_points", defaults.OCCUPANCY_NUM_POINTS) == 1000
+
+    def test_explicit_x_max_gives_full_support_grid(self):
+        """An explicit x_max produces linspace(x_min, x_max, num_points) exactly."""
+        rng = np.random.default_rng(11)
+        # Cell data stops well short of x_max; the grid must still reach it.
+        kde_dict = {"cell_0": {"available": gaussian_kde(rng.exponential(1.0, size=200))}}
+        grid = _get_common_xvals_from_kde(
+            distance_kde_dict=kde_dict,
+            cell_id_map={"real": ["cell_0"]},
+            num_points=defaults.OCCUPANCY_NUM_POINTS,
+            pct_min_cells=0,
+            x_min=0,
+            x_max=6,
+        )
+        np.testing.assert_allclose(grid, np.linspace(0, 6, 1000))
+
+    def test_z_measure_grid_reaches_eight(self):
+        rng = np.random.default_rng(12)
+        kde_dict = {"cell_0": {"available": gaussian_kde(rng.exponential(1.0, size=200))}}
+        grid = _get_common_xvals_from_kde(
+            distance_kde_dict=kde_dict,
+            cell_id_map={"real": ["cell_0"]},
+            num_points=defaults.OCCUPANCY_NUM_POINTS,
+            pct_min_cells=0,
+            x_min=0,
+            x_max=8,
+        )
+        assert grid[0] == 0.0
+        assert grid[-1] == pytest.approx(8.0)
+        assert grid.size == 1000
