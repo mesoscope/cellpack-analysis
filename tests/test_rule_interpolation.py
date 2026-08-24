@@ -488,6 +488,81 @@ class TestExpectedOccupancyNormalization:
 
 
 # ---------------------------------------------------------------------------
+# Tests: uncovered grid points render as a gap, not a plunge to zero
+# ---------------------------------------------------------------------------
+
+
+class TestOccupancyPlotsPreserveGaps:
+    """A3: zero-filling a coverage-masked tail draws a false "occupancy = 0"."""
+
+    @staticmethod
+    def _occ_with_masked_tail():
+        common = np.linspace(0, 6, 30)
+        masked = common > 4.5
+        curve = np.where(masked, np.nan, 1.2)
+        individual = {
+            f"c{i}": {"xvals": common.copy(), "occupancy": np.full(common.size, 1.2)}
+            for i in range(3)
+        }
+        occ = {
+            "nucleus": {
+                "real": {
+                    "individual": individual,
+                    "combined": {"xvals": common, "occupancy": curve.copy()},
+                },
+                "random": {
+                    "individual": {},
+                    "combined": {"xvals": common, "occupancy": curve.copy()},
+                },
+            }
+        }
+        return occ, _make_channel_map("real", ["random"]), masked
+
+    def test_plot_rule_interpolation_fit_keeps_nan_gap(self):
+        from cellpack_analysis.lib.visualization import plot_rule_interpolation_fit
+
+        occ, cm, masked = self._occ_with_masked_tail()
+        fit = fit_rule_interpolation(occ, cm, "real")
+        _fig, ax = plot_rule_interpolation_fit(
+            fit_result=fit,
+            occupancy_dict=occ,
+            channel_map=cm,
+            baseline_mode="real",
+            distance_measure="nucleus",
+            figures_dir=None,
+        )
+        # Every drawn occupancy curve must retain the gap, not drop to zero.
+        drawn = [
+            np.asarray(line.get_ydata(), dtype=float)
+            for line in ax.get_lines()
+            if np.asarray(line.get_ydata(), dtype=float).size == masked.size
+        ]
+        assert drawn, "expected at least one full-length curve on the axes"
+        for ydata in drawn:
+            assert np.all(np.isnan(ydata[masked])), ydata[masked]
+
+    def test_plot_occupancy_ratio_keeps_nan_gap(self):
+        from cellpack_analysis.lib.visualization import plot_occupancy_ratio
+
+        occ, cm, masked = self._occ_with_masked_tail()
+        _fig, ax = plot_occupancy_ratio(
+            occupancy_dict=occ["nucleus"],
+            channel_map=cm,
+            baseline_mode="real",
+            distance_measure="nucleus",
+            figures_dir=None,
+        )
+        drawn = [
+            np.asarray(line.get_ydata(), dtype=float)
+            for line in ax.get_lines()
+            if np.asarray(line.get_ydata(), dtype=float).size == masked.size
+        ]
+        assert drawn
+        for ydata in drawn:
+            assert np.all(np.isnan(ydata[masked]))
+
+
+# ---------------------------------------------------------------------------
 # Tests: _normalize_coefficients
 # ---------------------------------------------------------------------------
 

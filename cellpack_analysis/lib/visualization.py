@@ -816,7 +816,10 @@ def plot_occupancy_ratio(
 
         combined = occupancy_dict[mode]["combined"]
         xvals = combined["xvals"]
-        mean_occ = np.nan_to_num(combined["occupancy"])
+        # Keep NaN: grid points blanked by the coverage mask have no estimate, and
+        # matplotlib breaks the line there.  Zero-filling drew a plunge to 0 that
+        # reads as "occupancy is zero here" rather than "no data here".
+        mean_occ = np.asarray(combined["occupancy"], dtype=float)
 
         is_baseline = mode == baseline_mode
         ax.plot(
@@ -832,8 +835,8 @@ def plot_occupancy_ratio(
         if show_envelope and "envelope_lo" in combined and "envelope_hi" in combined:
             ax.fill_between(
                 xvals,
-                np.nan_to_num(combined["envelope_lo"]),
-                np.nan_to_num(combined["envelope_hi"]),
+                combined["envelope_lo"],
+                combined["envelope_hi"],
                 alpha=0.15,
                 color=color,
                 linewidth=0,
@@ -2865,26 +2868,29 @@ def plot_rule_interpolation_fit(
     for mode in channel_map.keys():
         combined = dm_occ[mode]["combined"]
         xvals = combined["xvals"]
-        mean_occ = np.nan_to_num(combined["occupancy"])
+        # NaN-preserving, as in plot_occupancy_ratio: uncovered grid points render
+        # as a gap rather than a drop to zero occupancy.
+        mean_occ = np.asarray(combined["occupancy"], dtype=float)
         color = label_tables.COLOR_PALETTE.get(mode, "gray")
         label = label_tables.MODE_LABELS.get(mode, mode)
 
         ax.plot(xvals, mean_occ, color=color, linewidth=2.0, label=label, zorder=2)
 
         if "envelope_lo" in combined and "envelope_hi" in combined:
-            lo: np.ndarray | None = np.nan_to_num(combined["envelope_lo"])
-            hi: np.ndarray | None = np.nan_to_num(combined["envelope_hi"])
+            lo: np.ndarray | None = np.asarray(combined["envelope_lo"], dtype=float)
+            hi: np.ndarray | None = np.asarray(combined["envelope_hi"], dtype=float)
         elif "std_occupancy" in combined:
-            lo = mean_occ - np.nan_to_num(combined["std_occupancy"])
-            hi = mean_occ + np.nan_to_num(combined["std_occupancy"])
+            std_occ = np.asarray(combined["std_occupancy"], dtype=float)
+            lo = mean_occ - std_occ
+            hi = mean_occ + std_occ
         else:
             lo = hi = None
 
         if lo is not None and hi is not None:
             ax.fill_between(
                 xvals,
-                np.nan_to_num(lo),
-                np.nan_to_num(hi),
+                lo,
+                hi,
                 alpha=0.15,
                 color=color,
                 linewidth=0,
