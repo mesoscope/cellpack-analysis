@@ -13,6 +13,8 @@
         "apical_gradient": "SLC25A17"
     },
     "distribution_method": "kde",
+    "num_workers": 16,
+    "distance_backend": "process",
     "occupancy_distance_measures": [
         "nucleus",
         "z"

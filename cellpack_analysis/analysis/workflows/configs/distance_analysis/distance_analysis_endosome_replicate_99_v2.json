@@ -15,6 +15,7 @@
     "baseline_mode": "RAB5A",
     "num_workers": 16,
     "distance_backend": "process",
+    "emd_pool_seeds": true,
     "envelope_test_params": {
         "envelope_type": "pointwise",
         "statistic": "intdev"
@@ -24,6 +25,7 @@
         "z"
     ],
     "recalculate": {
+        "calculate_distances": false,
         "run_pairwise_envelope_test": true,
         "run_emd_analysis": true,
         "run_ks_analysis": true
@@ -32,6 +34,8 @@
         "load_common_data",
         "calculate_distances",
         "plot_distance_distributions",
+        "run_emd_analysis",
+        "run_ks_analysis",
         "run_per_cell_envelope_test"
     ]
 }
