@@ -106,6 +106,27 @@ def _occupancy_cache_meta_path(save_path: Path) -> Path:
     A sidecar rather than a key inside the pickle: ``_load_cached_occupancy``
     compares ``set(occupancy_dict.keys())`` against the requested modes, and every
     consumer iterates those keys as modes, so an extra key would break both.
+
+    Scope -- this is a *parameter* guard, not a provenance guard. The stamp holds
+    only the grid fields (``distance_measure``, ``num_points``, ``x_min``,
+    ``x_max``, ``bandwidth``, ``min_coverage_fraction``), so three kinds of
+    staleness still pass it and must be invalidated by hand via
+    ``recalculate["run_occupancy_analysis"]``:
+
+    1. **Cell cohort.** A cache built over a different set of cells reloads, since
+       the cohort is not stamped.
+    2. **Code version.** A cache built by an earlier revision of this module -- or
+       from upstream inputs that have since been regenerated, e.g. repacked
+       positions -- reloads, since nothing identifies the producing code or its
+       inputs.
+    3. **The binned path is unstamped entirely.**
+       ``get_binned_occupancy_dict_from_distance_dict`` pickles its result without
+       calling ``_write_occupancy_cache_meta``, so only the KDE path
+       (``get_kde_occupancy_dict``) is guarded at all.
+
+    Note the upstream KDE cache written by
+    ``distance.get_distance_distribution_kde`` is likewise unstamped, and stores
+    all modes in one file -- so there is no per-mode invalidation there either.
     """
     return save_path.with_suffix(".meta.json")
 

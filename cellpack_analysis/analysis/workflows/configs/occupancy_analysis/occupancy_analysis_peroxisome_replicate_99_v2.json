@@ -32,7 +32,12 @@
             "bandwidth": 0.2
         }
     },
-    "recalculate": false,
+    "recalculate": {
+        "load_common_data": false,
+        "calculate_distances": false,
+        "run_occupancy_analysis": true,
+        "run_occupancy_emd_analysis": true
+    },
     "analysis_steps": [
         "load_common_data",
         "calculate_distances",
