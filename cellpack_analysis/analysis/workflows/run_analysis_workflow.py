@@ -169,6 +169,7 @@ class AnalysisConfig:
         if self.normalization:
             self.suffix += f"_norm_{self.normalization}"
         self.distance_measures = self.config.get("distance_measures", defaults.DISTANCE_MEASURES)
+        self.emd_pool_seeds = self.config.get("emd_pool_seeds", defaults.EMD_POOL_SEEDS)
         self.virtual_mixture_params = self.config.get("virtual_mixture_params", {})
         self.save_format = self.config.get("save_format", defaults.SAVE_FORMAT)
         self.distribution_method = self.config.get(
@@ -475,6 +476,7 @@ class AnalysisRunner:
             recalculate=config.recalculate["run_emd_analysis"],
             suffix=config.suffix,
             num_workers=config.num_workers,
+            pool_seeds=config.emd_pool_seeds,
         )
 
         # Per-comparison-type plots

@@ -32,6 +32,16 @@ logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = get_project_root()
 
+# Seed label used for a cell's curve when EMD pools that cell's seeds together
+# (see ``get_distance_distribution_emd_df(pool_seeds=True)``).
+POOLED_SEED_LABEL = "pooled"
+
+# Guard on the quadratic pairwise-EMD construction. 1.16e6 pairs is what the
+# 442-cell endosome dataset needs when seeds are pooled; 5e7 leaves ample room
+# for legitimate growth while still catching a per-seed replicate dataset,
+# which lands at 7.3e9 (peroxisome) to 1.5e10 (endosome) pairs.
+MAX_EMD_PAIRS = 5e7
+
 
 def _load_pickle_with_validation(
     file_path: Path,
@@ -1093,6 +1103,7 @@ def get_distance_distribution_emd_df(
     recalculate: bool = False,
     suffix: str = "",
     num_workers: int = 1,
+    pool_seeds: bool = False,
 ) -> pd.DataFrame:
     """
     Calculate pairwise EMD between packing modes for each distance measure.
@@ -1116,6 +1127,23 @@ def get_distance_distribution_emd_df(
         Number of parallel threads to use for EMD computation.
         NumPy/SciPy operations release the GIL, so threading gives real
         speedup here.  Defaults to 1 (sequential).
+    pool_seeds
+        When True, concatenate every seed's distances into one array per
+        ``(mode, cell_id)`` before computing EMD, so each cell contributes a
+        single curve labelled ``"pooled"`` instead of one curve per seed.
+
+        This is required for replicate datasets.  The pair count is quadratic
+        in the number of curves, so for ``replicate_99_v2`` the per-seed
+        construction gives 4 rules x 305 cells x 99 seeds + 305 observed =
+        121,085 curves = 7.33e9 pairs for peroxisome (1.54e10 for endosome) --
+        infeasible in both time and memory, since ``pair_indices`` alone would
+        need several hundred GB.  Pooling reduces this to 1,525 curves /
+        1.16e6 pairs, matching the granularity the occupancy EMD already uses.
+
+        Note this changes what the statistic means: it is the EMD between
+        cells' pooled distance distributions, not the mean of per-seed EMDs.
+        Pooling averages out per-seed sampling noise, so absolute EMD values
+        drop relative to a per-seed construction and are not comparable to it.
 
     Returns
     -------
@@ -1151,14 +1179,32 @@ def get_distance_distribution_emd_df(
         sorted_arrays: list[np.ndarray] = []
         for mode in packing_modes:
             for cell_id in all_distance_dict[distance_measure][mode]:
-                for seed in all_distance_dict[distance_measure][mode][cell_id]:
-                    metadata.append((mode, cell_id, seed))
+                seed_dict = all_distance_dict[distance_measure][mode][cell_id]
+                if pool_seeds:
+                    # One curve per cell: concatenate the seeds, then sort once.
+                    if not seed_dict:
+                        continue
+                    metadata.append((mode, cell_id, POOLED_SEED_LABEL))
                     sorted_arrays.append(
-                        np.sort(all_distance_dict[distance_measure][mode][cell_id][seed])
+                        np.sort(np.concatenate([np.asarray(a) for a in seed_dict.values()]))
                     )
+                else:
+                    for seed in seed_dict:
+                        metadata.append((mode, cell_id, seed))
+                        sorted_arrays.append(np.sort(seed_dict[seed]))
 
         n = len(metadata)
         n_pairs = n * (n - 1) // 2
+
+        if n_pairs > MAX_EMD_PAIRS:
+            raise ValueError(
+                f"Pairwise EMD for '{distance_measure}' would need {n_pairs:.3g} pairs from "
+                f"{n} curves, above the {MAX_EMD_PAIRS:.3g} guard. Materialising pair_indices "
+                f"alone would need roughly {n_pairs * 64 / 1e9:.0f} GB. This happens when a "
+                "replicate dataset is passed per-seed: pass pool_seeds=True (config key "
+                "'emd_pool_seeds') to pool each cell's seeds into one curve, or restrict "
+                "packing_modes."
+            )
 
         # Build flat list of (i, j) pair indices
         pair_indices: list[tuple[int, int]] = [(i, j) for i in range(n) for j in range(i + 1, n)]

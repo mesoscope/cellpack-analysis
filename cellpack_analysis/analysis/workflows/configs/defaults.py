@@ -33,6 +33,15 @@ DISTANCE_MEASURES = [
 ]
 """Default distance measures for distance analysis."""
 
+EMD_POOL_SEEDS = False
+"""Pool each cell's seeds into one curve before the pairwise EMD.
+
+The pairwise EMD is quadratic in the number of curves, so a replicate dataset
+passed per-seed is infeasible: ``replicate_99_v2`` gives 7.3e9 pairs for
+peroxisome and 1.5e10 for endosome. Pooling drops this to ~1.2e6, matching the
+granularity the occupancy EMD already uses. Off by default so single-seed
+analyses are unchanged."""
+
 """Parameters for KS test analysis."""
 KS_SIGNIFICANCE_LEVEL = 0.05
 """Default significance level for KS test."""
