@@ -357,6 +357,22 @@ def _write_validation_analysis_config(
         "recalculate": raw_config.get("recalculate", False),
     }
 
+    # Keys that must match between fit and validate, or the two phases compute
+    # occupancy on different terms.  Only the x-grids are checked downstream, so a
+    # mismatch would go unnoticed.  Absent keys are not written.
+    for passthrough_key in (
+        "suffix",
+        "filter_minimum_distance",
+        "available_minimum_distance",
+        "emd_pool_seeds",
+        "skip_mixed_rule_validation",
+        "num_workers",
+        "distance_backend",
+        "occupancy_backend",
+    ):
+        if passthrough_key in raw_config:
+            validation_config[passthrough_key] = raw_config[passthrough_key]
+
     # Use the same output_path so results go to the same directory tree.
     output_path = raw_config.get("validation_output_path")
     if output_path:

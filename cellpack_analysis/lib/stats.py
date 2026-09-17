@@ -427,6 +427,19 @@ def compute_rank_envelope(
     return lo, hi, p_val, sign, r_obs
 
 
+def _informative_columns(sim_curves: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Return ``(mu, sd, keep)`` for a set of simulated curves.
+
+    ``keep`` marks grid points where the simulations vary.  Where ``sd`` is zero the
+    standardized deviation is undefined, and flooring ``sd`` instead would swamp the
+    statistic.  Callers must apply ``keep`` to the observed *and* simulated curves alike.
+    """
+    mu = sim_curves.mean(axis=0)
+    sd = sim_curves.std(axis=0, ddof=1)
+    keep = sd > 0
+    return mu, sd, keep
+
+
 def get_test_statistic_and_pvalue(
     obs_curve: np.ndarray,
     sim_curves: np.ndarray,
@@ -462,28 +475,32 @@ def get_test_statistic_and_pvalue(
         Tuple containing (p_value, T_observed, T_simulated_array, supremum_sign)
         where supremum_sign is +1 for positive and -1 for negative supremum direction
     """
-    mu = sim_curves.mean(axis=0)
-    sd = sim_curves.std(axis=0, ddof=1)
-    sd[sd == 0] = 1e-9
+    mu, sd, keep = _informative_columns(sim_curves)
+    if statistic in ("supremum", "intdev"):
+        # Restrict to informative grid points; see _informative_columns.
+        obs_k = obs_curve[keep]
+        sim_k = sim_curves[:, keep]
+        mu_k, sd_k = mu[keep], sd[keep]
+        if obs_k.size == 0:
+            # Nothing varies anywhere, so there is no evidence against the null.
+            return 1.0, 0.0, np.zeros(sim_curves.shape[0]), 1
+
     if statistic == "supremum":
-        standardized_dev = (obs_curve - mu) / sd
+        standardized_dev = (obs_k - mu_k) / sd_k
         t_obs = np.max(np.abs(standardized_dev))
         # Determine the sign of the supremum deviation
         supremum_idx = np.argmax(np.abs(standardized_dev))
         supremum_sign = int(np.sign(standardized_dev[supremum_idx]))
         if supremum_sign == 0:
             supremum_sign = 1  # Default to positive if exactly zero
-        t_sim = np.max(np.abs((sim_curves - mu) / sd), axis=1)
+        t_sim = np.max(np.abs((sim_k - mu_k) / sd_k), axis=1)
     elif statistic == "intdev":
-        t_obs = integrate.trapezoid(np.abs((obs_curve - mu) / sd))
+        t_obs = integrate.trapezoid(np.abs((obs_k - mu_k) / sd_k))
         t_sim = np.array(
-            [
-                integrate.trapezoid(np.abs((sim_curves[i] - mu) / sd))
-                for i in range(sim_curves.shape[0])
-            ]
+            [integrate.trapezoid(np.abs((sim_k[i] - mu_k) / sd_k)) for i in range(sim_k.shape[0])]
         )
         # For intdev, compute sign based on the dominant direction
-        standardized_dev_integral = np.mean((obs_curve - mu) / sd)
+        standardized_dev_integral = np.mean((obs_k - mu_k) / sd_k)
         supremum_sign = int(np.sign(standardized_dev_integral))
         if supremum_sign == 0:
             supremum_sign = 1  # Default to positive if exactly zero
@@ -816,6 +833,7 @@ def per_cell_envelope_test(
     envelope_type: EnvelopeType = "rank",
     joint_r_grid_size: int | None = None,
     min_replicates: int = 2,
+    calibration_holdout_index: int | None = None,
 ) -> dict[str, Any]:
     """
     Per-cell Monte Carlo envelope (CSR) test: baseline vs each null model.
@@ -851,6 +869,10 @@ def per_cell_envelope_test(
     min_replicates
         Minimum simulated replicates a cell must have, in every null model, to be
         included.
+    calibration_holdout_index
+        When set, run the hold-one-replicate-out coverage test instead: each null
+        model's own replicate at this index becomes the pseudo-observed curve and the
+        envelope is built from the rest, so a calibrated test rejects at ``alpha``.
 
     Returns
     -------
@@ -873,6 +895,13 @@ def per_cell_envelope_test(
         raise ValueError(
             "per_cell_envelope_test needs at least one null model besides "
             f"baseline_mode={baseline_mode!r}"
+        )
+
+    if calibration_holdout_index is not None and calibration_holdout_index < 0:
+        # A negative index would leave the held-out replicate inside its own
+        # envelope -- a silent false pass of the calibration.
+        raise ValueError(
+            f"calibration_holdout_index must be non-negative, got {calibration_holdout_index}"
         )
 
     def _cells_with_all_dms(mode: str) -> set[str]:
@@ -948,21 +977,51 @@ def per_cell_envelope_test(
             continue
         sim_by_mode = {mode: reps[:min_reps] for mode, reps in sim_by_mode.items()}
 
-        cell_result = monte_carlo_per_cell(
-            observed_distances=observed,
-            simulated_distances_by_mode=sim_by_mode,
-            alpha=alpha,
-            distance_measures=distance_measures,
-            r_grid_size=r_grid_size,
-            bin_width=bin_width,
-            statistic=statistic,
-            envelope_type=envelope_type,
-            joint_r_grid_size=joint_r_grid_size,
-        )
+        if calibration_holdout_index is None:
+            cell_result = monte_carlo_per_cell(
+                observed_distances=observed,
+                simulated_distances_by_mode=sim_by_mode,
+                alpha=alpha,
+                distance_measures=distance_measures,
+                r_grid_size=r_grid_size,
+                bin_width=bin_width,
+                statistic=statistic,
+                envelope_type=envelope_type,
+                joint_r_grid_size=joint_r_grid_size,
+            )
+        else:
+            # Each null model supplies its own pseudo-observed replicate, so run one
+            # comparison per mode and merge (output is keyed by mode).
+            if min_reps - 1 < min_replicates or calibration_holdout_index >= min_reps:
+                skipped += 1
+                continue
+            cell_result = {}
+            for mode, reps in sim_by_mode.items():
+                held_out = reps[calibration_holdout_index]
+                rest = [r for i, r in enumerate(reps) if i != calibration_holdout_index]
+                cell_result.update(
+                    monte_carlo_per_cell(
+                        observed_distances=held_out,
+                        simulated_distances_by_mode={mode: rest},
+                        alpha=alpha,
+                        distance_measures=distance_measures,
+                        r_grid_size=r_grid_size,
+                        bin_width=bin_width,
+                        statistic=statistic,
+                        envelope_type=envelope_type,
+                        joint_r_grid_size=joint_r_grid_size,
+                    )
+                )
         all_results.append(cell_result)
         cell_ids.append(cell_id)
 
     if not all_results:
+        if calibration_holdout_index is not None:
+            raise ValueError(
+                "No cells had sufficient data for the per-cell envelope test with "
+                f"calibration_holdout_index={calibration_holdout_index}; every cell "
+                "has fewer replicates than that index requires."
+            )
         raise ValueError("No cells had sufficient data for the per-cell envelope test")
 
     logger.info(
@@ -983,6 +1042,7 @@ def per_cell_envelope_test(
         "alpha": alpha,
         "statistic": statistic,
         "envelope_type": envelope_type,
+        "calibration_holdout_index": calibration_holdout_index,
     }
 
 
@@ -1018,20 +1078,25 @@ def _batch_test_obs_vs_sim(
             signs[i] = s
         return pvals, signs
 
-    mu = sim_curves.mean(axis=0)
-    sd = sim_curves.std(axis=0, ddof=1)
-    sd[sd == 0] = 1e-9
-    dev = (obs_curves - mu) / sd  # (n_obs, L)
+    mu, sd, keep = _informative_columns(sim_curves)
+    if not np.any(keep):
+        # Nothing varies anywhere: no evidence against the null for any observation.
+        return np.ones(n_obs), np.ones(n_obs, dtype=int)
+    # Restrict to informative grid points; see _informative_columns.
+    obs_k = obs_curves[:, keep]
+    sim_k = sim_curves[:, keep]
+    mu_k, sd_k = mu[keep], sd[keep]
+    dev = (obs_k - mu_k) / sd_k  # (n_obs, L_keep)
 
     if statistic == "supremum":
         abs_dev = np.abs(dev)
         t_obs = np.max(abs_dev, axis=1)
         signs = np.sign(dev[np.arange(n_obs), np.argmax(abs_dev, axis=1)]).astype(int)
-        t_sim = np.max(np.abs((sim_curves - mu) / sd), axis=1)
+        t_sim = np.max(np.abs((sim_k - mu_k) / sd_k), axis=1)
     elif statistic == "intdev":
         t_obs = integrate.trapezoid(np.abs(dev), axis=1)
         signs = np.sign(np.mean(dev, axis=1)).astype(int)
-        t_sim = integrate.trapezoid(np.abs((sim_curves - mu) / sd), axis=1)
+        t_sim = integrate.trapezoid(np.abs((sim_k - mu_k) / sd_k), axis=1)
     else:
         raise ValueError(f"Invalid statistic: {statistic}")
 

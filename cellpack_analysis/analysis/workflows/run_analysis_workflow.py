@@ -188,6 +188,10 @@ class AnalysisConfig:
         self.filter_minimum_distance: float | None = self.config.get(
             "filter_minimum_distance", defaults.FILTER_MINIMUM_DISTANCE
         )
+        # Denominator-only filter; ``None`` inherits filter_minimum_distance.
+        self.available_minimum_distance: float | None = self.config.get(
+            "available_minimum_distance", defaults.AVAILABLE_MINIMUM_DISTANCE
+        )
 
     def _setup_ks_params(self) -> None:
         """Set Kolmogorov-Smirnov test parameters."""
@@ -814,6 +818,7 @@ class AnalysisRunner:
             normalization=config.normalization,
             distance_measure=occupancy_distance_measure,
             minimum_distance=config.filter_minimum_distance,
+            available_minimum_distance=config.available_minimum_distance,
         )
         self.shared_data["distance_kde_dict"][occupancy_distance_measure] = distance_kde_dict
 

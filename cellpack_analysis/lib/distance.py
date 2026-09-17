@@ -1455,6 +1455,7 @@ def get_distance_distribution_kde(
     normalization: str | None = None,
     distance_measure: str = "nucleus",
     minimum_distance: float | None = 0,
+    available_minimum_distance: float | None = None,
 ) -> dict[str, dict[str, gaussian_kde]]:
     """
     Obtain KDE for distance distribution measures.
@@ -1492,6 +1493,10 @@ def get_distance_distribution_kde(
         Bandwidth method for the Gaussian KDE
     minimum_distance
         Minimum distance to consider for KDE calculation
+    available_minimum_distance
+        Minimum distance for the available-space distances only (the occupancy
+        denominator).  ``None`` inherits ``minimum_distance``; set it more negative to
+        keep a standoff margin in the denominator.
 
     Returns
     -------
@@ -1555,7 +1560,11 @@ def get_distance_distribution_kde(
                     mesh_information_dict=mode_mesh_dict,
                     cell_id=cell_id,
                     distance_measure=distance_measure,
-                    minimum_distance=minimum_distance,
+                    minimum_distance=(
+                        minimum_distance
+                        if available_minimum_distance is None
+                        else available_minimum_distance
+                    ),
                 )
 
                 kde_dict[cell_id]["available"] = gaussian_kde(available_distances)

@@ -7,6 +7,7 @@ from typing import Any
 import numpy as np
 from tqdm import tqdm
 
+from cellpack_analysis.lib.default_values import PIXEL_SIZE_IN_UM
 from cellpack_analysis.lib.file_io import read_json, write_json
 from cellpack_analysis.lib.get_cell_id_list import sample_cell_ids_for_structure
 from cellpack_analysis.lib.get_structure_stats_dataframe import get_structure_stats_dataframe
@@ -403,7 +404,12 @@ def generate_recipes(workflow_config: Any) -> None:
                     # get size from cell stats
                     radius = None
                     if workflow_config.get_size_from_data:
-                        radius = stats_df.loc[cell_id, "radius"].astype(float)  # type: ignore
+                        # structure_stats radii are microns; recipes are authored in
+                        # pixels.  Unconverted, the packed sphere is 9.26x too small.
+                        radius = (
+                            stats_df.loc[cell_id, "radius"].astype(float)  # type: ignore
+                            / PIXEL_SIZE_IN_UM
+                        )
                     future = executor.submit(
                         update_and_save_recipe,
                         cell_id=cell_id,

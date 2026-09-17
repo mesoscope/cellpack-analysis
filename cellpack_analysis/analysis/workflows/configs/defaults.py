@@ -25,6 +25,11 @@ FILTER_MINIMUM_DISTANCE: float | None = -1
 """Minimum distance passed to ``filter_invalids_from_distance_distribution_dict``.
 Set to ``-1`` in configs that use KDE to allow small negative distances."""
 
+AVAILABLE_MINIMUM_DISTANCE: float | None = None
+"""Minimum distance applied to the occupancy *denominator* only, in **microns**.
+``None`` inherits ``FILTER_MINIMUM_DISTANCE``; a more negative value imposes a standoff
+margin on the available-space distances alone."""
+
 DISTANCE_MEASURES = [
     "nearest",
     "pairwise",

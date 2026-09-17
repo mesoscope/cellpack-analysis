@@ -11,7 +11,7 @@ the rank-envelope p-value bounded below by ``1 / (R + 1)``.
 import numpy as np
 import pytest
 
-from cellpack_analysis.lib.stats import per_cell_envelope_test
+from cellpack_analysis.lib.stats import ecdf, per_cell_envelope_test
 
 N_REPS = 99
 N_PTS = 200
@@ -107,3 +107,97 @@ def test_requires_a_null_model():
     d, baseline, _ = _make_distance_dict(rng, n_cells=3, baseline_low=0.0, baseline_high=2.0)
     with pytest.raises(ValueError, match="null model"):
         per_cell_envelope_test(d, baseline, [baseline], ["nucleus"], envelope_type="rank")
+
+
+def test_calibration_holdout_uses_a_replicate_as_pseudo_observed():
+    """With ``calibration_holdout_index`` set, the pseudo-observed curve is one of
+    that mode's own replicates and the envelope is built from the rest.
+
+    This is the hold-one-replicate-out coverage test. The baseline arm is not used
+    as the observed source, so a baseline shifted far outside the null must NOT
+    drive the rejection rate: the comparison is replicate-vs-own-replicates, which
+    is a true null and must reject at approximately alpha.
+    """
+    rng = np.random.default_rng(11)
+    # Baseline is shifted far away; if it leaked into the comparison the rate
+    # would be ~1.0 rather than ~alpha.
+    d, baseline, modes = _make_distance_dict(rng, n_cells=60, baseline_low=5.0, baseline_high=7.0)
+    res = per_cell_envelope_test(
+        d,
+        baseline,
+        modes,
+        ["nucleus"],
+        alpha=0.05,
+        statistic="intdev",
+        envelope_type="pointwise",
+        calibration_holdout_index=0,
+    )
+    assert res["calibration_holdout_index"] == 0
+
+    # The pseudo-observed curve must BE the held-out replicate's ECDF, not the
+    # baseline's -- this is what makes it a coverage test rather than the real one.
+    cell0 = sorted(d["nucleus"]["random"].keys())[0]
+    held_out = d["nucleus"]["random"][cell0]["0"]
+    entry = res["per_cell_results"][0]["random"]["per_distance_measure"]["nucleus"]
+    np.testing.assert_allclose(entry["obs_curve"], ecdf(held_out, entry["xvals"]))
+
+    # A replicate tested against its own siblings is a true null -> ~alpha.
+    pvals = res["summary"]["per_distance_measure_pvals"][("random", "nucleus")].to_numpy(
+        dtype=float
+    )
+    assert float((pvals < 0.05).mean()) < 0.20
+
+
+def test_calibration_holdout_excludes_the_held_out_replicate_from_the_envelope():
+    """The envelope must be built from R-1 replicates, not all R.
+
+    A rejection-rate assertion cannot see this: a leaked envelope (which contains
+    the pseudo-observed curve, so it can never reject) produces a *lower* rate,
+    which still satisfies a "< alpha-ish" bound. The p-value denominator does see
+    it -- a Monte Carlo p-value over R envelope replicates is a multiple of
+    1/(R+1), so excluding one held-out replicate makes every p a multiple of
+    1/N_REPS, whereas a leak would make them multiples of 1/(N_REPS + 1).
+    """
+    rng = np.random.default_rng(12)
+    d, baseline, modes = _make_distance_dict(rng, n_cells=40, baseline_low=0.0, baseline_high=2.0)
+    res = per_cell_envelope_test(
+        d,
+        baseline,
+        modes,
+        ["nucleus"],
+        alpha=0.05,
+        statistic="intdev",
+        envelope_type="pointwise",
+        calibration_holdout_index=0,
+    )
+    pvals = res["summary"]["per_distance_measure_pvals"][("random", "nucleus")].to_numpy(
+        dtype=float
+    )
+    # 98 envelope replicates -> p is k/99.
+    np.testing.assert_allclose(pvals * N_REPS, np.round(pvals * N_REPS), atol=1e-9)
+    # A leak would put them on the k/100 lattice instead; make sure we can tell.
+    assert not np.allclose(
+        pvals * (N_REPS + 1), np.round(pvals * (N_REPS + 1)), atol=1e-9
+    )
+
+
+@pytest.mark.parametrize("bad_index", [-1, 99, 1000])
+def test_calibration_holdout_index_out_of_range_is_rejected(bad_index):
+    """Out-of-range indices must raise, not silently leak or crash mid-run.
+
+    A negative index is the dangerous case: ``reps[-1]`` is valid Python, but the
+    envelope is built by comparing against non-negative positions, so the held-out
+    replicate stays in its own envelope -- a guaranteed non-rejection, i.e. a
+    silent false PASS of the calibration gate.
+    """
+    rng = np.random.default_rng(13)
+    d, baseline, modes = _make_distance_dict(rng, n_cells=3, baseline_low=0.0, baseline_high=2.0)
+    with pytest.raises(ValueError, match="calibration_holdout_index"):
+        per_cell_envelope_test(
+            d,
+            baseline,
+            modes,
+            ["nucleus"],
+            envelope_type="pointwise",
+            calibration_holdout_index=bad_index,
+        )

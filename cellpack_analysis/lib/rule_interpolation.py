@@ -671,9 +671,7 @@ def fit_rule_interpolation(
     if distance_measures is None:
         distance_measures = sorted(occupancy_dict.keys())
 
-    packing_modes = sorted(
-        mode for mode in channel_map.keys() if mode not in (baseline_mode, "interpolated")
-    )
+    packing_modes = [mode for mode in channel_map if mode not in (baseline_mode, "interpolated")]
     if not packing_modes:
         raise ValueError(
             f"No simulated packing modes found in channel_map after excluding "
@@ -866,9 +864,7 @@ def fit_result_from_cv(
     if distance_measures is None:
         distance_measures = sorted(occupancy_dict.keys())
 
-    packing_modes = sorted(
-        mode for mode in channel_map.keys() if mode not in (baseline_mode, "interpolated")
-    )
+    packing_modes = [mode for mode in channel_map if mode not in (baseline_mode, "interpolated")]
 
     # Extract mean coefficients from aggregated CV results
     mean_coeffs_individual: dict[str, dict[str, float]] = {
@@ -1863,9 +1859,7 @@ def compute_aic_comparison(
     if distance_measures is None:
         distance_measures = sorted(occupancy_dict.keys())
 
-    packing_modes = sorted(
-        mode for mode in channel_map if mode not in (baseline_mode, "interpolated")
-    )
+    packing_modes = [mode for mode in channel_map if mode not in (baseline_mode, "interpolated")]
 
     # Fit if not provided
     if fit_result is None:
