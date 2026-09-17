@@ -1,6 +1,6 @@
 version = 1
 revision = 3
-requires-python = ">=3.11.0, <3.12"
+requires-python = "==3.11.*"
 resolution-markers = [
     "sys_platform == 'win32'",
     "sys_platform == 'emscripten'",
@@ -256,7 +256,7 @@ wheels = [
 [[package]]
 name = "cellpack"
 version = "1.1.1"
-source = { git = "https://github.com/mesoscope/cellpack?rev=f8b5500f8422d9999e6797fcc4b7a009ceb3582b#f8b5500f8422d9999e6797fcc4b7a009ceb3582b" }
+source = { git = "https://github.com/mesoscope/cellpack?rev=8f913406538df63b93edcb90cead4a6e37503e96#8f913406538df63b93edcb90cead4a6e37503e96" }
 dependencies = [
     { name = "bioio" },
     { name = "bioio-ome-tiff" },
@@ -270,6 +270,7 @@ dependencies = [
     { name = "pandas" },
     { name = "plotly" },
     { name = "pycollada" },
+    { name = "pydantic" },
     { name = "pymunk" },
     { name = "python-dotenv" },
     { name = "rtree" },
@@ -338,7 +339,7 @@ test = [
 requires-dist = [
     { name = "bioio", specifier = ">=3.0.0" },
     { name = "bioio-ome-tiff", specifier = ">=1.1.0" },
-    { name = "cellpack", git = "https://github.com/mesoscope/cellpack?rev=f8b5500f8422d9999e6797fcc4b7a009ceb3582b" },
+    { name = "cellpack", git = "https://github.com/mesoscope/cellpack?rev=8f913406538df63b93edcb90cead4a6e37503e96" },
     { name = "fire" },
     { name = "ipykernel" },
     { name = "ipywidgets" },
@@ -1822,7 +1823,7 @@ name = "pexpect"
 version = "4.9.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "ptyprocess", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
+    { name = "ptyprocess" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/42/92/cc564bf6381ff43ce1f4d06852fc19a2f11d180f23dc32d9588bee2f149d/pexpect-4.9.0.tar.gz", hash = "sha256:ee7d41123f3c9911050ea2c2dac107568dc43b2d3b0c7557a33212c398ead30f", size = 166450, upload-time = "2023-11-25T09:07:26.339Z" }
 wheels = [
