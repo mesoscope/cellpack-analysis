@@ -1,20 +1,26 @@
 import concurrent.futures
 import copy
 import logging
+import os
 from pathlib import Path
 from typing import Any
 
 import numpy as np
+import pandas as pd
+import trimesh
 from tqdm import tqdm
 
 from cellpack_analysis.lib.default_values import PIXEL_SIZE_IN_UM
 from cellpack_analysis.lib.file_io import read_json, write_json
 from cellpack_analysis.lib.get_cell_id_list import sample_cell_ids_for_structure
 from cellpack_analysis.lib.get_structure_stats_dataframe import get_structure_stats_dataframe
-from cellpack_analysis.lib.mesh_tools import get_bounding_box
+from cellpack_analysis.lib.mesh_tools import expand_bounding_box, get_bounding_box
 from cellpack_analysis.packing import rule_repository
 
 logger = logging.getLogger(__name__)
+
+MESH_BOUNDS_FILENAME = "mem_mesh_bounds.parquet"
+_BOUND_COLUMNS = ["xmin", "ymin", "zmin", "xmax", "ymax", "zmax"]
 
 
 def set_gradient_mode_center(
@@ -210,6 +216,82 @@ def _validate_recipe(recipe: dict[str, Any]) -> None:
             raise ValueError(f"Cell ID {cell_id} does not match mesh ID {mesh_id}")
 
 
+def _load_mesh_bounds(mesh_file: str) -> np.ndarray:
+    return trimesh.load_mesh(mesh_file).bounds
+
+
+def get_membrane_mesh_bounds(
+    mesh_path: str | Path, cell_ids: list[str], num_processes: int = 1
+) -> dict[str, np.ndarray]:
+    """
+    Get tight membrane mesh bounds per cell, cached beside the mesh directory.
+
+    A cached row is reused only while its mesh file's size and mtime are unchanged.
+
+    Parameters
+    ----------
+    mesh_path
+        Directory holding ``mem_mesh_{cell_id}.obj``
+    cell_ids
+        Cells to return bounds for; cells without a mesh file are skipped
+    num_processes
+        Maximum worker processes for meshes not yet cached
+
+    Returns
+    -------
+    :
+        ``{cell_id: (2, 3) array of [min, max] bounds}``
+    """
+    mesh_path = Path(mesh_path)
+    cache_path = mesh_path.parent / MESH_BOUNDS_FILENAME
+
+    stats = {}
+    for cell_id in map(str, cell_ids):
+        mesh_file = mesh_path / f"mem_mesh_{cell_id}.obj"
+        if mesh_file.exists():
+            st = mesh_file.stat()
+            stats[cell_id] = (st.st_size, st.st_mtime_ns)
+
+    rows = {}
+    if cache_path.exists():
+        rows = {r["cell_id"]: r for r in pd.read_parquet(cache_path).to_dict("records")}
+
+    bounds = {}
+    missing = []
+    for cell_id, (size, mtime_ns) in stats.items():
+        row = rows.get(cell_id)
+        if row is not None and (row["size"], row["mtime_ns"]) == (size, mtime_ns):
+            bounds[cell_id] = np.array([row[c] for c in _BOUND_COLUMNS]).reshape(2, 3)
+        else:
+            missing.append(cell_id)
+    if not missing:
+        return bounds
+
+    mesh_files = [str(mesh_path / f"mem_mesh_{cell_id}.obj") for cell_id in missing]
+    max_workers = min(num_processes, len(os.sched_getaffinity(0)), len(missing))
+    logger.info(f"Computing {len(missing)} mesh bounds with {max_workers} processes")
+    if max_workers > 1:
+        with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
+            computed = list(executor.map(_load_mesh_bounds, mesh_files))
+    else:
+        computed = [_load_mesh_bounds(mesh_file) for mesh_file in mesh_files]
+
+    for cell_id, cell_bounds in zip(missing, computed, strict=True):
+        bounds[cell_id] = cell_bounds
+        size, mtime_ns = stats[cell_id]
+        rows[cell_id] = {
+            "cell_id": cell_id,
+            "size": size,
+            "mtime_ns": mtime_ns,
+            **dict(zip(_BOUND_COLUMNS, cell_bounds.ravel(), strict=True)),
+        }
+
+    tmp_path = cache_path.with_name(f"{cache_path.name}.{os.getpid()}.tmp")
+    pd.DataFrame(list(rows.values())).to_parquet(tmp_path, index=False)
+    os.replace(tmp_path, cache_path)
+    return bounds
+
+
 def update_and_save_recipe(
     cell_id: int | str,
     packing_id: str,
@@ -225,6 +307,7 @@ def update_and_save_recipe(
     get_bounding_box_from_mesh: bool = False,
     use_additional_struct: bool = False,
     gradient_structure_name: str | None = None,
+    mesh_bounds: np.ndarray | None = None,
 ) -> dict[str, Any]:
     """
     Update the recipe template with provided parameters and save the updated recipe to a JSON file.
@@ -259,6 +342,8 @@ def update_and_save_recipe(
         Indicates whether to use an additional structure
     gradient_structure_name
         The name of the structure to apply the gradient
+    mesh_bounds
+        Precomputed tight membrane mesh bounds; skips loading the mesh
 
     Returns
     -------
@@ -272,9 +357,12 @@ def update_and_save_recipe(
 
     # update bounding box
     if get_bounding_box_from_mesh:
-        bounding_box = get_bounding_box(
-            Path(mesh_path) / f"mem_mesh_{cell_id}.obj", expand=1.05
-        ).tolist()
+        if mesh_bounds is not None:
+            bounding_box = expand_bounding_box(mesh_bounds, expand=1.05).tolist()
+        else:
+            bounding_box = get_bounding_box(
+                Path(mesh_path) / f"mem_mesh_{cell_id}.obj", expand=1.05
+            ).tolist()
         updated_recipe["bounding_box"] = bounding_box
 
     # update seed if needed
@@ -387,6 +475,12 @@ def generate_recipes(workflow_config: Any) -> None:
 
     stats_df = get_structure_stats_dataframe().set_index("CellId")
 
+    mesh_bounds: dict[str, np.ndarray] = {}
+    if workflow_config.get_bounding_box_from_mesh:
+        mesh_bounds = get_membrane_mesh_bounds(
+            workflow_config.mesh_path, cell_id_list, num_processes
+        )
+
     for rule_name, rule_dict in recipe_data.items():
         if rule_name not in workflow_config.data.get("packings_to_run", {}).get("rules", []):
             continue
@@ -426,6 +520,7 @@ def generate_recipes(workflow_config: Any) -> None:
                         get_bounding_box_from_mesh=workflow_config.get_bounding_box_from_mesh,
                         use_additional_struct=workflow_config.use_additional_struct,
                         gradient_structure_name=workflow_config.gradient_structure_name,
+                        mesh_bounds=mesh_bounds.get(str(cell_id)),
                     )
                     futures.append(future)
 

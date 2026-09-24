@@ -1,12 +1,17 @@
 import copy
+import os
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
+import numpy as np
 import pytest
+import trimesh
 
 from cellpack_analysis.packing import rule_repository
 from cellpack_analysis.packing.generate_cellpack_input_files import (
+    MESH_BOUNDS_FILENAME,
+    get_membrane_mesh_bounds,
     process_gradient_data,
     update_and_save_recipe,
 )
@@ -391,3 +396,65 @@ class TestResolveGradientCenterIsolation:
         apical_mode_settings = apical_gradient_def["mode_settings"]
         assert isinstance(apical_mode_settings, dict)
         assert apical_mode_settings["center"] == "max"
+
+
+class TestMembraneMeshBounds:
+    """Tests for the cached membrane mesh bounds."""
+
+    @pytest.fixture
+    def mesh_dir(self, tmp_path: Path) -> Path:
+        mesh_dir = tmp_path / "meshes"
+        mesh_dir.mkdir()
+        for cell_id, extents in [("1", (10.0, 20.0, 30.0)), ("2", (7.5, 3.25, 11.0))]:
+            box = trimesh.creation.box(extents=extents)
+            box.apply_translation([1.3, -2.7, 5.1])
+            box.export(mesh_dir / f"mem_mesh_{cell_id}.obj")
+        return mesh_dir
+
+    @patch("cellpack_analysis.packing.generate_cellpack_input_files.write_json")
+    @patch(
+        "cellpack_analysis.packing.generate_cellpack_input_files.process_rule_dict",
+        side_effect=lambda recipe, *_: recipe,
+    )
+    def test_recipe_bounding_box_matches_mesh_path(
+        self, _mock_process_rule_dict, _mock_write_json, mesh_dir, sample_recipe_template
+    ):
+        bounds = get_membrane_mesh_bounds(mesh_dir, ["1", "2", "missing"], num_processes=2)
+
+        assert set(bounds) == {"1", "2"}
+        for cell_id in bounds:
+            kwargs: dict[str, Any] = {
+                "cell_id": cell_id,
+                "packing_id": "peroxisome",
+                "recipe_template": sample_recipe_template,
+                "rule_name": "random",
+                "rule_dict": {},
+                "grid_path": "grid",
+                "mesh_path": mesh_dir,
+                "generated_recipe_path": mesh_dir.parent / "recipes",
+                "number_of_replicates": 1,
+                "get_bounding_box_from_mesh": True,
+            }
+            from_mesh = update_and_save_recipe(**kwargs)["bounding_box"]
+            from_cache = update_and_save_recipe(**kwargs, mesh_bounds=bounds[cell_id])
+            assert from_cache["bounding_box"] == from_mesh
+
+    def test_cache_reused_until_mesh_changes(self, mesh_dir: Path) -> None:
+        first = get_membrane_mesh_bounds(mesh_dir, ["1", "2"])
+        assert (mesh_dir.parent / MESH_BOUNDS_FILENAME).exists()
+
+        with patch(
+            "cellpack_analysis.packing.generate_cellpack_input_files._load_mesh_bounds"
+        ) as mock_load:
+            second = get_membrane_mesh_bounds(mesh_dir, ["1", "2"])
+        mock_load.assert_not_called()
+        for cell_id in first:
+            np.testing.assert_array_equal(second[cell_id], first[cell_id])
+
+        mesh_file = mesh_dir / "mem_mesh_1.obj"
+        mtime_ns = mesh_file.stat().st_mtime_ns
+        trimesh.creation.box(extents=(1.0, 1.0, 1.0)).export(mesh_file)
+        os.utime(mesh_file, ns=(mtime_ns + 10**9, mtime_ns + 10**9))
+        third = get_membrane_mesh_bounds(mesh_dir, ["1", "2"])
+        np.testing.assert_allclose(third["1"], [[-0.5] * 3, [0.5] * 3])
+        np.testing.assert_array_equal(third["2"], first["2"])
