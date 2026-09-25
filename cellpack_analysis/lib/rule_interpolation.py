@@ -28,7 +28,7 @@ import os
 import pickle
 import subprocess
 import warnings
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Literal
 
@@ -2185,6 +2185,21 @@ def log_evidence_ratios(
 # ---------------------------------------------------------------------------
 
 
+def _save_validation_result(result: ValidationResult, results_dir: Path) -> Path:
+    """Pickle ``result`` minus its EMD frames (cached as parquet) and write per-cell q-values."""
+    path = results_dir / "validation_result_mixed_rule_validation.dat"
+    with open(path, "wb") as f:
+        slim = replace(result, emd_df=pd.DataFrame(), distance_emd_df=None)
+        pickle.dump(slim, f, protocol=pickle.HIGHEST_PROTOCOL)
+    per_cell = result.distance_per_cell_envelope_test
+    if per_cell is not None:
+        qvals = per_cell["summary"]["per_distance_measure_qvals"].copy()
+        qvals.index = per_cell["cell_ids"]
+        qvals.to_csv(results_dir / "per_cell_envelope_qvals_mixed_rule_validation.csv")
+    logger.info("Saved validation result to %s", path)
+    return path
+
+
 def run_mixed_rule_validation(
     combined_occupancy_dict: dict[str, dict[str, dict[str, Any]]],
     channel_map: dict[str, str],
@@ -2226,7 +2241,7 @@ def run_mixed_rule_validation(
         If ``None``, only occupancy-based tests are run (unless
         ``distance_emd_df`` / ``distance_envelope_test_result`` are supplied).
     results_dir
-        Directory for saving intermediate results.
+        Directory for cached intermediates and the saved result.
     recalculate
         Whether to recompute even if cached results exist.
     fit_result
@@ -2352,7 +2367,7 @@ def run_mixed_rule_validation(
             distance_measures=distance_measures,
         )
 
-    return ValidationResult(
+    result = ValidationResult(
         emd_df=emd_df,
         distance_emd_df=distance_emd_df,
         distance_envelope_test=distance_envelope_test,
@@ -2361,3 +2376,6 @@ def run_mixed_rule_validation(
         distance_ks_bootstrap_df=distance_ks_bootstrap_df,
         aic_result=aic_result,
     )
+    if results_dir is not None:
+        _save_validation_result(result, results_dir)
+    return result

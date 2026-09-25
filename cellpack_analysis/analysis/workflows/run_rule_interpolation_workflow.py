@@ -56,6 +56,7 @@ from cellpack_analysis.lib.file_io import get_project_root
 from cellpack_analysis.lib.io import format_time
 from cellpack_analysis.lib.visualization import (
     plot_aic_model_weights,
+    plot_per_cell_rejection_bars,
     plot_rule_interpolation_validation_summary,
     plot_validation_occupancy,
 )
@@ -631,6 +632,15 @@ def validate(config_path: str) -> None:
             suffix=val_analysis_config.suffix,
             save_format=val_analysis_config.save_format,
         )
+
+        # Per-measure MC bars incl. the mixed rule (S6a/S7a)
+        if validation_result.distance_per_cell_envelope_test is not None:
+            plot_per_cell_rejection_bars(
+                per_cell_results=validation_result.distance_per_cell_envelope_test,
+                figures_dir=figures_dir,
+                suffix=val_analysis_config.suffix,
+                save_format=val_analysis_config.save_format,
+            )
 
         # AIC/BIC model weights as a separate figure
         if validation_result.aic_result is not None:

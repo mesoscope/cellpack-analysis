@@ -1724,6 +1724,51 @@ class TestMixedRulePerCellEnvelope:
         assert "rejection_joint" in pce["summary"]
 
 
+class TestValidationResultIsSaved:
+    """The mixed-rule MC test (S8d/S9d) must survive the run, not just the figure."""
+
+    def test_result_and_qvals_are_written_to_results_dir(self, tmp_path):
+        import pickle
+
+        from cellpack_analysis.lib import rule_interpolation as ri
+
+        rng = np.random.default_rng(4)
+        dist = {
+            "nucleus": {
+                m: {f"c{i}": {str(s): rng.uniform(0, 2, 40) for s in range(5)} for i in range(6)}
+                for m in ("real", "random", "interpolated")
+            }
+        }
+        occ = _make_occupancy_dict("real", ["random", "interpolated"], n_baseline_cells=6, seed=2)
+
+        result = ri.run_mixed_rule_validation(
+            combined_occupancy_dict=occ,
+            channel_map=_make_channel_map("real", ["random", "interpolated"]),
+            baseline_mode="real",
+            packing_modes=["random", "interpolated"],
+            distance_measures=["nucleus"],
+            mixed_rule_distance_dict=dist,
+            results_dir=tmp_path,
+            # EMD caches log paths relative to the repo; skip them for tmp_path.
+            occupancy_emd_df=pd.DataFrame(),
+            distance_emd_df=pd.DataFrame(),
+        )
+
+        with open(tmp_path / "validation_result_mixed_rule_validation.dat", "rb") as f:
+            saved = pickle.load(f)
+        expected = result.distance_per_cell_envelope_test
+        pd.testing.assert_frame_equal(
+            saved.distance_per_cell_envelope_test["summary"]["joint_qvals"],
+            expected["summary"]["joint_qvals"],
+        )
+        qvals = pd.read_csv(
+            tmp_path / "per_cell_envelope_qvals_mixed_rule_validation.csv",
+            header=[0, 1],
+            index_col=0,
+        )
+        assert list(qvals.index) == expected["cell_ids"]
+
+
 # ---------------------------------------------------------------------------
 # Tests: ValidationResult with AIC
 # ---------------------------------------------------------------------------
