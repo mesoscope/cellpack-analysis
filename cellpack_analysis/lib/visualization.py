@@ -3559,6 +3559,45 @@ def _draw_joint_rejection_bars(
     sns.despine(ax=ax)
 
 
+def _draw_per_cell_joint_rejection_bars(
+    ax: Axes,
+    per_cell_results: dict[str, Any],
+    baseline_mode: str,
+) -> None:
+    """Draw joint rejection bars from a per-cell envelope result."""
+    summary = per_cell_results["summary"]
+    test_modes = [m for m in per_cell_results["null_modes"] if m != baseline_mode]
+    positive = summary["rejection_joint_positive"]
+    negative = summary["rejection_joint_negative"]
+
+    bar_width = 0.6
+    for mode_idx, mode in enumerate(test_modes):
+        pos_val = float(positive.get(mode, 0.0))
+        neg_val = float(negative.get(mode, 0.0))
+        mode_color = label_tables.COLOR_PALETTE.get(
+            mode, label_tables.COLOR_PALETTE.get("random", "#808080")
+        )
+        mode_neg_color = label_tables.adjust_color_saturation(mode_color, saturation=0.3)
+        ax.bar(mode_idx, pos_val, width=bar_width, color=mode_color, alpha=0.9)
+        ax.bar(mode_idx, neg_val, width=bar_width, bottom=pos_val, color=mode_neg_color, alpha=0.9)
+
+    legend_handles = [
+        mpatches.Patch(color="gray", alpha=0.9, label="Observed > model"),
+        mpatches.Patch(color="gray", alpha=0.4, label="Observed < model"),
+    ]
+    ax.legend(handles=legend_handles, frameon=False, fontsize=6, loc="upper right")
+    ax.set_ylim(0, 1)
+    ax.set_xticks(np.arange(len(test_modes)))
+    ax.set_xticklabels(
+        [label_tables.MODE_LABELS.get(m, m) or m for m in test_modes],
+        rotation=45,
+        ha="right",
+    )
+    ax.set_ylabel("Fraction of cells rejected")
+    ax.set_title("Per-cell MC rejection vs observed")
+    sns.despine(ax=ax)
+
+
 def plot_aic_model_weights(
     aic_result: AICComparisonResult,
     figures_dir: Path | None = None,
@@ -3748,7 +3787,15 @@ def plot_rule_interpolation_validation_summary(
         axs[1, 0].set_visible(False)
 
     # ── Panel (1, 1): Joint MC rejection fraction ────────────────────────
-    if has_envelope:
+    # Per-cell test; the pooled one is a fallback for older runs
+    per_cell = validation_result.distance_per_cell_envelope_test
+    if per_cell is not None:
+        _draw_per_cell_joint_rejection_bars(
+            ax=axs[1, 1],
+            per_cell_results=per_cell,
+            baseline_mode=baseline_mode,
+        )
+    elif has_envelope:
         assert validation_result.distance_envelope_test is not None
         _draw_joint_rejection_bars(
             ax=axs[1, 1],

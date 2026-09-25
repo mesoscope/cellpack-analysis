@@ -1653,6 +1653,77 @@ class TestLogEvidenceRatios:
         assert log_path.exists()
 
 
+class TestMixedRulePerCellEnvelope:
+    """The mixed rule gets the same per-cell test as Fig 3d, and S8d/S9d plots it."""
+
+    @staticmethod
+    def _per_cell_result():
+        modes = ["random", "interpolated"]
+        idx = pd.Index(modes)
+        return {
+            "baseline_mode": "real",
+            "null_modes": modes,
+            "distance_measures": ["nucleus"],
+            "cell_ids": [f"c{i}" for i in range(5)],
+            "summary": {
+                "rejection_joint": pd.Series([0.80, 0.30], index=idx),
+                "rejection_joint_positive": pd.Series([0.50, 0.20], index=idx),
+                "rejection_joint_negative": pd.Series([0.30, 0.10], index=idx),
+            },
+        }
+
+    def test_panel_reflects_per_cell_rejection_fractions(self):
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        from cellpack_analysis.lib.visualization import _draw_per_cell_joint_rejection_bars
+
+        fig, ax = plt.subplots()
+        _draw_per_cell_joint_rejection_bars(
+            ax=ax, per_cell_results=self._per_cell_result(), baseline_mode="real"
+        )
+        # Stacked positive+negative heights must equal the per-cell rejection fractions.
+        totals = {}
+        for patch in ax.patches:
+            x = round(patch.get_x() + patch.get_width() / 2)
+            totals[x] = totals.get(x, 0.0) + patch.get_height()
+        plt.close(fig)
+        assert totals[0] == pytest.approx(0.80)
+        assert totals[1] == pytest.approx(0.30)
+
+    def test_per_cell_envelope_is_run_for_the_mixed_rule(self):
+        """The mixed rule gets the same per-cell test as Fig 3d."""
+        from cellpack_analysis.lib import rule_interpolation as ri
+
+        rng = np.random.default_rng(3)
+        modes = ("real", "random", "interpolated")
+        dist = {
+            "nucleus": {
+                m: {f"c{i}": {str(s): rng.uniform(0, 2, 40) for s in range(5)} for i in range(6)}
+                for m in modes
+            }
+        }
+        occ = _make_occupancy_dict("real", ["random", "interpolated"], n_baseline_cells=6, seed=2)
+
+        result = ri.run_mixed_rule_validation(
+            combined_occupancy_dict=occ,
+            channel_map=_make_channel_map("real", ["random", "interpolated"]),
+            baseline_mode="real",
+            packing_modes=["random", "interpolated"],
+            distance_measures=["nucleus"],
+            mixed_rule_distance_dict=dist,
+        )
+
+        pce = result.distance_per_cell_envelope_test
+        assert pce is not None, "mixed-rule validation did not run the per-cell envelope test"
+        # Same construction as Fig 3d: each cell against its own replicates.
+        assert pce["baseline_mode"] == "real"
+        assert "interpolated" in pce["null_modes"]
+        assert "rejection_joint" in pce["summary"]
+
+
 # ---------------------------------------------------------------------------
 # Tests: ValidationResult with AIC
 # ---------------------------------------------------------------------------

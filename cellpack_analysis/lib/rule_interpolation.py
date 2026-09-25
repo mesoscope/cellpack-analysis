@@ -276,6 +276,9 @@ class ValidationResult:
         Pairwise EMD on distance distributions (only if packings were run).
     distance_envelope_test
         Pairwise envelope test on distance distributions (only if packings were run).
+    distance_per_cell_envelope_test
+        Per-cell envelope test on distance distributions, BH-corrected across cells
+        (only if packings were run).
     distance_ks_df
         Per-cell KS test on distance distributions vs baseline (only if packings were run).
     distance_ks_bootstrap_df
@@ -288,6 +291,7 @@ class ValidationResult:
     envelope_test: dict[str, Any] | None = None
     distance_emd_df: pd.DataFrame | None = None
     distance_envelope_test: dict[str, Any] | None = None
+    distance_per_cell_envelope_test: dict[str, Any] | None = None
     distance_ks_df: pd.DataFrame | None = None
     distance_ks_bootstrap_df: pd.DataFrame | None = None
     aic_result: "AICComparisonResult | None" = None
@@ -2263,6 +2267,7 @@ def run_mixed_rule_validation(
 
     _computed_distance_emd_df: pd.DataFrame | None = distance_emd_df
     distance_envelope_test: dict[str, Any] | None = distance_envelope_test_result
+    distance_per_cell_envelope_test: dict[str, Any] | None = None
     distance_ks_df: pd.DataFrame | None = None
     distance_ks_bootstrap_df: pd.DataFrame | None = None
 
@@ -2297,6 +2302,24 @@ def run_mixed_rule_validation(
                 packing_modes=packing_modes,
                 distance_measures=distance_measures,
             )
+
+        if mixed_rule_distance_dict is not None:
+            # Same per-cell test as the distance figures
+            from cellpack_analysis.lib.stats import per_cell_envelope_test
+
+            logger.info("Running mixed-rule distance per-cell envelope test")
+            try:
+                distance_per_cell_envelope_test = per_cell_envelope_test(
+                    all_distance_dict=mixed_rule_distance_dict,
+                    baseline_mode=baseline_mode,
+                    packing_modes=packing_modes,
+                    distance_measures=distance_measures,
+                    statistic="intdev",
+                    envelope_type="pointwise",
+                )
+            except ValueError as exc:
+                # Too few replicates per cell; keep the other arms
+                logger.warning("Per-cell envelope test skipped: %s", exc)
 
         if mixed_rule_distance_dict is not None and not _has_mixed_structures:
             logger.info("Running mixed-rule distance KS test")
@@ -2333,6 +2356,7 @@ def run_mixed_rule_validation(
         emd_df=emd_df,
         distance_emd_df=distance_emd_df,
         distance_envelope_test=distance_envelope_test,
+        distance_per_cell_envelope_test=distance_per_cell_envelope_test,
         distance_ks_df=distance_ks_df,
         distance_ks_bootstrap_df=distance_ks_bootstrap_df,
         aic_result=aic_result,
