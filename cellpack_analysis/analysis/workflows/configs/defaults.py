@@ -21,14 +21,9 @@ DISTRIBUTION_METHOD = "kde"
 Options: "discrete" (histogram-based) or "kde" (kernel density estimate).
 Note: "kde" is the default; set to "discrete" in your config to use the histogram-based approach."""
 
-FILTER_MINIMUM_DISTANCE: float | None = -1
-"""Minimum distance passed to ``filter_invalids_from_distance_distribution_dict``.
-Set to ``-1`` in configs that use KDE to allow small negative distances."""
-
-AVAILABLE_MINIMUM_DISTANCE: float | None = None
-"""Minimum distance applied to the occupancy *denominator* only, in **microns**.
-``None`` inherits ``FILTER_MINIMUM_DISTANCE``; a more negative value imposes a standoff
-margin on the available-space distances alone."""
+MINIMUM_DISTANCE_UM: float | None = -0.5
+"""Distance floor in **microns**, applied alike to observed, simulated and available-space
+distances (occupancy numerator and denominator). ``None`` drops only NaN/inf."""
 
 DISTANCE_MEASURES = [
     "nearest",
@@ -166,7 +161,7 @@ DISTANCE_PLOT_PARAMS: dict = {
 
 EMD_PLOT_PARAMS: dict = {
     "figure_size": [7, 7],
-    "minimum_distance": -1,
+    "minimum_distance": None,
 }
 """Extra kwargs forwarded to ``visualization.plot_pairwise_emd_matrix``."""
 

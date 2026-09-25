@@ -342,7 +342,7 @@ def _normalize_and_filter_distances(
     distance_measure
         Distance measure being processed
     minimum_distance
-        Minimum distance to consider for filtering
+        Floor in raw (pre-normalization) distance units
 
     Returns
     -------
@@ -356,17 +356,14 @@ def _normalize_and_filter_distances(
         distance_measure=distance_measure,
         distances=distances,
     )
-    normalized_distances = distances / normalization_factor
-    filtered_distances = filter_invalid_distances(
-        normalized_distances, minimum_distance=minimum_distance
-    )
+    filtered_distances = filter_invalid_distances(distances, minimum_distance=minimum_distance)
 
     if len(filtered_distances) == 0:
         raise ValueError(
-            f"All distances are invalid after normalization for cell_id {cell_id}, "
+            f"All distances are invalid for cell_id {cell_id}, "
             f"distance_measure {distance_measure}."
         )
-    return filtered_distances.astype(np.float32)
+    return (filtered_distances / normalization_factor).astype(np.float32)
 
 
 def _calculate_distances_for_cell_id(
@@ -1455,7 +1452,6 @@ def get_distance_distribution_kde(
     normalization: str | None = None,
     distance_measure: str = "nucleus",
     minimum_distance: float | None = 0,
-    available_minimum_distance: float | None = None,
 ) -> dict[str, dict[str, gaussian_kde]]:
     """
     Obtain KDE for distance distribution measures.
@@ -1492,11 +1488,9 @@ def get_distance_distribution_kde(
     bandwidth
         Bandwidth method for the Gaussian KDE
     minimum_distance
-        Minimum distance to consider for KDE calculation
-    available_minimum_distance
-        Minimum distance for the available-space distances only (the occupancy
-        denominator).  ``None`` inherits ``minimum_distance``; set it more negative to
-        keep a standoff margin in the denominator.
+        Floor in raw (pixel) units for the available-space distances, applied before
+        normalization. Packed distances arrive normalized and must already be floored at
+        the same value by ``filter_invalids_from_distance_distribution_dict``.
 
     Returns
     -------
@@ -1536,9 +1530,7 @@ def get_distance_distribution_kde(
                 kde_dict[cell_id] = {}
             all_cell_id_distances = []
             for _, distances in seed_dict.items():
-                distances = filter_invalid_distances(
-                    distances, minimum_distance=minimum_distance
-                ).astype(np.float32)
+                distances = filter_invalid_distances(distances).astype(np.float32)
                 if len(distances) == 0:
                     logger.warning(
                         f"No valid distances found for cell id {cell_id} and mode {mode}"
@@ -1560,11 +1552,7 @@ def get_distance_distribution_kde(
                     mesh_information_dict=mode_mesh_dict,
                     cell_id=cell_id,
                     distance_measure=distance_measure,
-                    minimum_distance=(
-                        minimum_distance
-                        if available_minimum_distance is None
-                        else available_minimum_distance
-                    ),
+                    minimum_distance=minimum_distance,
                 )
 
                 kde_dict[cell_id]["available"] = gaussian_kde(available_distances)

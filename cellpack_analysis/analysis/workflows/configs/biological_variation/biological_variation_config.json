@@ -21,7 +21,7 @@
     "normalization": null,
     "save_format": "pdf",
     "recalculate": false,
-    "filter_minimum_distance": null,
+    "minimum_distance_um": null,
     "distribution_method": "kde",
     "distance_pdf_params": {
         "bandwidth": 0.4

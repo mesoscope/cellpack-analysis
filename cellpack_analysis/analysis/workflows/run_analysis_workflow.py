@@ -105,6 +105,7 @@ from cellpack_analysis.lib import (
     rule_interpolation,
     visualization,
 )
+from cellpack_analysis.lib.default_values import PIXEL_SIZE_IN_UM
 from cellpack_analysis.lib.file_io import get_project_root, get_results_path
 from cellpack_analysis.lib.io import format_time
 from cellpack_analysis.lib.label_tables import DISTANCE_LIMITS
@@ -185,13 +186,19 @@ class AnalysisConfig:
         self.bin_width_map.update(self.config.get("bin_width_map", {}))
         # analysis_steps is the primary driver of execution
         self.analysis_steps: list[str] = self.config["analysis_steps"]
-        self.filter_minimum_distance: float | None = self.config.get(
-            "filter_minimum_distance", defaults.FILTER_MINIMUM_DISTANCE
+        for legacy_key in ("filter_minimum_distance", "available_minimum_distance"):
+            if legacy_key in self.config:
+                raise ValueError(
+                    f"'{legacy_key}' is replaced by 'minimum_distance_um' (microns, applied "
+                    "to both occupancy numerator and denominator)"
+                )
+        self.minimum_distance_um: float | None = self.config.get(
+            "minimum_distance_um", defaults.MINIMUM_DISTANCE_UM
         )
-        # Denominator-only filter; ``None`` inherits filter_minimum_distance.
-        self.available_minimum_distance: float | None = self.config.get(
-            "available_minimum_distance", defaults.AVAILABLE_MINIMUM_DISTANCE
-        )
+        # Same floor in raw (pixel) distance units.
+        self.minimum_distance: float | None = None
+        if self.minimum_distance_um is not None:
+            self.minimum_distance = self.minimum_distance_um / PIXEL_SIZE_IN_UM
 
     def _setup_ks_params(self) -> None:
         """Set Kolmogorov-Smirnov test parameters."""
@@ -403,7 +410,7 @@ class AnalysisRunner:
 
         all_distance_dict = distance.filter_invalids_from_distance_distribution_dict(
             distance_distribution_dict=all_distance_dict,
-            minimum_distance=config.filter_minimum_distance,
+            minimum_distance=config.minimum_distance,
         )
 
         all_distance_dict = distance.normalize_distance_dictionary(
@@ -434,7 +441,7 @@ class AnalysisRunner:
             "distance_limits": DISTANCE_LIMITS,
             "results_dir": config.results_dir,
             "recalculate": config.recalculate["plot_distance_distributions"],
-            "minimum_distance": config.filter_minimum_distance,
+            "minimum_distance": None,  # floored in _calculate_distances
             **config.distance_pdf_params,
         }
         distance_pdf_dict = distance.compute_distance_pdfs(**pdf_kwargs)
@@ -817,8 +824,7 @@ class AnalysisRunner:
             suffix=config.suffix,
             normalization=config.normalization,
             distance_measure=occupancy_distance_measure,
-            minimum_distance=config.filter_minimum_distance,
-            available_minimum_distance=config.available_minimum_distance,
+            minimum_distance=config.minimum_distance,
         )
         self.shared_data["distance_kde_dict"][occupancy_distance_measure] = distance_kde_dict
 

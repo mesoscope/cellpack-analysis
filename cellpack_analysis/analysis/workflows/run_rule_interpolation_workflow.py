@@ -362,8 +362,7 @@ def _write_validation_analysis_config(
     # mismatch would go unnoticed.  Absent keys are not written.
     for passthrough_key in (
         "suffix",
-        "filter_minimum_distance",
-        "available_minimum_distance",
+        "minimum_distance_um",
         "emd_pool_seeds",
         "skip_mixed_rule_validation",
         "num_workers",
