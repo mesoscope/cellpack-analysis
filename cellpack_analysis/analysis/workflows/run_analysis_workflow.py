@@ -172,6 +172,7 @@ class AnalysisConfig:
             self.suffix += f"_norm_{self.normalization}"
         self.distance_measures = self.config.get("distance_measures", defaults.DISTANCE_MEASURES)
         self.emd_pool_seeds = self.config.get("emd_pool_seeds", defaults.EMD_POOL_SEEDS)
+        self.emd_same_cell = self.config.get("emd_same_cell", defaults.EMD_SAME_CELL)
         self.virtual_mixture_params = self.config.get("virtual_mixture_params", {})
         self.save_format = self.config.get("save_format", defaults.SAVE_FORMAT)
         self.distribution_method = self.config.get(
@@ -496,6 +497,8 @@ class AnalysisRunner:
             num_workers=config.num_workers,
             pool_seeds=config.emd_pool_seeds,
         )
+        if config.emd_same_cell:
+            df_emd = distance.same_cell_emd_pairs(df_emd)
 
         # Per-comparison-type plots
         for comparison_type in ["intra_mode", "baseline"]:
@@ -910,6 +913,8 @@ class AnalysisRunner:
             recalculate=config.recalculate["run_occupancy_emd_analysis"],
             suffix=config.suffix,
         )
+        if config.emd_same_cell:
+            occupancy_emd_df = distance.same_cell_emd_pairs(occupancy_emd_df)
 
         _ = visualization.plot_emd_comparisons(
             df_emd=occupancy_emd_df,

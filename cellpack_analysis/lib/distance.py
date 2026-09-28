@@ -1268,6 +1268,19 @@ def get_distance_distribution_emd_df(
     return df_emd
 
 
+def same_cell_emd_pairs(df_emd: pd.DataFrame) -> pd.DataFrame:
+    """Keep cross-mode EMD rows only where both curves come from the same cell.
+
+    Intra-mode rows are kept; they are cross-cell by construction.
+    """
+    if df_emd.empty:
+        return df_emd
+    keep = (df_emd["cell_id_1"] == df_emd["cell_id_2"]) | (
+        df_emd["packing_mode_1"] == df_emd["packing_mode_2"]
+    )
+    return df_emd.loc[keep].reset_index(drop=True)
+
+
 def calculate_ripley_k(
     all_positions: dict[str, dict[str, np.ndarray]],
     mesh_information_dict: dict[str, dict[str, Any]],

@@ -1785,6 +1785,37 @@ class TestValidationPoolSeeds:
         assert seen.get("pool_seeds") is True
 
 
+class TestValidationSameCell:
+    """``same_cell_emd`` restricts both EMD frames to same-cell cross-mode rows."""
+
+    def test_same_cell_emd_filters_both_frames(self):
+        from cellpack_analysis.lib import rule_interpolation as ri
+
+        emd = pd.DataFrame(
+            {
+                "distance_measure": ["nucleus"] * 3,
+                "packing_mode_1": ["real", "real", "random"],
+                "packing_mode_2": ["random", "random", "random"],
+                "cell_id_1": ["c0", "c0", "c0"],
+                "cell_id_2": ["c0", "c1", "c1"],
+                "emd": [0.1, 0.2, 0.3],
+            }
+        )
+        occ = _make_occupancy_dict("real", ["random"], n_baseline_cells=4, seed=1)
+        result = ri.run_mixed_rule_validation(
+            combined_occupancy_dict=occ,
+            channel_map=_make_channel_map("real", ["random"]),
+            baseline_mode="real",
+            packing_modes=["random"],
+            distance_measures=["nucleus"],
+            occupancy_emd_df=emd,
+            distance_emd_df=emd,
+            same_cell_emd=True,
+        )
+        for df in (result.emd_df, result.distance_emd_df):
+            assert list(df["emd"]) == [0.1, 0.3]
+
+
 # ---------------------------------------------------------------------------
 # Tests: ValidationResult with AIC
 # ---------------------------------------------------------------------------

@@ -45,6 +45,11 @@ peroxisome and 1.5e10 for endosome. Pooling drops this to ~1.2e6, matching the
 granularity the occupancy EMD already uses. Off by default so single-seed
 analyses are unchanged."""
 
+EMD_SAME_CELL = False
+"""Pair each cell only with itself in cross-mode EMD comparisons.
+
+Off by default so population-level comparisons (e.g. variation sources) stay pooled."""
+
 """Parameters for KS test analysis."""
 KS_SIGNIFICANCE_LEVEL = 0.05
 """Default significance level for KS test."""

@@ -16,6 +16,7 @@
     "num_workers": 16,
     "distance_backend": "process",
     "emd_pool_seeds": true,
+    "emd_same_cell": true,
     "envelope_test_params": {
         "envelope_type": "pointwise",
         "statistic": "intdev",

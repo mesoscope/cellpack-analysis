@@ -2214,6 +2214,7 @@ def run_mixed_rule_validation(
     distance_emd_df: "pd.DataFrame | None" = None,
     distance_envelope_test_result: dict[str, Any] | None = None,
     pool_seeds: bool = False,
+    same_cell_emd: bool = False,
 ) -> ValidationResult:
     """Run orthogonal validation checks for the mixed packing rule.
 
@@ -2264,6 +2265,9 @@ def run_mixed_rule_validation(
     pool_seeds
         Pool each cell's seeds into one curve before the pairwise distance EMD
         (config key ``emd_pool_seeds``). Per-seed replicate data trips the pair guard.
+    same_cell_emd
+        Pair each cell only with itself in cross-mode EMD comparisons
+        (config key ``emd_same_cell``).
 
     Returns
     -------
@@ -2359,6 +2363,10 @@ def run_mixed_rule_validation(
             )
 
     distance_emd_df = _computed_distance_emd_df
+    if same_cell_emd:
+        emd_df = distance.same_cell_emd_pairs(emd_df)
+        if distance_emd_df is not None:
+            distance_emd_df = distance.same_cell_emd_pairs(distance_emd_df)
 
     # AIC/BIC model comparison
     aic_result: AICComparisonResult | None = None

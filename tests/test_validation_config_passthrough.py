@@ -17,6 +17,7 @@ BEHAVIOUR_KEYS = {
     "minimum_distance_um": -0.108,
     "available_minimum_distance_um": -1.0,
     "emd_pool_seeds": True,
+    "emd_same_cell": True,
     "skip_mixed_rule_validation": False,
 }
 PERFORMANCE_KEYS = {

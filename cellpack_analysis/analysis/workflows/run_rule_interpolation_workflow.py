@@ -366,6 +366,7 @@ def _write_validation_analysis_config(
         "minimum_distance_um",
         "available_minimum_distance_um",
         "emd_pool_seeds",
+        "emd_same_cell",
         "skip_mixed_rule_validation",
         "num_workers",
         "distance_backend",
@@ -622,6 +623,7 @@ def validate(config_path: str) -> None:
             distance_emd_df=_runner_distance_emd_df,
             distance_envelope_test_result=_runner_envelope_results,
             pool_seeds=val_analysis_config.emd_pool_seeds,
+            same_cell_emd=val_analysis_config.emd_same_cell,
         )
 
         # Summary plot comparing mixed rule to individual rules

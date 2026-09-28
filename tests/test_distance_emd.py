@@ -8,6 +8,7 @@ from cellpack_analysis.lib.distance import (
     POOLED_SEED_LABEL,
     _wasserstein_1d_presorted,
     get_distance_distribution_emd_df,
+    same_cell_emd_pairs,
 )
 
 
@@ -218,3 +219,20 @@ def test_emd_pair_guard_not_triggered_when_pooling(monkeypatch) -> None:
         pool_seeds=True,
     )
     assert len(df) == 6
+
+
+def test_same_cell_emd_pairs_keeps_one_cross_mode_row_per_cell() -> None:
+    """Cross-mode rows pair each cell with itself; intra-mode rows are kept."""
+    df = same_cell_emd_pairs(
+        get_distance_distribution_emd_df(
+            all_distance_dict=_toy_distance_dict(),
+            packing_modes=["observed", "random"],
+            distance_measures=["nucleus"],
+            results_dir=None,
+            pool_seeds=True,
+        )
+    )
+    cross = df[df["packing_mode_1"] != df["packing_mode_2"]]
+    assert (cross["cell_id_1"] == cross["cell_id_2"]).all()
+    assert sorted(cross["cell_id_1"]) == ["cell_a", "cell_b"]
+    assert len(df) - len(cross) == 2
