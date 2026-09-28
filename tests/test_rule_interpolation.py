@@ -1748,6 +1748,43 @@ class TestValidationResultIsSaved:
         assert list(qvals.index) == expected["cell_ids"]
 
 
+class TestValidationPoolSeeds:
+    """``run_mixed_rule_validation`` must forward seed pooling to the distance EMD."""
+
+    def test_pool_seeds_reaches_the_distance_emd_call(self, monkeypatch):
+        from cellpack_analysis.lib import distance as distance_mod
+        from cellpack_analysis.lib import rule_interpolation as ri
+
+        seen = {}
+
+        def _spy(**kwargs):
+            seen.update(kwargs)
+            return pd.DataFrame()
+
+        monkeypatch.setattr(distance_mod, "get_distance_distribution_emd_df", _spy)
+
+        rng = np.random.default_rng(0)
+        dist = {
+            dm: {
+                m: {f"c{i}": {str(s): rng.uniform(0, 2, 20) for s in range(3)} for i in range(3)}
+                for m in ("real", "random", "interpolated")
+            }
+            for dm in ("nucleus",)
+        }
+        occ = _make_occupancy_dict("real", ["random", "interpolated"], n_baseline_cells=6, seed=1)
+
+        ri.run_mixed_rule_validation(
+            combined_occupancy_dict=occ,
+            channel_map=_make_channel_map("real", ["random", "interpolated"]),
+            baseline_mode="real",
+            packing_modes=["random", "interpolated"],
+            distance_measures=["nucleus"],
+            mixed_rule_distance_dict=dist,
+            pool_seeds=True,
+        )
+        assert seen.get("pool_seeds") is True
+
+
 # ---------------------------------------------------------------------------
 # Tests: ValidationResult with AIC
 # ---------------------------------------------------------------------------

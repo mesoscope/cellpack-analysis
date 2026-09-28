@@ -621,6 +621,7 @@ def validate(config_path: str) -> None:
             occupancy_emd_df=_runner_occupancy_emd_df,
             distance_emd_df=_runner_distance_emd_df,
             distance_envelope_test_result=_runner_envelope_results,
+            pool_seeds=val_analysis_config.emd_pool_seeds,
         )
 
         # Summary plot comparing mixed rule to individual rules

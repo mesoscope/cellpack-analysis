@@ -2213,6 +2213,7 @@ def run_mixed_rule_validation(
     occupancy_emd_df: "pd.DataFrame | None" = None,
     distance_emd_df: "pd.DataFrame | None" = None,
     distance_envelope_test_result: dict[str, Any] | None = None,
+    pool_seeds: bool = False,
 ) -> ValidationResult:
     """Run orthogonal validation checks for the mixed packing rule.
 
@@ -2260,6 +2261,9 @@ def run_mixed_rule_validation(
         Pre-computed pairwise envelope test result dict (e.g. from a prior
         ``run_pairwise_envelope_test`` step).  When provided the internal
         ``pairwise_envelope_test`` call is skipped.
+    pool_seeds
+        Pool each cell's seeds into one curve before the pairwise distance EMD
+        (config key ``emd_pool_seeds``). Per-seed replicate data trips the pair guard.
 
     Returns
     -------
@@ -2304,6 +2308,7 @@ def run_mixed_rule_validation(
                 results_dir=results_dir,
                 recalculate=recalculate,
                 suffix="_mixed_rule_validation",
+                pool_seeds=pool_seeds,
             )
 
         if distance_envelope_test is not None:
