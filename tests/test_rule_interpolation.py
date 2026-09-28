@@ -312,20 +312,11 @@ class TestFitTargetMatchesProductionCombinedCurve:
         assert finite.sum() > 0.5 * common.size  # not a vacuous comparison
         np.testing.assert_allclose(target[finite], combined[finite], rtol=1e-10)
 
-    def test_coverage_mask_divergence_exists_and_is_inert(self):
-        """F8: the target is *not* coverage-masked; today that changes nothing.
+    def test_no_coverage_masked_band_on_the_round_1_grid(self):
+        """F8: the grid ends at the smallest cell's support, so target and plotted curve agree.
 
-        The plotted combined curve is additionally coverage-masked
-        (``occupancy._apply_coverage_mask``, min_coverage_fraction 0.95), so it
-        is NaN in the sparse high-x tail where the fit target is still finite.
-        Those rows drop out of the fit anyway, because every design column is
-        built from the same coverage-masked combined curves and is therefore NaN
-        there too. This test asserts both halves: that the divergence band is
-        real in production-shaped data, and that it is inert for the solution.
-
-        It cannot detect a *future* divergence driven by different data (a design
-        column built from a different cell set or support rule) -- the comment at
-        the target site is the guard for that.
+        A grid reaching past any cell's support would bring back a band where the plotted
+        curve is coverage-masked but the fit target is still finite.
         """
         occ = _production_occupancy()
         combined = np.asarray(occ["real"]["combined"]["occupancy"], dtype=float)
@@ -335,21 +326,9 @@ class TestFitTargetMatchesProductionCombinedCurve:
             individual, sorted(individual.keys()), common
         )
 
-        divergence = np.isfinite(target) & ~np.isfinite(combined)
-        assert divergence.any(), "fixture must produce a coverage-masked tail band"
-
-        # Every design column is NaN across that band, so _valid_row_mask drops it.
-        design = np.column_stack(
-            [np.asarray(occ[m]["combined"]["occupancy"], dtype=float) for m in ("random",)]
-        )
-        assert not _valid_row_mask(target, design)[divergence].any()
-
-        # And the fit is identical whether or not the target is masked there.
-        fit_unmasked, _ = _solve_nnls_masked(target, design, "unmasked")
-        target_masked = target.copy()
-        target_masked[~np.isfinite(combined)] = np.nan
-        fit_masked, _ = _solve_nnls_masked(target_masked, design, "masked")
-        np.testing.assert_allclose(fit_unmasked, fit_masked, atol=1e-12)
+        assert common[-1] < 4.5  # the short cells' support, not x_max
+        np.testing.assert_array_equal(np.isfinite(target), np.isfinite(combined))
+        np.testing.assert_allclose(target, combined, rtol=1e-10)
 
 
 class TestFitTargetShortSupport:

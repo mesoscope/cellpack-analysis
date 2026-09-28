@@ -364,6 +364,7 @@ def _write_validation_analysis_config(
     for passthrough_key in (
         "suffix",
         "minimum_distance_um",
+        "available_minimum_distance_um",
         "emd_pool_seeds",
         "skip_mixed_rule_validation",
         "num_workers",

@@ -12,6 +12,7 @@ from cellpack_analysis.lib.occupancy import (
     _compute_single_cell_occupancy,
     _get_common_xvals_from_kde,
     _load_cached_occupancy,
+    _make_task_kde_dict,
     _occupancy_cache_meta_path,
     _write_occupancy_cache_meta,
     get_binned_occupancy_dict_from_distance_dict,
@@ -495,19 +496,19 @@ class TestApplyCoverageMask:
 
 
 # ---------------------------------------------------------------------------
-# Tests: D2 — grid density and full-support range
+# Tests: the round-1 occupancy grid
 # ---------------------------------------------------------------------------
 
 
 class TestOccupancyGridResolution:
-    """D2: num_points is 1000 and the grid spans the full [0, xlim] support."""
+    """Round-1 grid: 250 points on [0, smallest cell's max available distance]."""
 
-    def test_default_num_points_is_1000(self):
-        assert defaults.OCCUPANCY_NUM_POINTS == 1000
+    def test_default_num_points_is_250(self):
+        assert defaults.OCCUPANCY_NUM_POINTS == 250
         for dm in ("nucleus", "z"):
-            assert defaults.OCCUPANCY_PARAMS[dm]["num_points"] == 1000
+            assert defaults.OCCUPANCY_PARAMS[dm]["num_points"] == 250
 
-    def test_default_xlims_span_full_support(self):
+    def test_default_xlims_cap_the_grid(self):
         assert defaults.OCCUPANCY_PARAMS["nucleus"]["xlim"] == 6
         assert defaults.OCCUPANCY_PARAMS["z"]["xlim"] == 8
         for dm in ("nucleus", "z"):
@@ -529,13 +530,28 @@ class TestOccupancyGridResolution:
         merged.update(config_params)
         for dm in ("nucleus", "z"):
             assert "num_points" not in merged[dm]
-            assert merged[dm].get("num_points", defaults.OCCUPANCY_NUM_POINTS) == 1000
+            assert merged[dm].get("num_points", defaults.OCCUPANCY_NUM_POINTS) == 250
 
-    def test_explicit_x_max_gives_full_support_grid(self):
-        """An explicit x_max produces linspace(x_min, x_max, num_points) exactly."""
+    def test_grid_ends_at_smallest_cell_max(self):
         rng = np.random.default_rng(11)
-        # Cell data stops well short of x_max; the grid must still reach it.
-        kde_dict = {"cell_0": {"available": gaussian_kde(rng.exponential(1.0, size=200))}}
+        short, long = rng.uniform(0, 3, size=200), rng.uniform(0, 5, size=200)
+        kde_dict = {
+            "cell_0": {"available": gaussian_kde(short)},
+            "cell_1": {"available": gaussian_kde(long)},
+        }
+        grid = _get_common_xvals_from_kde(
+            distance_kde_dict=kde_dict,
+            cell_id_map={"real": ["cell_0", "cell_1"]},
+            num_points=defaults.OCCUPANCY_NUM_POINTS,
+            pct_min_cells=0,
+            x_min=0,
+            x_max=8,
+        )
+        np.testing.assert_allclose(grid, np.linspace(0, short.max(), 250))
+
+    def test_x_max_caps_the_grid(self):
+        rng = np.random.default_rng(12)
+        kde_dict = {"cell_0": {"available": gaussian_kde(rng.uniform(0, 10, size=200))}}
         grid = _get_common_xvals_from_kde(
             distance_kde_dict=kde_dict,
             cell_id_map={"real": ["cell_0"]},
@@ -544,22 +560,9 @@ class TestOccupancyGridResolution:
             x_min=0,
             x_max=6,
         )
-        np.testing.assert_allclose(grid, np.linspace(0, 6, 1000))
-
-    def test_z_measure_grid_reaches_eight(self):
-        rng = np.random.default_rng(12)
-        kde_dict = {"cell_0": {"available": gaussian_kde(rng.exponential(1.0, size=200))}}
-        grid = _get_common_xvals_from_kde(
-            distance_kde_dict=kde_dict,
-            cell_id_map={"real": ["cell_0"]},
-            num_points=defaults.OCCUPANCY_NUM_POINTS,
-            pct_min_cells=0,
-            x_min=0,
-            x_max=8,
-        )
         assert grid[0] == 0.0
-        assert grid[-1] == pytest.approx(8.0)
-        assert grid.size == 1000
+        assert grid[-1] == pytest.approx(6.0)
+        assert grid.size == 250
 
 
 # ---------------------------------------------------------------------------
@@ -619,6 +622,13 @@ class TestOccupancyCacheStamp:
         loaded = _load_cached_occupancy(save_path, {"real": "S"}, expected_meta=self._meta(x_max=6))
         assert loaded is None
 
+    def test_floor_mismatch_is_rejected(self, tmp_path):
+        save_path = self._write_cache(
+            tmp_path, {**self._meta(), "available_minimum_distance_um": -0.5}
+        )
+        expected = {**self._meta(), "available_minimum_distance_um": -1.0}
+        assert _load_cached_occupancy(save_path, {"real": "S"}, expected_meta=expected) is None
+
     def test_missing_sidecar_is_rejected(self, tmp_path):
         """A legacy cache with unknown provenance is treated as invalid."""
         save_path = self._write_cache(tmp_path, None)
@@ -664,3 +674,63 @@ class TestOccupancyCacheStamp:
     def test_sidecar_path_is_beside_the_cache(self, tmp_path):
         save_path = tmp_path / "nucleus_occupancy.dat"
         assert _occupancy_cache_meta_path(save_path) == tmp_path / "nucleus_occupancy.meta.json"
+
+
+class TestMakeTaskKdeDict:
+    """Payload slicing for the occupancy process backend.
+
+    ``get_kde_occupancy_for_single_cell`` touches only
+    ``distance_kde_dict[cell_id][mode]`` and ``[cell_id]["available"]``. The thread
+    backend shares the whole dict in memory for free, but a process backend pickles
+    whatever it is handed *once per cell*, so passing the full dict would ship every
+    cell's KDEs to every worker -- which is why a naive ``ProcessPoolExecutor`` swap
+    is slower than threads rather than faster.
+    """
+
+    @staticmethod
+    def _kde_dict():
+        rng = np.random.default_rng(0)
+        return {
+            f"c{i}": {
+                "mode_a": gaussian_kde(rng.normal(0, 1, 50)),
+                "mode_b": gaussian_kde(rng.normal(0, 1, 50)),
+                "available": gaussian_kde(rng.normal(0, 1, 80)),
+            }
+            for i in range(4)
+        }
+
+    def test_thread_backend_shares_the_dict_unchanged(self):
+        """Threads must get the identical object -- no copying, no slicing cost."""
+        d = self._kde_dict()
+        assert _make_task_kde_dict("c1", "mode_a", d, use_processes=False) is d
+
+    def test_process_backend_ships_only_the_target_cell_and_mode(self):
+        d = self._kde_dict()
+        sliced = _make_task_kde_dict("c1", "mode_a", d, use_processes=True)
+        assert set(sliced) == {"c1"}
+        assert set(sliced["c1"]) == {"mode_a", "available"}
+        assert sliced["c1"]["mode_a"] is d["c1"]["mode_a"]
+        assert sliced["c1"]["available"] is d["c1"]["available"]
+
+    def test_missing_mode_survives_as_missing(self):
+        """A missing mode must still read as missing so the early-return still fires."""
+        d = self._kde_dict()
+        sliced = _make_task_kde_dict("c1", "absent_mode", d, use_processes=True)
+        assert "absent_mode" not in sliced.get("c1", {})
+        assert get_kde_occupancy_for_single_cell("c1", "absent_mode", sliced) is None
+
+    def test_missing_cell_yields_empty_dict(self):
+        d = self._kde_dict()
+        assert _make_task_kde_dict("nope", "mode_a", d, use_processes=True) == {}
+
+    def test_sliced_payload_reproduces_the_full_dict_result(self):
+        """Slicing must not change the computed occupancy at all."""
+        d = self._kde_dict()
+        xvals = np.linspace(-2, 2, 40)
+        full = get_kde_occupancy_for_single_cell("c1", "mode_a", d, common_xvals=xvals)
+        sliced_input = _make_task_kde_dict("c1", "mode_a", d, use_processes=True)
+        sliced = get_kde_occupancy_for_single_cell("c1", "mode_a", sliced_input, common_xvals=xvals)
+        assert full is not None and sliced is not None
+        np.testing.assert_allclose(
+            full[1]["occupancy_common"], sliced[1]["occupancy_common"], equal_nan=True
+        )

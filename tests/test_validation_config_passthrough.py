@@ -14,7 +14,8 @@ from cellpack_analysis.analysis.workflows import run_rule_interpolation_workflow
 
 BEHAVIOUR_KEYS = {
     "suffix": "_margin028",
-    "minimum_distance_um": -0.5,
+    "minimum_distance_um": -0.108,
+    "available_minimum_distance_um": -1.0,
     "emd_pool_seeds": True,
     "skip_mixed_rule_validation": False,
 }

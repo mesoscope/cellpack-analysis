@@ -161,6 +161,7 @@ class AnalysisConfig:
         )
         self.num_workers = self.config.get("num_workers", defaults.NUM_WORKERS)
         self.distance_backend = self.config.get("distance_backend", defaults.DISTANCE_BACKEND)
+        self.occupancy_backend = self.config.get("occupancy_backend", defaults.OCCUPANCY_BACKEND)
 
     def _setup_analysis_params(self) -> None:
         """Set top-level analysis parameters."""
@@ -189,16 +190,22 @@ class AnalysisConfig:
         for legacy_key in ("filter_minimum_distance", "available_minimum_distance"):
             if legacy_key in self.config:
                 raise ValueError(
-                    f"'{legacy_key}' is replaced by 'minimum_distance_um' (microns, applied "
-                    "to both occupancy numerator and denominator)"
+                    f"'{legacy_key}' is replaced by 'minimum_distance_um' (puncta) and "
+                    "'available_minimum_distance_um' (available space), both in microns"
                 )
         self.minimum_distance_um: float | None = self.config.get(
             "minimum_distance_um", defaults.MINIMUM_DISTANCE_UM
         )
-        # Same floor in raw (pixel) distance units.
+        self.available_minimum_distance_um: float | None = self.config.get(
+            "available_minimum_distance_um", defaults.AVAILABLE_MINIMUM_DISTANCE_UM
+        )
+        # Same floors in raw (pixel) distance units.
         self.minimum_distance: float | None = None
         if self.minimum_distance_um is not None:
             self.minimum_distance = self.minimum_distance_um / PIXEL_SIZE_IN_UM
+        self.available_minimum_distance: float | None = None
+        if self.available_minimum_distance_um is not None:
+            self.available_minimum_distance = self.available_minimum_distance_um / PIXEL_SIZE_IN_UM
 
     def _setup_ks_params(self) -> None:
         """Set Kolmogorov-Smirnov test parameters."""
@@ -824,7 +831,7 @@ class AnalysisRunner:
             suffix=config.suffix,
             normalization=config.normalization,
             distance_measure=occupancy_distance_measure,
-            minimum_distance=config.minimum_distance,
+            minimum_distance=config.available_minimum_distance,
         )
         self.shared_data["distance_kde_dict"][occupancy_distance_measure] = distance_kde_dict
 
@@ -846,6 +853,11 @@ class AnalysisRunner:
             x_min=0,
             x_max=config.occupancy_params[occupancy_distance_measure]["xlim"],
             num_workers=config.num_workers,
+            parallel_backend=config.occupancy_backend,
+            floors_um={
+                "minimum_distance_um": config.minimum_distance_um,
+                "available_minimum_distance_um": config.available_minimum_distance_um,
+            },
         )
 
         self.shared_data["occupancy_dict"][occupancy_distance_measure] = occupancy_dict

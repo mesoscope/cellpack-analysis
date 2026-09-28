@@ -1489,8 +1489,8 @@ def get_distance_distribution_kde(
         Bandwidth method for the Gaussian KDE
     minimum_distance
         Floor in raw (pixel) units for the available-space distances, applied before
-        normalization. Packed distances arrive normalized and must already be floored at
-        the same value by ``filter_invalids_from_distance_distribution_dict``.
+        normalization. Packed distances arrive normalized and already floored by
+        ``filter_invalids_from_distance_distribution_dict``.
 
     Returns
     -------

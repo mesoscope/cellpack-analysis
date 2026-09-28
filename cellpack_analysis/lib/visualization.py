@@ -846,11 +846,9 @@ def plot_occupancy_ratio(
 
     ax.xaxis.set_major_locator(MaxNLocator(4, integer=True))
     ax.yaxis.set_major_locator(MaxNLocator(3, integer=True))
-    if xlim is not None:
-        ax.set_xlim((0, xlim))
-    else:
-        cur_xlim = ax.get_xlim()
-        ax.set_xlim((0, cur_xlim[1]))
+    # End the axis at the grid end so there is no empty space.
+    x_end = max(float(occupancy_dict[mode]["combined"]["xvals"][-1]) for mode in channel_map)
+    ax.set_xlim((0, x_end if xlim is None else min(xlim, x_end)))
     if ylim is not None:
         ax.set_ylim((0, ylim))
     ax.axhline(1, linewidth=1, color="gray", linestyle="--", zorder=1)
@@ -2548,7 +2546,8 @@ def _draw_lower_occupancy_cell(
         ax.plot(xvals, mean_occ, color=color, linewidth=0.8, label=mode_lbl)
         ax.axhline(1, color="gray", linewidth=0.5, linestyle="--")
 
-    _xlim = xlim if xlim is not None else (float(xvals[-1]) if len(xvals) else 1.0)
+    x_end = float(xvals[-1]) if len(xvals) else (xlim or 1.0)
+    _xlim = x_end if xlim is None else min(xlim, x_end)
     ax.set_xlim(0, _xlim)
     if ylim is not None:
         ax.set_ylim(0, ylim)
@@ -2898,12 +2897,8 @@ def plot_rule_interpolation_fit(
                 zorder=0,
             )
 
-    # ── Overlay the realizable ("expected") mixture ──────────────────────────
-    # Drawn from sum-normalized coefficients, matching the recipe's
-    # gradient_weights and the percent labels below.  The raw reconstruction is a
-    # target no packing can meet when sum(c) != 1.  See
-    # FitResult.expected_occupancy.
-    recon: np.ndarray = fit_result.expected_occupancy(distance_measure, plot_type)
+    # ── Overlay NNLS reconstruction ──────────────────────────────────────────
+    recon: np.ndarray = fit_result.reconstructed_occupancy[distance_measure][plot_type]
     common_xvals: np.ndarray = dm_occ[baseline_mode]["combined"]["xvals"]
 
     mse: float = (
@@ -2929,21 +2924,15 @@ def plot_rule_interpolation_fit(
 
     ax.xaxis.set_major_locator(MaxNLocator(4, integer=True))
     ax.yaxis.set_major_locator(MaxNLocator(3, integer=True))
-    if xlim is not None:
-        ax.set_xlim((0, xlim))
-    else:
-        ax.set_xlim((0, ax.get_xlim()[1]))
+    # End the axis at the grid end so there is no empty space.
+    x_end = float(common_xvals[-1])
+    ax.set_xlim((0, x_end if xlim is None else min(xlim, x_end)))
     if ylim is not None:
         ax.set_ylim((0, ylim))
     ax.axhline(1, linewidth=1, color="gray", linestyle="--", zorder=1)
     ax.set_xlabel(get_distance_label(distance_measure))
     ax.set_ylabel("Occupancy Ratio")
-    # Name the quantity: this is the raw NNLS least-squares MSE, i.e. the error of
-    # `reconstructed_occupancy`, NOT the distance from the dash-dot curve drawn
-    # above.  That curve is `expected_occupancy`, the same solution divided by
-    # sum(c) so it is realizable by the recipe's gradient_weights (D1.5).  When
-    # sum(c) != 1 the two differ, and the label must not imply otherwise.
-    ax.set_title(f"{plot_type.capitalize()}, NNLS fit MSE: {mse:.4f}")
+    ax.set_title(f"{plot_type.capitalize()}, MSE: {mse:.4f}")
 
     contrib_text = "\n".join(
         f"{label_tables.MODE_LABELS.get(k, k)}: {v:.0%}" for k, v in relative_contribs.items()

@@ -2,7 +2,7 @@ import json
 import logging
 import pickle
 import warnings
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Literal
 
@@ -109,7 +109,7 @@ def _occupancy_cache_meta_path(save_path: Path) -> Path:
 
     Scope -- this is a *parameter* guard, not a provenance guard. The stamp holds
     only the grid fields (``distance_measure``, ``num_points``, ``x_min``,
-    ``x_max``, ``bandwidth``, ``min_coverage_fraction``), so three kinds of
+    ``x_max``, ``bandwidth``, ``min_coverage_fraction``) and the distance floors, so three kinds of
     staleness still pass it and must be invalidated by hand via
     ``recalculate["run_occupancy_analysis"]``:
 
@@ -401,6 +401,32 @@ def _apply_coverage_mask(
         arr[tail] = np.nan
 
 
+def _make_task_kde_dict(
+    cell_id: str,
+    mode: str,
+    distance_kde_dict: dict[str, dict[str, gaussian_kde]],
+    use_processes: bool,
+) -> dict[str, dict[str, gaussian_kde]]:
+    """Return the KDE dict to hand to a single ``get_kde_occupancy_for_single_cell`` task.
+
+    For the thread backend the full dict is shared in-memory at no cost, so it is
+    returned unchanged. For the process backend only this cell's ``mode`` and
+    ``"available"`` KDEs are included: the payload is pickled once per submitted task,
+    so passing the whole dict would ship every cell's KDEs to every worker and make a
+    process pool *slower* than threads rather than faster.
+
+    A missing cell yields an empty dict and a missing mode is simply absent, so the
+    caller's "mode not present" early return behaves identically on both backends.
+    """
+    if not use_processes:
+        return distance_kde_dict
+    cell_entry = distance_kde_dict.get(cell_id)
+    if cell_entry is None:
+        return {}
+    task_entry = {k: cell_entry[k] for k in (mode, "available") if k in cell_entry}
+    return {cell_id: task_entry}
+
+
 def _compute_mode_kde_occupancy(
     mode: str,
     structure_id: str,
@@ -412,6 +438,7 @@ def _compute_mode_kde_occupancy(
     num_points: int,
     num_workers: int | None = None,
     min_coverage_fraction: float = 0.95,
+    parallel_backend: str = "thread",
 ) -> dict[str, Any]:
     """
     Compute individual and combined KDE occupancy for one packing mode.
@@ -428,13 +455,20 @@ def _compute_mode_kde_occupancy(
 
     cell_ids = cell_id_map.get(structure_id, [])
 
-    with ThreadPoolExecutor(max_workers=num_workers) as executor:
+    # ``num_workers=None`` means "unbounded" for threads, which is fine, but a process
+    # pool must be bounded or it would fork one interpreter per CPU by default; fall
+    # back to the ProcessPoolExecutor default rather than an unbounded count.
+    use_processes = parallel_backend == "process"
+    executor_cls = ProcessPoolExecutor if use_processes else ThreadPoolExecutor
+    max_workers = num_workers if num_workers and num_workers > 0 else None
+
+    with executor_cls(max_workers=max_workers) as executor:
         futures = {
             executor.submit(
                 get_kde_occupancy_for_single_cell,
                 cell_id,
                 mode,
-                distance_kde_dict,
+                _make_task_kde_dict(cell_id, mode, distance_kde_dict, use_processes),
                 common_xvals,
                 bandwidth,
                 num_points,
@@ -521,31 +555,22 @@ def _get_common_xvals_from_kde(
     x_min
         Minimum x value for the grid (default 0)
     x_max
-        Maximum x value for the grid. When provided it is honored directly.
-        When ``None`` the upper bound falls back to the largest per-cell
-        maximum available distance.
+        Optional cap on the grid end.
 
     Returns
     -------
     :
-        A common x-axis grid (numpy array) spanning the range of available distances across cells
-        with sufficient data.
+        A common x-axis grid ending at the smallest cell's maximum available
+        distance (capped at ``x_max``), so every cell covers the whole grid.
     """
-    # Honor an explicit x_max (the workflow passes the per-measure xlim). Only
-    # when it is not provided do we fall back to a data-driven upper bound: the
-    # largest per-cell maximum available distance. (The previous percentile
-    # logic collapsed the grid to roughly the smallest cell's range.)
+    # Round-1 grid; the float32 dataset max keeps the grid float32, as in round 1.
+    x_max_to_use = min(
+        distance_kde_dict[cell_id]["available"].dataset.max()
+        for cell_ids in cell_id_map.values()
+        for cell_id in cell_ids
+    )
     if x_max is not None:
-        x_max_to_use = float(x_max)
-    else:
-        x_max_values = np.array(
-            [
-                float(np.nanmax(distance_kde_dict[cell_id]["available"].dataset))
-                for cell_ids in cell_id_map.values()
-                for cell_id in cell_ids
-            ]
-        )
-        x_max_to_use = float(np.max(x_max_values))
+        x_max_to_use = min(x_max_to_use, x_max)
 
     return np.linspace(x_min, x_max_to_use, num_points)
 
@@ -565,6 +590,8 @@ def get_kde_occupancy_dict(
     pct_min_cells: float = 0.05,
     num_workers: int | None = None,
     min_coverage_fraction: float = 0.95,
+    parallel_backend: str = "thread",
+    floors_um: dict[str, float | None] | None = None,
 ) -> dict[str, dict[str, dict[str, Any]]]:
     """
     Load or compute occupancy ratio from distance distribution KDEs.
@@ -593,11 +620,10 @@ def get_kde_occupancy_dict(
     x_min
         Minimum x value for occupancy evaluation. Default is 0
     x_max
-        Maximum x value for occupancy evaluation. Default is None
+        Cap on the grid end; the grid ends at the smallest cell's maximum
+        available distance. Default is None
     pct_min_cells
-        Deprecated and ignored. The common x-axis grid now spans
-        ``[x_min, x_max]`` (the per-measure ``xlim``); retained only for
-        backward-compatible call signatures.
+        Deprecated and ignored; retained for backward-compatible call signatures.
     num_workers
         Number of worker threads for parallel per-cell KDE evaluation.
         ``None`` lets :class:`~concurrent.futures.ThreadPoolExecutor` choose
@@ -608,6 +634,14 @@ def get_kde_occupancy_dict(
         last point meeting this threshold is blanked (NaN) to remove the
         cell-dropout sawtooth; the low-x start is preserved. Default 0.95.
         Set to 0 to disable.
+    parallel_backend
+        Executor used for the per-cell KDE evaluation: ``"thread"`` (default) or
+        ``"process"``. Threads are cheaper and suffice when the KDE releases the
+        GIL; ``"process"`` pays pickling cost per cell but scales past it on
+        large cohorts. Any other value is treated as ``"thread"``.
+    floors_um
+        Distance floors (microns) the KDEs were built with; stamped into the cache
+        sidecar so a floor change is not silently reloaded.
 
     Returns
     -------
@@ -638,6 +672,7 @@ def get_kde_occupancy_dict(
         "x_max": x_max,
         "bandwidth": bandwidth,
         "min_coverage_fraction": min_coverage_fraction,
+        **{k: None if v is None else float(v) for k, v in (floors_um or {}).items()},
     }
 
     if not recalculate and save_path is not None:
@@ -669,6 +704,7 @@ def get_kde_occupancy_dict(
             num_points,
             num_workers=num_workers,
             min_coverage_fraction=min_coverage_fraction,
+            parallel_backend=parallel_backend,
         )
         for mode, structure_id in channel_map.items()
     }

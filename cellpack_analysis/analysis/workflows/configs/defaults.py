@@ -21,9 +21,12 @@ DISTRIBUTION_METHOD = "kde"
 Options: "discrete" (histogram-based) or "kde" (kernel density estimate).
 Note: "kde" is the default; set to "discrete" in your config to use the histogram-based approach."""
 
-MINIMUM_DISTANCE_UM: float | None = -0.5
-"""Distance floor in **microns**, applied alike to observed, simulated and available-space
-distances (occupancy numerator and denominator). ``None`` drops only NaN/inf."""
+MINIMUM_DISTANCE_UM: float | None = -0.108
+"""Floor in **microns** for observed and simulated distances (round 1: -1 px).
+``None`` drops only NaN/inf."""
+
+AVAILABLE_MINIMUM_DISTANCE_UM: float | None = -1.0
+"""Floor in **microns** for available-space distances (occupancy denominator; round 1)."""
 
 DISTANCE_MEASURES = [
     "nearest",
@@ -54,7 +57,7 @@ OCCUPANCY_DISTANCE_MEASURES = [
     "z",
 ]
 """Default distance measures for occupancy analysis."""
-OCCUPANCY_NUM_POINTS = 1000
+OCCUPANCY_NUM_POINTS = 250
 """Number of points on the common occupancy grid.
 
 Used as the fallback whenever a config's ``occupancy_params[dm]`` omits
@@ -142,6 +145,12 @@ DISTANCE_BACKEND = "thread"
 """Default executor backend for the per-cell distance calculation.
 Options: "thread" (shares meshes in-memory, GIL-bound) or "process" (bypasses the
 GIL via separate processes; faster for many cells at the cost of pickling meshes)."""
+
+OCCUPANCY_BACKEND = "thread"
+"""Default executor backend for the per-cell KDE occupancy calculation.
+Options: "thread" (shares the KDE dict in-memory) or "process" (bypasses the GIL;
+only this cell's mode + available KDEs are pickled per task, so the payload stays
+small). Defaults to "thread" so existing configs are unaffected."""
 
 DISTANCE_PDF_PARAMS: dict = {
     "bandwidth": 0.2,

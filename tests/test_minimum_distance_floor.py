@@ -1,7 +1,7 @@
-"""Tests for the single distance floor, ``minimum_distance_um``.
+"""Tests for the distance floors, ``minimum_distance_um`` and ``available_minimum_distance_um``.
 
-Occupancy is ``pdf(packed) / pdf(available)``. Both sides must be floored at the same
-depth in the same units, or the ratio is biased near the nucleus surface.
+Occupancy is ``pdf(packed) / pdf(available)``. As in round 1, puncta and available-space
+distances each have their own floor, both in microns.
 """
 
 import json
@@ -26,17 +26,23 @@ CHANNEL_MAP = {MODE: STRUCTURE_ID}
 AVAILABLE_PIXELS = np.arange(-5.0, 6.0)
 PACKED_PIXELS = np.array([-4.0, -3.0, -2.0, 0.0, 3.0, 6.0, np.nan])
 
-FLOOR_UM = -0.28
+PUNCTA_FLOOR_UM = -0.28
+AVAILABLE_FLOOR_UM = -0.5
+
+FLOOR_KEYS = [
+    ("minimum_distance_um", "minimum_distance"),
+    ("available_minimum_distance_um", "available_minimum_distance"),
+]
 
 
-def _kde_after_workflow_prep(minimum_distance):
+def _kde_after_workflow_prep(puncta_floor, available_floor):
     """Floor, normalize and KDE the fixture exactly as ``AnalysisRunner`` does."""
     all_distance_dict = {"nucleus": {MODE: {CELL_ID: {"0": PACKED_PIXELS.copy()}}}}
     mesh_information_dict = {
         STRUCTURE_ID: {CELL_ID: {"nuc_grid_distances": AVAILABLE_PIXELS.copy()}}
     }
     all_distance_dict = filter_invalids_from_distance_distribution_dict(
-        all_distance_dict, minimum_distance=minimum_distance
+        all_distance_dict, minimum_distance=puncta_floor
     )
     all_distance_dict = normalize_distance_dictionary(
         all_distance_dict, mesh_information_dict, CHANNEL_MAP
@@ -47,20 +53,22 @@ def _kde_after_workflow_prep(minimum_distance):
         channel_map=CHANNEL_MAP,
         save_dir=None,
         distance_measure="nucleus",
-        minimum_distance=minimum_distance,
+        minimum_distance=available_floor,
     )
     return kde_dict[CELL_ID]
 
 
-def test_numerator_and_denominator_share_the_floor():
-    """The same micron floor must trim packed and available distances alike."""
-    cell = _kde_after_workflow_prep(FLOOR_UM / PIXEL_SIZE_IN_UM)
+def test_each_floor_trims_only_its_own_side():
+    """The puncta floor trims packed distances; the available floor trims the grid."""
+    cell = _kde_after_workflow_prep(
+        PUNCTA_FLOOR_UM / PIXEL_SIZE_IN_UM, AVAILABLE_FLOOR_UM / PIXEL_SIZE_IN_UM
+    )
 
     packed_um = PACKED_PIXELS[~np.isnan(PACKED_PIXELS)] * PIXEL_SIZE_IN_UM
     available_um = AVAILABLE_PIXELS * PIXEL_SIZE_IN_UM
-    expected_packed = packed_um[packed_um >= FLOOR_UM]
-    expected_available = available_um[available_um >= FLOOR_UM]
-    assert len(expected_packed) == 4 and len(expected_available) == 8, "fixture drift"
+    expected_packed = packed_um[packed_um >= PUNCTA_FLOOR_UM]
+    expected_available = available_um[available_um >= AVAILABLE_FLOOR_UM]
+    assert len(expected_packed) == 4 and len(expected_available) == 10, "fixture drift"
 
     np.testing.assert_allclose(np.sort(cell[MODE].dataset.ravel()), expected_packed, atol=1e-6)
     np.testing.assert_allclose(
@@ -70,7 +78,7 @@ def test_numerator_and_denominator_share_the_floor():
 
 def test_none_keeps_every_finite_distance():
     """``None`` drops only NaN/inf on both sides."""
-    cell = _kde_after_workflow_prep(None)
+    cell = _kde_after_workflow_prep(None, None)
 
     assert cell[MODE].dataset.size == np.isfinite(PACKED_PIXELS).sum()
     assert cell["available"].dataset.size == AVAILABLE_PIXELS.size
@@ -82,6 +90,11 @@ def _write_config(tmp_path, **extra):
     return path
 
 
+def test_defaults_are_the_round_1_floors():
+    assert raw.defaults.MINIMUM_DISTANCE_UM == -0.108
+    assert raw.defaults.AVAILABLE_MINIMUM_DISTANCE_UM == -1.0
+
+
 @pytest.mark.parametrize("legacy_key", ["filter_minimum_distance", "available_minimum_distance"])
 def test_legacy_keys_are_rejected(tmp_path, legacy_key):
     """A retired key must fail loudly, not be silently ignored."""
@@ -89,23 +102,25 @@ def test_legacy_keys_are_rejected(tmp_path, legacy_key):
         raw.AnalysisConfig(str(_write_config(tmp_path, **{legacy_key: -1})))
 
 
-@pytest.mark.parametrize(
-    ("extra", "expected_um"),
-    [({}, raw.defaults.MINIMUM_DISTANCE_UM), ({"minimum_distance_um": -0.28}, -0.28)],
-)
-def test_config_converts_microns_to_pixels(tmp_path, monkeypatch, extra, expected_um):
-    """The config value is in microns; the raw-distance floor is that value in pixels."""
+@pytest.mark.parametrize(("key", "px_attr"), FLOOR_KEYS)
+def test_config_converts_microns_to_pixels(tmp_path, monkeypatch, key, px_attr):
+    """Each floor is read in microns and applied to raw distances in pixels."""
     monkeypatch.setattr(raw, "get_project_root", lambda: tmp_path)
-    config = raw.AnalysisConfig(str(_write_config(tmp_path, **extra)))
+    default = raw.AnalysisConfig(str(_write_config(tmp_path)))
+    config = raw.AnalysisConfig(str(_write_config(tmp_path, **{key: -0.28})))
 
-    assert config.minimum_distance_um == expected_um
-    assert config.minimum_distance == pytest.approx(expected_um / PIXEL_SIZE_IN_UM)
+    assert getattr(config, key) == -0.28
+    assert getattr(config, px_attr) == pytest.approx(-0.28 / PIXEL_SIZE_IN_UM)
+    assert getattr(default, px_attr) == pytest.approx(getattr(default, key) / PIXEL_SIZE_IN_UM)
+    other = next(k for k, _ in FLOOR_KEYS if k != key)
+    assert getattr(config, other) == getattr(default, other)
 
 
-def test_none_disables_the_floor(tmp_path, monkeypatch):
-    """An explicit ``null`` turns the floor off rather than falling back to the default."""
+@pytest.mark.parametrize(("key", "px_attr"), FLOOR_KEYS)
+def test_none_disables_the_floor(tmp_path, monkeypatch, key, px_attr):
+    """An explicit ``null`` turns a floor off rather than falling back to the default."""
     monkeypatch.setattr(raw, "get_project_root", lambda: tmp_path)
-    config = raw.AnalysisConfig(str(_write_config(tmp_path, minimum_distance_um=None)))
+    config = raw.AnalysisConfig(str(_write_config(tmp_path, **{key: None})))
 
-    assert config.minimum_distance_um is None
-    assert config.minimum_distance is None
+    assert getattr(config, key) is None
+    assert getattr(config, px_attr) is None
