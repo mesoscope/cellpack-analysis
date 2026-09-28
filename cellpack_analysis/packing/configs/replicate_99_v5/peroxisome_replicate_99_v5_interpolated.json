@@ -1,0 +1,55 @@
+{
+    "packing_id": "peroxisome",
+    "structure_name": "peroxisome",
+    "structure_id": "SLC25A17",
+    "condition": "replicate_99_v5",
+    "generate_recipes": true,
+    "generate_configs": true,
+    "use_mean_cell": false,
+    "use_cells_in_8d_sphere": true,
+    "num_cells": null,
+    "get_counts_from_data": true,
+    "get_size_from_data": true,
+    "get_bounding_box_from_mesh": true,
+    "num_processes": 128,
+    "number_of_replicates": 99,
+    "skip_completed": true,
+    "dry_run": false,
+    "recipe_data": {
+        "random": {},
+        "nucleus_gradient": {
+            "gradients": [
+                "nucleus_gradient"
+            ]
+        },
+        "membrane_gradient": {
+            "gradients": [
+                "membrane_gradient"
+            ]
+        },
+        "apical_gradient": {
+            "gradients": [
+                "apical_gradient_1"
+            ]
+        },
+        "interpolated": {
+            "gradients": [
+                "uniform",
+                "nucleus_gradient",
+                "membrane_gradient",
+                "apical_gradient_1"
+            ],
+            "gradient_weights": {
+                "uniform": 0.0,
+                "nucleus_gradient": 0.2523593029855575,
+                "membrane_gradient": 0.028326389495719594,
+                "apical_gradient_1": 0.719314307518723
+            }
+        }
+    },
+    "packings_to_run": {
+        "rules": [
+            "interpolated"
+        ]
+    }
+}
