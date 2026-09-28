@@ -21,6 +21,7 @@
         "z"
     ],
     "occupancy_params": {
+        "per_rule_panels": true,
         "nucleus": {
             "xlim": 6,
             "ylim": 3.2,

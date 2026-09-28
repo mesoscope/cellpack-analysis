@@ -895,6 +895,18 @@ class AnalysisRunner:
             show_legend=config.occupancy_params.get("show_legend", True),
         )
 
+        if config.occupancy_params.get("per_rule_panels", False):
+            _ = visualization.plot_occupancy_ratio_per_rule(
+                occupancy_dict=self.shared_data["occupancy_dict"][occupancy_distance_measure],
+                modes=[mode for mode in config.channel_map if mode != config.structure_id],
+                figures_dir=occupancy_figures_dir,
+                suffix=config.suffix,
+                normalization=config.normalization,
+                distance_measure=occupancy_distance_measure,
+                ylim=config.occupancy_params[occupancy_distance_measure]["ylim"],
+                save_format=config.save_format,
+            )
+
     def _run_occupancy_emd_analysis(self, config: AnalysisConfig) -> None:
         """Run occupancy EMD analysis including pairwise matrix plots."""
         if "occupancy_dict" not in self.shared_data:

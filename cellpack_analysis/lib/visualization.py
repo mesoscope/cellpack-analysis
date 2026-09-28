@@ -872,6 +872,90 @@ def plot_occupancy_ratio(
     return fig, ax
 
 
+def plot_occupancy_ratio_per_rule(
+    occupancy_dict: dict[str, dict[str, dict[str, Any]]],
+    modes: list[str],
+    figures_dir: Path | None = None,
+    suffix: str = "",
+    normalization: str | None = None,
+    distance_measure: str = "nucleus",
+    ylim: float | None = None,
+    save_format: str = "png",
+    figsize: tuple[float, float] = (7.0, 1.6),
+) -> tuple[Figure, np.ndarray]:
+    """
+    Plot each mode's occupancy ratio in its own panel: mean + pointwise envelope.
+
+    Parameters
+    ----------
+    occupancy_dict
+        Occupancy dictionary as in :func:`plot_occupancy_ratio`.
+    modes
+        Packing modes to plot, one panel each, left to right.
+    figures_dir
+        Directory to save the figure.  Skipped when ``None``.
+    suffix
+        Suffix appended to the saved filename.
+    normalization
+        Normalization method for axis labelling.
+    distance_measure
+        Distance measure label used for axes and filename.
+    ylim
+        Upper y-axis limit.
+    save_format
+        File format for saving.
+    figsize
+        Figure size in inches.
+
+    Returns
+    -------
+    :
+        Tuple containing figure and array of axes.
+    """
+    logger.info("Plotting per-rule occupancy ratio")
+
+    plt.rcParams.update({"font.size": 8})
+    fig, axs = plt.subplots(1, len(modes), figsize=figsize, dpi=300, squeeze=False)
+    axs = axs[0]
+    for ax, mode in zip(axs, modes, strict=True):
+        color = label_tables.COLOR_PALETTE.get(mode, "gray")
+        combined = occupancy_dict[mode]["combined"]
+        xvals = combined["xvals"]
+        ax.plot(xvals, combined["occupancy"], color=color, linewidth=1.5, zorder=2)
+        ax.fill_between(
+            xvals,
+            combined["envelope_lo"],
+            combined["envelope_hi"],
+            alpha=0.15,
+            color=color,
+            linewidth=0,
+            zorder=1,
+        )
+        ax.axhline(1, linewidth=1, color="gray", linestyle="--", zorder=1)
+        ax.set_title(label_tables.MODE_LABELS.get(mode, mode), color=color)
+        ax.xaxis.set_major_locator(MaxNLocator(4, integer=True))
+        ax.yaxis.set_major_locator(MaxNLocator(4, integer=True))
+        ax.set_xlim((0, float(xvals[-1])))
+        if ylim is not None:
+            ax.set_ylim((0, ylim))
+        ax.set_xlabel(get_distance_label(distance_measure, normalization))
+    axs[0].set_ylabel("Occupancy Ratio")
+    sns.despine(fig=fig)
+
+    fig.tight_layout()
+    if figures_dir is not None:
+        fig.savefig(
+            figures_dir / f"{distance_measure}_occupancy_ratio_per_rule{suffix}.{save_format}",
+            dpi=300,
+            bbox_inches="tight",
+            transparent=True,
+        )
+
+    plt.show()
+
+    return fig, axs
+
+
 def plot_virtual_mixture_comparison(
     xvals: np.ndarray,
     virtual_mean: np.ndarray,
