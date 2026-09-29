@@ -34,5 +34,6 @@
         "calculate_distances",
         "run_per_cell_envelope_test"
     ],
-    "minimum_distance_um": -0.28
+    "minimum_distance_um": -0.108,
+    "available_minimum_distance_um": -1.0
 }

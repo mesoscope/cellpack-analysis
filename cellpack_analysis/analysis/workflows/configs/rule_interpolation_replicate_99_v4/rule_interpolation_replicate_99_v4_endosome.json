@@ -79,5 +79,7 @@
     "validation_output_path": "rule_interpolation_replicate_99_v4/endosome/validation",
     "validation_config_out_path": "rule_interpolation_validation/replicate_99_v4",
     "emd_pool_seeds": true,
-    "minimum_distance_um": -0.28
+    "emd_same_cell": true,
+    "minimum_distance_um": -0.108,
+    "available_minimum_distance_um": -1.0
 }

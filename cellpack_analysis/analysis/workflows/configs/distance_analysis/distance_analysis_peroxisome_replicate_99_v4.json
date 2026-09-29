@@ -16,6 +16,7 @@
     "num_workers": 16,
     "distance_backend": "process",
     "emd_pool_seeds": true,
+    "emd_same_cell": true,
     "envelope_test_params": {
         "envelope_type": "pointwise",
         "statistic": "intdev",
@@ -40,5 +41,6 @@
         "run_ks_analysis",
         "run_per_cell_envelope_test"
     ],
-    "minimum_distance_um": -0.28
+    "minimum_distance_um": -0.108,
+    "available_minimum_distance_um": -1.0
 }

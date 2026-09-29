@@ -1,0 +1,44 @@
+{
+    "packing_id": "endosome",
+    "structure_name": "endosome",
+    "structure_id": "RAB5A",
+    "condition": "replicate_99_v4",
+    "generate_recipes": true,
+    "generate_configs": true,
+    "use_mean_cell": false,
+    "use_cells_in_8d_sphere": true,
+    "num_cells": null,
+    "get_counts_from_data": true,
+    "get_size_from_data": true,
+    "get_bounding_box_from_mesh": true,
+    "num_processes": 64,
+    "number_of_replicates": 99,
+    "skip_completed": true,
+    "dry_run": false,
+    "recipe_data": {
+        "random": {},
+        "nucleus_gradient": {
+            "gradients": [
+                "nucleus_gradient"
+            ]
+        },
+        "membrane_gradient": {
+            "gradients": [
+                "membrane_gradient"
+            ]
+        },
+        "apical_gradient": {
+            "gradients": [
+                "apical_gradient"
+            ]
+        }
+    },
+    "packings_to_run": {
+        "rules": [
+            "random",
+            "nucleus_gradient",
+            "membrane_gradient",
+            "apical_gradient"
+        ]
+    }
+}

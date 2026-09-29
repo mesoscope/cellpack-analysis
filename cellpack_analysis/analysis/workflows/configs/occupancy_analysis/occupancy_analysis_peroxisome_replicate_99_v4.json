@@ -21,6 +21,7 @@
         "z"
     ],
     "occupancy_params": {
+        "per_rule_panels": true,
         "nucleus": {
             "xlim": 6,
             "ylim": 3.2,
@@ -45,5 +46,6 @@
         "run_occupancy_emd_analysis",
         "run_occupancy_pairwise_envelope_test"
     ],
-    "minimum_distance_um": -0.28
+    "minimum_distance_um": -0.108,
+    "available_minimum_distance_um": -1.0
 }
