@@ -335,7 +335,8 @@ def get_kde_occupancy_for_single_cell(
     avail_max = float(np.max(available_distances))
 
     cell_lo = max(0.0, avail_min)
-    cell_hi = avail_max
+    # Round-1 end: the sparse tail past q95 is noise
+    cell_hi = float(np.percentile(available_distances, 95))
 
     cell_xvals = np.linspace(cell_lo, cell_hi, num_points)
     occupancy, pdf_occupied, pdf_available = pdf_ratio(
