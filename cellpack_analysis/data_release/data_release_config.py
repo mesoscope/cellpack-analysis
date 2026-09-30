@@ -58,6 +58,7 @@ class DataReleaseConfig:
         self.dataset = self.config.get("dataset", DEFAULT_DATASET)
         self.condition = self.config.get("condition", DEFAULT_CONDITION)
         self.experiment = self.config.get("experiment", DEFAULT_EXPERIMENT)
+        self.source_experiment = self.config.get("source_experiment")
         self.rules = self.config.get("rules", DEFAULT_RULES)
 
         # Structure configuration
@@ -72,6 +73,8 @@ class DataReleaseConfig:
 
         # Workflow step toggles
         self.upload_meshes_to_s3 = self.config.get("upload_meshes_to_s3", True)
+        self.rebuild_all_simularium = self.config.get("rebuild_all_simularium", False)
+        self.export_voxelized_images = self.config.get("export_voxelized_images", False)
         self.update_simularium_files = self.config.get("update_simularium_files", True)
         self.upload_simularium_to_s3 = self.config.get("upload_simularium_to_s3", True)
         self.generate_thumbnails = self.config.get("generate_thumbnails", True)

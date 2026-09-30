@@ -45,7 +45,7 @@ def update_simularium_mesh_urls(file_path: Path, s3_mesh_url: str, cell_id: str)
             mapping["geometry"]["url"] = f"{s3_mesh_url}struct_mesh_{cell_id}.obj"
 
     with open(file_path, "w") as f:
-        json.dump(sim_data, f, indent=2)
+        json.dump(sim_data, f)
     logger.debug(f"Updated mesh URLs in {file_path}")
 
 
@@ -75,7 +75,7 @@ def update_simularium_colors(
             mapping["geometry"]["color"] = mcolors.to_hex(color_mapping["structure"])
 
     with open(file_path, "w") as f:
-        json.dump(sim_data, f, indent=2)
+        json.dump(sim_data, f)
     logger.debug(f"Updated colors in {file_path}")
 
 
@@ -163,6 +163,64 @@ def generate_and_upload_thumbnail(
         upload_to_s3(s3_client, thumbnail_path, bucket, thumbnail_s3_key)
 
     return f"{base_s3_url}{thumbnail_s3_key}"
+
+
+def _agent_records(data: list[float]) -> list[list[float]]:
+    """Split a frame's flat agent data into one record per agent."""
+    records = []
+    start = 0
+    while start < len(data):
+        end = start + 11 + int(data[start + 10])
+        records.append(data[start:end])
+        start = end
+    return records
+
+
+def combine_seed_simulariums(seed_paths: list[Path], output_path: Path) -> None:
+    """
+    Write one simularium file with each single-seed file as a frame.
+
+    Every frame keeps its compartments and all of its agents.
+
+    Parameters
+    ----------
+    seed_paths
+        Single-frame simularium files, one per seed, in frame order
+    output_path
+        Path to save the combined simularium file
+    """
+    seed_data = []
+    for seed_path in seed_paths:
+        with open(seed_path) as f:
+            seed_data.append(json.load(f))
+
+    combined = seed_data[0]
+    type_mapping = combined["trajectoryInfo"]["typeMapping"]
+    frame_records = []
+    for seed_path, sim_data in zip(seed_paths, seed_data, strict=True):
+        if sim_data["trajectoryInfo"]["typeMapping"] != type_mapping:
+            raise ValueError(f"Type mapping differs in {seed_path}")
+        (frame,) = sim_data["spatialData"]["bundleData"]
+        frame_records.append(_agent_records(frame["data"]))
+
+    # Offset non-mesh agent IDs so each frame's agents are distinct
+    id_stride = 1 + int(max(record[1] for records in frame_records for record in records))
+    frames = []
+    for frame_index, records in enumerate(frame_records):
+        data: list[float] = []
+        for record in records:
+            if type_mapping[str(int(record[2]))]["geometry"]["displayType"] != "OBJ":
+                record[1] += frame_index * id_stride
+            data.extend(record)
+        frames.append({"frameNumber": frame_index, "time": float(frame_index), "data": data})
+
+    combined["trajectoryInfo"]["totalSteps"] = len(frames)
+    combined["trajectoryInfo"]["timeStepSize"] = 1.0
+    combined["spatialData"]["bundleSize"] = len(frames)
+    combined["spatialData"]["bundleData"] = frames
+    with open(output_path, "w") as f:
+        json.dump(combined, f)
+    logger.debug(f"Combined {len(frames)} seed files into {output_path}")
 
 
 def process_simularium_file(

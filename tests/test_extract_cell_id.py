@@ -30,6 +30,12 @@ from cellpack_analysis.data_release.run_data_release_workflow import extract_cel
             "rules_shape",
             "743916",
         ),
+        (
+            "results_peroxisome_replicate_99_v4_random_743916_all",
+            "peroxisome",
+            "replicate_99_v4",
+            "743916",
+        ),
     ],
 )
 def test_extract_cell_id(file_stem: str, packing_id: str, condition: str, expected: str) -> None:

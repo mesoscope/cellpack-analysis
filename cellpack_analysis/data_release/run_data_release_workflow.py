@@ -3,6 +3,8 @@ Workflow to export simularium paths as CSV for BFF data release.
 
 This workflow supports modular execution of the following steps:
 1. Upload meshes to S3
+   (optional) Rebuild combined simularium files from per-seed files
+   (optional) Export voxelized images and thumbnails of the first replicate
 2. Update simularium files locally (update mesh URLs and colors)
 3. Upload updated simularium files to S3
 4. Generate and upload thumbnails
@@ -18,8 +20,10 @@ Usage:
 """
 
 import argparse
+import json
 import logging
 import time
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
 import numpy as np
@@ -29,9 +33,11 @@ from tqdm import tqdm
 from cellpack_analysis.data_release.csv_metadata_config import get_metadata_dict
 from cellpack_analysis.data_release.data_release_config import DataReleaseConfig
 from cellpack_analysis.lib.get_structure_stats_dataframe import get_structure_stats_dataframe
+from cellpack_analysis.lib.img_io import generate_composite_thumbnail, voxelize_packing
 from cellpack_analysis.lib.io import format_time
 from cellpack_analysis.lib.s3_utils import get_s3_client, upload_meshes_for_structure, upload_to_s3
 from cellpack_analysis.lib.simularium_utils import (
+    combine_seed_simulariums,
     generate_and_upload_thumbnail,
     update_simularium_colors,
     update_simularium_mesh_urls,
@@ -46,10 +52,11 @@ def extract_cell_id(file_stem: str, packing_id: str, condition: str) -> str:
     Handles stems of the form:
         results_{packing_id}_{condition}_{cell_id}_seed_{seed}
         results_{packing_id}_{condition}_{cell_id}
+        results_{packing_id}_{condition}_{rule}_{cell_id}_all
     """
     prefix = f"results_{packing_id}_{condition}_"
-    remainder = file_stem.removeprefix(prefix)
-    return remainder.rsplit("_seed_", 1)[0]
+    remainder = file_stem.removeprefix(prefix).removesuffix("_all")
+    return remainder.rsplit("_seed_", 1)[0].rsplit("_", 1)[-1]
 
 
 def upload_meshes(config: DataReleaseConfig) -> None:
@@ -85,6 +92,119 @@ def upload_meshes(config: DataReleaseConfig) -> None:
             max_workers=config.max_workers,
         )
         logger.info(f"Processed {count} meshes for {structure_id}")
+
+
+def rebuild_all_simularium_files(config: DataReleaseConfig) -> None:
+    """
+    Rebuild each cell's combined simularium file from its per-seed files.
+
+    Reads from ``source_experiment`` and writes to ``experiment``, so packing outputs stay as is.
+
+    Parameters
+    ----------
+    config
+        Data release configuration
+    """
+    logger.info("Step 1b: Rebuilding combined simularium files from per-seed files")
+    if config.source_experiment in (None, config.experiment):
+        raise ValueError("rebuild_all_simularium needs a source_experiment other than experiment")
+
+    packing_dir = config.base_datadir / "packing_outputs" / config.dataset
+    tasks = []
+    for structure_config in config.structures:
+        for rule in config.rules:
+            relative_dir = Path(rule) / structure_config["packing_id"] / "spheresSST"
+            source_dir = packing_dir / config.source_experiment / relative_dir
+            output_dir = packing_dir / config.experiment / relative_dir
+            for seeds_file in sorted(source_dir.glob("seeds_*.txt")):
+                stem = seeds_file.stem.removeprefix("seeds_")
+                seeds = [int(float(seed)) for seed in seeds_file.read_text().split()]
+                seed_paths = [source_dir / f"results_{stem}_seed_{s}.simularium" for s in seeds]
+                tasks.append((seed_paths, output_dir / f"results_{stem}_all.simularium"))
+
+    if config.dry_run:
+        logger.info(f"[DRY RUN] Would rebuild {len(tasks)} combined simularium files")
+        return
+
+    for output_dir in {output_path.parent for _, output_path in tasks}:
+        output_dir.mkdir(parents=True, exist_ok=True)
+    with ProcessPoolExecutor(max_workers=config.max_workers) as executor:
+        futures = [executor.submit(combine_seed_simulariums, *task) for task in tasks]
+        for future in tqdm(as_completed(futures), total=len(futures), desc="Rebuilding files"):
+            future.result()
+    logger.info(f"Rebuilt {len(tasks)} combined simularium files")
+
+
+def _export_voxelized_image(
+    recipe_path: Path,
+    positions_path: Path,
+    tiff_path: Path,
+    thumbnail_path: Path,
+    channel_colors: dict,
+) -> None:
+    """Voxelize the first replicate of a packing and save its thumbnail."""
+    with open(positions_path) as f:
+        (positions,) = json.load(f)["0"].values()
+    voxelize_packing(recipe_path, positions, tiff_path)
+    generate_composite_thumbnail(
+        tiff_path, thumbnail_path, image_type="cellpack", channel_colors=channel_colors
+    )
+
+
+def export_voxelized_images(config: DataReleaseConfig) -> None:
+    """
+    Export the voxelized image and thumbnail of each packing's first replicate.
+
+    Rebuilds the images cellPACK exports with ``image_export_options`` from the recipes and
+    ``source_experiment`` positions, so no repacking is needed. Nothing is uploaded.
+
+    Parameters
+    ----------
+    config
+        Data release configuration
+    """
+    logger.info("Step 1c: Exporting voxelized images and thumbnails")
+    if config.source_experiment is None:
+        raise ValueError("export_voxelized_images needs a source_experiment")
+
+    packing_dir = config.base_datadir / "packing_outputs" / config.dataset
+    tasks = []
+    for structure_config in config.structures:
+        packing_id = structure_config["packing_id"]
+        channel_colors = config.get_channel_colors(structure_config["color"])
+        for rule in config.rules:
+            relative_dir = Path(rule) / packing_id / "spheresSST"
+            source_dir = packing_dir / config.source_experiment / relative_dir
+            figure_dir = packing_dir / config.experiment / relative_dir / "figures"
+            recipe_dir = config.base_datadir / "recipes" / packing_id / config.condition / rule
+            for seeds_file in sorted(source_dir.glob("seeds_*.txt")):
+                stem = seeds_file.stem.removeprefix("seeds_")
+                cell_id = stem.rsplit("_", 1)[-1]
+                first_seed = int(float(seeds_file.read_text().split()[0]))
+                tasks.append(
+                    (
+                        recipe_dir / f"{packing_id}_{rule}_{cell_id}.json",
+                        source_dir / f"positions_{stem}.json",
+                        figure_dir / f"voxelized_image_{stem}_seed_{first_seed}.ome.tiff",
+                        config.thumbnail_dir / f"results_{stem}_all_thumbnail.png",
+                        channel_colors,
+                    )
+                )
+
+    missing = [path for task in tasks for path in task[:2] if not path.exists()]
+    if missing:
+        raise FileNotFoundError(f"{len(missing)} recipe or positions files missing: {missing[0]}")
+    if config.dry_run:
+        logger.info(f"[DRY RUN] Would export {len(tasks)} voxelized images and thumbnails")
+        return
+
+    for figure_dir in {task[2].parent for task in tasks}:
+        figure_dir.mkdir(parents=True, exist_ok=True)
+    with ProcessPoolExecutor(max_workers=config.max_workers) as executor:
+        futures = [executor.submit(_export_voxelized_image, *task) for task in tasks]
+        for future in tqdm(as_completed(futures), total=len(futures), desc="Exporting images"):
+            future.result()
+    logger.info(f"Exported {len(tasks)} voxelized images and thumbnails")
 
 
 def collect_simularium_files(config: DataReleaseConfig) -> list[dict]:
@@ -307,7 +427,11 @@ def create_csv_files(
             file_path.relative_to(config.base_datadir).parent.as_posix()
             + f"/thumbnails/{thumbnail_filename}"
         )
-        thumbnail_s3_path = f"{config.base_s3_url}{thumbnail_s3_key}"
+        thumbnail_s3_path = (
+            f"{config.base_s3_url}{thumbnail_s3_key}"
+            if (config.thumbnail_dir / thumbnail_filename).exists()
+            else ""
+        )
 
         # Get structure stats
         stats = _get_cell_stats(cell_id, file_info["structure_id"], structure_stats_df)
@@ -562,8 +686,8 @@ def run_data_release_workflow(
         Path to the configuration file
     steps_to_run
         List of specific steps to run. If None, runs all enabled steps from config.
-        Valid steps: 'upload_meshes', 'update_simularium', 'upload_simularium',
-                     'upload_thumbnails', 'create_csv'
+        Valid steps: 'upload_meshes', 'rebuild_all_simularium', 'export_voxelized_images',
+                     'update_simularium', 'upload_simularium', 'upload_thumbnails', 'create_csv'
     dry_run
         If True, log operations without uploading or modifying files
     """
@@ -579,6 +703,8 @@ def run_data_release_workflow(
     if steps_to_run is None:
         # Run based on config settings
         run_upload_meshes = config.upload_meshes_to_s3
+        run_rebuild_all_simularium = config.rebuild_all_simularium
+        run_export_voxelized_images = config.export_voxelized_images
         run_update_simularium = config.update_simularium_files
         run_upload_simularium = config.upload_simularium_to_s3
         run_upload_thumbnails = config.generate_thumbnails
@@ -587,6 +713,8 @@ def run_data_release_workflow(
     else:
         # Run specific steps requested
         run_upload_meshes = "upload_meshes" in steps_to_run
+        run_rebuild_all_simularium = "rebuild_all_simularium" in steps_to_run
+        run_export_voxelized_images = "export_voxelized_images" in steps_to_run
         run_update_simularium = "update_simularium" in steps_to_run
         run_upload_simularium = "upload_simularium" in steps_to_run
         run_upload_thumbnails = "upload_thumbnails" in steps_to_run
@@ -596,6 +724,14 @@ def run_data_release_workflow(
     # Step 1: Upload meshes
     if run_upload_meshes:
         upload_meshes(config)
+
+    # Step 1b: Rebuild combined simularium files
+    if run_rebuild_all_simularium:
+        rebuild_all_simularium_files(config)
+
+    # Step 1c: Export voxelized images and thumbnails
+    if run_export_voxelized_images:
+        export_voxelized_images(config)
 
     # Collect simularium files for subsequent steps
     files_to_process = []
@@ -644,6 +780,16 @@ if __name__ == "__main__":
         help="Run only the upload meshes step",
     )
     parser.add_argument(
+        "--rebuild_all_simularium",
+        action="store_true",
+        help="Run only the rebuild combined simularium files step",
+    )
+    parser.add_argument(
+        "--export_voxelized_images",
+        action="store_true",
+        help="Run only the export voxelized images and thumbnails step",
+    )
+    parser.add_argument(
         "--update_simularium",
         action="store_true",
         help="Run only the update simularium files step",
@@ -681,6 +827,8 @@ if __name__ == "__main__":
     if any(
         [
             args.upload_meshes,
+            args.rebuild_all_simularium,
+            args.export_voxelized_images,
             args.update_simularium,
             args.upload_simularium,
             args.upload_thumbnails,
@@ -691,6 +839,10 @@ if __name__ == "__main__":
         steps_to_run = []
         if args.upload_meshes:
             steps_to_run.append("upload_meshes")
+        if args.rebuild_all_simularium:
+            steps_to_run.append("rebuild_all_simularium")
+        if args.export_voxelized_images:
+            steps_to_run.append("export_voxelized_images")
         if args.update_simularium:
             steps_to_run.append("update_simularium")
         if args.upload_simularium:

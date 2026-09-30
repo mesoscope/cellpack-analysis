@@ -11,6 +11,11 @@ The data release workflow provides modular execution of the following steps:
 4. **Generate and upload thumbnails** - Create composite thumbnails and upload to S3
 5. **Create CSV files** - Export S3 file paths and metadata as CSV
 
+An optional step before step 2 rebuilds each cell's combined `_all` simularium file from its
+per-seed files, reading from `source_experiment` and writing to `experiment`. Another optional
+step rebuilds the voxelized image of each packing's first replicate from its recipe and positions,
+and saves its thumbnail locally for step 4, so packings exported without images need no repacking.
+
 Each step can be run independently or together, controlled via configuration file or command-line arguments.
 
 ## Files
@@ -45,6 +50,12 @@ Run only specific steps using command-line flags:
 ```bash
 # Upload meshes only
 python run_data_release_workflow.py --config_file configs/data_release_config.json --upload_meshes
+
+# Rebuild combined simularium files from per-seed files (local, no upload)
+python run_data_release_workflow.py --config_file configs/data_release_config.json --rebuild_all_simularium
+
+# Export voxelized images and thumbnails of the first replicate (local, no upload)
+python run_data_release_workflow.py --config_file configs/data_release_config.json --export_voxelized_images
 
 # Update simularium files only (local changes, no upload)
 python run_data_release_workflow.py --config_file configs/data_release_config.json --update_simularium
@@ -99,6 +110,7 @@ The workflow is configured using a JSON file. See `configs/data_release_config.j
 | `dataset` | string | Dataset name | `"8d_sphere_data"` |
 | `condition` | string | Experimental condition | `"rules_shape"` |
 | `experiment` | string | Experiment name | `"norm_weights"` |
+| `source_experiment` | string | Experiment to rebuild combined files and images from | `null` |
 | `rules` | array | List of packing rules to process | `["random", "nucleus_gradient", ...]` |
 | `structures` | array | List of structure configurations | See below |
 | `base_channel_colors` | object | RGB colors for nucleus and membrane | See example config |
@@ -108,6 +120,8 @@ The workflow is configured using a JSON file. See `configs/data_release_config.j
 | Parameter | Type | Description | Default |
 |-----------|------|-------------|---------|
 | `upload_meshes_to_s3` | boolean | Enable mesh upload step | `true` |
+| `rebuild_all_simularium` | boolean | Enable combined simularium rebuild step | `false` |
+| `export_voxelized_images` | boolean | Enable voxelized image and thumbnail export step | `false` |
 | `update_simularium_files` | boolean | Enable simularium file update step | `true` |
 | `upload_simularium_to_s3` | boolean | Enable simularium upload step | `true` |
 | `generate_thumbnails` | boolean | Enable thumbnail generation step | `true` |

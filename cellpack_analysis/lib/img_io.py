@@ -1,8 +1,61 @@
+import json
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
+import trimesh
+from bioio_ome_tiff.writers import OmeTiffWriter
 from skimage import io
+from trimesh.voxel.creation import voxelize_subdivide
+
+
+def voxelize_packing(
+    recipe_path: Path | str, positions: list[list[float]], output_path: Path | str
+) -> None:
+    """
+    Save one packing as the voxelized image cellPACK writes with ``image_export_options``.
+
+    Matches the round-1 export options: 1-pixel voxels, filled meshes, z projection.
+
+    Parameters
+    ----------
+    recipe_path
+        Path to the recipe with the bounding box, the meshes and the sphere radius
+    positions
+        Sphere centers of the packing
+    output_path
+        Path to save the image, with membrane, nucleus and structure channels
+    """
+    with open(recipe_path) as f:
+        recipe = json.load(f)
+    bbox_min, bbox_max = np.array(recipe["bounding_box"], dtype=float)
+    size = tuple(np.maximum(bbox_max - bbox_min, 1).astype(int))
+    objects = recipe["objects"]
+
+    z_index, y_index, x_index = np.meshgrid(*(np.arange(n) for n in size[::-1]), indexing="ij")
+    coords = np.column_stack([x_index.ravel(), y_index.ravel(), z_index.ravel()]) + bbox_min
+    channels = []
+    for name in ["membrane_mesh", "nucleus_mesh"]:
+        mesh_info = objects[name]["representations"]["mesh"]
+        mesh = trimesh.load(Path(mesh_info["path"]) / mesh_info["name"], force="mesh")
+        grid = voxelize_subdivide(mesh, pitch=1.0).fill()
+        channels.append(grid.is_filled(coords).reshape(size, order="F"))
+
+    radius = next(obj["radius"] for obj in objects.values() if obj["type"] == "single_sphere")
+    x, y, z = np.ogrid[: size[0], : size[1], : size[2]]
+    spheres = np.zeros(size, dtype=bool)
+    for center in (np.asarray(positions) - bbox_min).astype(int):
+        distance = np.sqrt((x - center[0]) ** 2 + (y - center[1]) ** 2 + (z - center[2]) ** 2)
+        spheres |= distance <= radius
+    channels.append(spheres)
+
+    image = np.stack(channels).astype(np.uint8) * 255
+    OmeTiffWriter.save(
+        np.transpose(image, (3, 0, 2, 1)),  # CXYZ -> ZCYX
+        output_path,
+        dim_order="ZCYX",
+        channel_names=["membrane", "nucleus", "structure"],
+    )
 
 
 def generate_composite_thumbnail(
