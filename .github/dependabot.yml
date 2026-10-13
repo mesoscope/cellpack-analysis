@@ -7,6 +7,10 @@ updates:
     schedule:
       interval: "monthly"
 
+    # build-system dep has no lockfile version; it would drop the whole group
+    ignore:
+      - dependency-name: "uv-build"
+
     # Bundle version updates and security updates each into a single PR.
     groups:
       python-version-updates:
