@@ -1,0 +1,27 @@
+{
+    "structure_name": "peroxisome",
+    "structure_id": "mean",
+    "condition": "biological_variation",
+    "output_path": "data/packing_outputs/biological_variation/",
+    "recipe_template_path": "data/templates/recipes/biological_variation/variable_size_recipe_template.json",
+    "config_template_path": "data/templates/configs/biological_variation/variable_size_packing_config_template.json",
+    "generate_recipes": true,
+    "generate_configs": true,
+    "number_of_replicates": 305,
+    "use_mean_cell": true,
+    "use_cells_in_8d_sphere": true,
+    "get_counts_from_data": false,
+    "get_size_from_data": false,
+    "get_bounding_box_from_mesh": true,
+    "num_processes": 8,
+    "skip_completed": false,
+    "dry_run": false,
+    "recipe_data": {
+        "variable_size": {}
+    },
+    "packings_to_run": {
+        "rules": [
+            "variable_size"
+        ]
+    }
+}

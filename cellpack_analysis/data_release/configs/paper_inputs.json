@@ -1,0 +1,482 @@
+{
+  "tag": "v1.0.0",
+  "base_url": "https://cellpack-analysis-data.s3.us-west-2.amazonaws.com/release/v1.0.0/",
+  "groups": [
+    {
+      "name": "tables",
+      "description": "Cell cohort (all_cell_ids), variance dataset and per-structure puncta statistics (structure_stats, micrometer units).",
+      "used_by": "All figures and tables (cell lists, puncta counts and sizes); Table 1, Fig S1",
+      "include": [
+        "all_cell_ids.parquet",
+        "variance_dataset.parquet",
+        "structure_stats.parquet"
+      ],
+      "exclude": [
+        "**/all_positions_*",
+        "._*",
+        ".DS_Store"
+      ],
+      "expected_n_files": 3,
+      "archive": "tables.tar.gz",
+      "sha256": "1b6325b77a01258286ef712af8dc202c8d450e9a102f959ea75cf655fbceebd3",
+      "bytes": 317098906,
+      "n_files": 3
+    },
+    {
+      "name": "observed_SLC25A17",
+      "description": "Observed peroxisome puncta positions of the 8d-sphere cohort (305 cells).",
+      "used_by": "Figs 2-5, S3, S6-S9 (observed distances and occupancy)",
+      "include": [
+        "structure_data/SLC25A17/sample_8d/positions_SLC25A17.json"
+      ],
+      "exclude": [
+        "**/all_positions_*",
+        "._*",
+        ".DS_Store"
+      ],
+      "expected_n_files": 1,
+      "archive": "observed_SLC25A17.tar.gz",
+      "sha256": "9680d47a55b0b71e5c1a9688098434e637ef3e02725492b1958e0d95e3094b07",
+      "bytes": 560080,
+      "n_files": 1
+    },
+    {
+      "name": "observed_RAB5A",
+      "description": "Observed endosome puncta positions of the 8d-sphere cohort (442 cells).",
+      "used_by": "Figs 2-5, S3, S6-S9 (observed distances and occupancy)",
+      "include": [
+        "structure_data/RAB5A/sample_8d/positions_RAB5A.json"
+      ],
+      "exclude": [
+        "**/all_positions_*",
+        "._*",
+        ".DS_Store"
+      ],
+      "expected_n_files": 1,
+      "archive": "observed_RAB5A.tar.gz",
+      "sha256": "3ceda94ef98b2e72893abe8d40f15bd891dedc35e7dbbe857e0f64de37341c98",
+      "bytes": 610568,
+      "n_files": 1
+    },
+    {
+      "name": "meshes_SLC25A17",
+      "description": "Per-cell nucleus and membrane meshes (peroxisome; 3 files per cell).",
+      "used_by": "Figs 2-5, S3, S6-S10 (distances to nucleus and membrane); repacking",
+      "include": [
+        "structure_data/SLC25A17/meshes/*.obj"
+      ],
+      "exclude": [
+        "**/all_positions_*",
+        "._*",
+        ".DS_Store"
+      ],
+      "expected_n_files": 915,
+      "archive": "meshes_SLC25A17.tar.gz",
+      "sha256": "5622095c0cc64388cf8e8206a8f2896430f32972b62b9d7ca2e453117730f084",
+      "bytes": 189793239,
+      "n_files": 915
+    },
+    {
+      "name": "meshes_RAB5A",
+      "description": "Per-cell nucleus and membrane meshes (endosome; 3 files per cell).",
+      "used_by": "Figs 2-5, S3, S6-S10 (distances to nucleus and membrane); repacking",
+      "include": [
+        "structure_data/RAB5A/meshes/*.obj"
+      ],
+      "exclude": [
+        "**/all_positions_*",
+        "._*",
+        ".DS_Store"
+      ],
+      "expected_n_files": 1326,
+      "archive": "meshes_RAB5A.tar.gz",
+      "sha256": "b5621580a645d159cb7e24856e2c8b30d251d6a6c0730cc8aefc5d98d43c5c1f",
+      "bytes": 271357298,
+      "n_files": 1326
+    },
+    {
+      "name": "mesh_information_SLC25A17",
+      "description": "Per-cell mesh information pickle (peroxisome).",
+      "used_by": "Figs 2-5, S3, S6-S10 (distance normalization); Table 2, Fig S2",
+      "include": [
+        "structure_data/SLC25A17/mesh_information.dat"
+      ],
+      "exclude": [
+        "**/all_positions_*",
+        "._*",
+        ".DS_Store"
+      ],
+      "expected_n_files": 1,
+      "archive": "mesh_information_SLC25A17.tar.gz",
+      "sha256": "540c8430926b548a16db1627254860a0536ab67f7fc4dbb228c3eeace56d36a7",
+      "bytes": 380268107,
+      "n_files": 1
+    },
+    {
+      "name": "mesh_information_RAB5A",
+      "description": "Per-cell mesh information pickle (endosome).",
+      "used_by": "Figs 2-5, S3, S6-S10 (distance normalization); Table 2, Fig S2",
+      "include": [
+        "structure_data/RAB5A/mesh_information.dat"
+      ],
+      "exclude": [
+        "**/all_positions_*",
+        "._*",
+        ".DS_Store"
+      ],
+      "expected_n_files": 1,
+      "archive": "mesh_information_RAB5A.tar.gz",
+      "sha256": "f0869ce70d367f3140f09e3a2bb77d531d1cf75191962479fcd99b27b028b976",
+      "bytes": 549285028,
+      "n_files": 1
+    },
+    {
+      "name": "grid_distances_SLC25A17",
+      "description": "Per-cell available-space grid points and their distances (peroxisome; 6 arrays per cell).",
+      "used_by": "Figs 4-5, S8-S10 (occupancy denominator); Fig 4b",
+      "include": [
+        "structure_data/SLC25A17/grid_distances/*.npy"
+      ],
+      "exclude": [
+        "**/all_positions_*",
+        "._*",
+        ".DS_Store"
+      ],
+      "expected_n_files": 1830,
+      "archive": "grid_distances_SLC25A17.tar.gz",
+      "sha256": "93ead22a6a34f8a33b55cb8180074bf51b508c5a95ff534df0a7035bab40fcb9",
+      "bytes": 876409956,
+      "n_files": 1830
+    },
+    {
+      "name": "grid_distances_RAB5A",
+      "description": "Per-cell available-space grid points and their distances (endosome; 6 arrays per cell).",
+      "used_by": "Figs 4-5, S8-S10 (occupancy denominator); Fig 4b",
+      "include": [
+        "structure_data/RAB5A/grid_distances/*.npy"
+      ],
+      "exclude": [
+        "**/all_positions_*",
+        "._*",
+        ".DS_Store"
+      ],
+      "expected_n_files": 2652,
+      "archive": "grid_distances_RAB5A.tar.gz",
+      "sha256": "19610de4fdf5b457833c0384ee54567ae3b01571e60aa875314552131d60d5d3",
+      "bytes": 1236156787,
+      "n_files": 2652
+    },
+    {
+      "name": "mesh_information_mean",
+      "description": "Mean-cell mesh information pickle (used by the baseline, variable_count and variable_size packings).",
+      "used_by": "Fig 2b-f, S3, Table S1 (biological variation)",
+      "include": [
+        "structure_data/mean/mesh_information.dat"
+      ],
+      "exclude": [
+        "**/all_positions_*",
+        "._*",
+        ".DS_Store"
+      ],
+      "expected_n_files": 1,
+      "archive": "mesh_information_mean.tar.gz",
+      "sha256": "838ca93fc4179a75edd5c5bb8f973d0bb992d7865590714bf3a76864007b3753",
+      "bytes": 5069114,
+      "n_files": 1
+    },
+    {
+      "name": "meshes_mean",
+      "description": "Mean-cell nucleus and membrane meshes.",
+      "used_by": "Fig 2b-f, S3 (repacking the mean-cell biological variation packings)",
+      "include": [
+        "structure_data/mean/meshes/*.obj"
+      ],
+      "exclude": [
+        "**/all_positions_*",
+        "._*",
+        ".DS_Store"
+      ],
+      "expected_n_files": 2,
+      "archive": "meshes_mean.tar.gz",
+      "sha256": "91571e714a3494fe17cf1a52dfd4474ab9447705a91241d84ea7e2af5e28c9bf",
+      "bytes": 734200,
+      "n_files": 2
+    },
+    {
+      "name": "grid_distances_mean",
+      "description": "Mean-cell available-space grid points and distances.",
+      "used_by": "Fig 2b-f, S3 (repacking the mean-cell biological variation packings)",
+      "include": [
+        "structure_data/mean/grid_distances/*.npy"
+      ],
+      "exclude": [
+        "**/all_positions_*",
+        "._*",
+        ".DS_Store"
+      ],
+      "expected_n_files": 5,
+      "archive": "grid_distances_mean.tar.gz",
+      "sha256": "79e4b151d5051b0dc2af93d81218590a5f9a1eca6da4751a9bbfddf7c7870628",
+      "bytes": 4092608,
+      "n_files": 5
+    },
+    {
+      "name": "packings_replicate_99_v4_peroxisome_random",
+      "description": "Simulated peroxisome positions, rule random: 99 replicates in one file per cell (305 cells).",
+      "used_by": "Fig 3, 4d, 5, S6-S9",
+      "include": [
+        "packing_outputs/8d_sphere_data/replicate_99_v4/random/peroxisome/spheresSST/positions_*.json",
+        "packing_outputs/8d_sphere_data/replicate_99_v4/ENGINE_PROVENANCE.txt"
+      ],
+      "exclude": [
+        "**/all_positions_*",
+        "._*",
+        ".DS_Store"
+      ],
+      "expected_n_files": 306,
+      "archive": "packings_replicate_99_v4_peroxisome_random.tar.gz",
+      "sha256": "8b4d60d2c35e8ce4465b5b56350512ee87f80bafaab55483be9da65f26e69516",
+      "bytes": 107554886,
+      "n_files": 306
+    },
+    {
+      "name": "packings_replicate_99_v4_peroxisome_nucleus_gradient",
+      "description": "Simulated peroxisome positions, rule nucleus_gradient: 99 replicates in one file per cell (305 cells).",
+      "used_by": "Fig 3, 4d, 5, S6-S9",
+      "include": [
+        "packing_outputs/8d_sphere_data/replicate_99_v4/nucleus_gradient/peroxisome/spheresSST/positions_*.json"
+      ],
+      "exclude": [
+        "**/all_positions_*",
+        "._*",
+        ".DS_Store"
+      ],
+      "expected_n_files": 305,
+      "archive": "packings_replicate_99_v4_peroxisome_nucleus_gradient.tar.gz",
+      "sha256": "550199f321005ead0d5a27407280cce39c0e082862fa23a2a7cfb50a92c68fb4",
+      "bytes": 107379184,
+      "n_files": 305
+    },
+    {
+      "name": "packings_replicate_99_v4_peroxisome_membrane_gradient",
+      "description": "Simulated peroxisome positions, rule membrane_gradient: 99 replicates in one file per cell (305 cells).",
+      "used_by": "Fig 3, 4d, 5, S6-S9",
+      "include": [
+        "packing_outputs/8d_sphere_data/replicate_99_v4/membrane_gradient/peroxisome/spheresSST/positions_*.json"
+      ],
+      "exclude": [
+        "**/all_positions_*",
+        "._*",
+        ".DS_Store"
+      ],
+      "expected_n_files": 305,
+      "archive": "packings_replicate_99_v4_peroxisome_membrane_gradient.tar.gz",
+      "sha256": "f84f796b1e378e59595648b765b0cd5a0e447c0a8c285f42c85dd340c0cb2056",
+      "bytes": 107649113,
+      "n_files": 305
+    },
+    {
+      "name": "packings_replicate_99_v4_peroxisome_apical_gradient",
+      "description": "Simulated peroxisome positions, rule apical_gradient: 99 replicates in one file per cell (305 cells).",
+      "used_by": "Fig 3, 4d, 5, S6-S9",
+      "include": [
+        "packing_outputs/8d_sphere_data/replicate_99_v4/apical_gradient/peroxisome/spheresSST/positions_*.json"
+      ],
+      "exclude": [
+        "**/all_positions_*",
+        "._*",
+        ".DS_Store"
+      ],
+      "expected_n_files": 305,
+      "archive": "packings_replicate_99_v4_peroxisome_apical_gradient.tar.gz",
+      "sha256": "2c5cd25087717b911467f8f70b8828199e74913aafa7e670edd4a7c6f76583a8",
+      "bytes": 107324128,
+      "n_files": 305
+    },
+    {
+      "name": "packings_replicate_99_v4_peroxisome_interpolated",
+      "description": "Simulated peroxisome positions, rule interpolated: 99 replicates in one file per cell (305 cells).",
+      "used_by": "Fig 5, S6a-S9d (mixed rule)",
+      "include": [
+        "packing_outputs/8d_sphere_data/replicate_99_v4/interpolated/peroxisome/spheresSST/positions_*.json"
+      ],
+      "exclude": [
+        "**/all_positions_*",
+        "._*",
+        ".DS_Store"
+      ],
+      "expected_n_files": 305,
+      "archive": "packings_replicate_99_v4_peroxisome_interpolated.tar.gz",
+      "sha256": "0a7eacc4e05a4449f0fbb18f9227a8a3fcec338cef4e4ce20a6556ff9325ab4c",
+      "bytes": 107450048,
+      "n_files": 305
+    },
+    {
+      "name": "packings_replicate_99_v4_endosome_random",
+      "description": "Simulated endosome positions, rule random: 99 replicates in one file per cell (442 cells).",
+      "used_by": "Fig 3, 4d, 5, S6-S9",
+      "include": [
+        "packing_outputs/8d_sphere_data/replicate_99_v4/random/endosome/spheresSST/positions_*.json",
+        "packing_outputs/8d_sphere_data/replicate_99_v4/ENGINE_PROVENANCE.txt"
+      ],
+      "exclude": [
+        "**/all_positions_*",
+        "._*",
+        ".DS_Store"
+      ],
+      "expected_n_files": 443,
+      "archive": "packings_replicate_99_v4_endosome_random.tar.gz",
+      "sha256": "d45445af52eaa9c831376f39bd3df96ce31a142ed542c58bffafe2846269051c",
+      "bytes": 113868796,
+      "n_files": 443
+    },
+    {
+      "name": "packings_replicate_99_v4_endosome_nucleus_gradient",
+      "description": "Simulated endosome positions, rule nucleus_gradient: 99 replicates in one file per cell (442 cells).",
+      "used_by": "Fig 3, 4d, 5, S6-S9",
+      "include": [
+        "packing_outputs/8d_sphere_data/replicate_99_v4/nucleus_gradient/endosome/spheresSST/positions_*.json"
+      ],
+      "exclude": [
+        "**/all_positions_*",
+        "._*",
+        ".DS_Store"
+      ],
+      "expected_n_files": 442,
+      "archive": "packings_replicate_99_v4_endosome_nucleus_gradient.tar.gz",
+      "sha256": "f6011579f36608b1ecdd1a25ff16cbf5e80857e68c95b8ccf4338cc86b66364b",
+      "bytes": 113641921,
+      "n_files": 442
+    },
+    {
+      "name": "packings_replicate_99_v4_endosome_membrane_gradient",
+      "description": "Simulated endosome positions, rule membrane_gradient: 99 replicates in one file per cell (442 cells).",
+      "used_by": "Fig 3, 4d, 5, S6-S9",
+      "include": [
+        "packing_outputs/8d_sphere_data/replicate_99_v4/membrane_gradient/endosome/spheresSST/positions_*.json"
+      ],
+      "exclude": [
+        "**/all_positions_*",
+        "._*",
+        ".DS_Store"
+      ],
+      "expected_n_files": 442,
+      "archive": "packings_replicate_99_v4_endosome_membrane_gradient.tar.gz",
+      "sha256": "28ba5597ed38f20ba322bf76f6f1d40bc34388132aabc2433b2ec2d067b65722",
+      "bytes": 113942811,
+      "n_files": 442
+    },
+    {
+      "name": "packings_replicate_99_v4_endosome_apical_gradient",
+      "description": "Simulated endosome positions, rule apical_gradient: 99 replicates in one file per cell (442 cells).",
+      "used_by": "Fig 3, 4d, 5, S6-S9",
+      "include": [
+        "packing_outputs/8d_sphere_data/replicate_99_v4/apical_gradient/endosome/spheresSST/positions_*.json"
+      ],
+      "exclude": [
+        "**/all_positions_*",
+        "._*",
+        ".DS_Store"
+      ],
+      "expected_n_files": 442,
+      "archive": "packings_replicate_99_v4_endosome_apical_gradient.tar.gz",
+      "sha256": "e8c9a69b84ae966ea45a2aea2acf8602537896a7061385749bf508debb959f0a",
+      "bytes": 113659594,
+      "n_files": 442
+    },
+    {
+      "name": "packings_replicate_99_v4_endosome_interpolated",
+      "description": "Simulated endosome positions, rule interpolated: 99 replicates in one file per cell (442 cells).",
+      "used_by": "Fig 5, S6a-S9d (mixed rule)",
+      "include": [
+        "packing_outputs/8d_sphere_data/replicate_99_v4/interpolated/endosome/spheresSST/positions_*.json"
+      ],
+      "exclude": [
+        "**/all_positions_*",
+        "._*",
+        ".DS_Store"
+      ],
+      "expected_n_files": 442,
+      "archive": "packings_replicate_99_v4_endosome_interpolated.tar.gz",
+      "sha256": "da61f1b5ed7a8ce0338bd734faaaa1f32d909618f535001e88bbefcf23f06cd9",
+      "bytes": 113809378,
+      "n_files": 442
+    },
+    {
+      "name": "packings_tune_gradients_v2",
+      "description": "Simulated positions for the lambda ladder (nucleus, membrane and apical gradients).",
+      "used_by": "Fig S10",
+      "include": [
+        "packing_outputs/8d_sphere_data/tune_gradients_v2/*/{peroxisome,endosome}/spheresSST/positions_*.json"
+      ],
+      "exclude": [
+        "**/all_positions_*",
+        "._*",
+        ".DS_Store"
+      ],
+      "expected_n_files": 14498,
+      "archive": "packings_tune_gradients_v2.tar.gz",
+      "sha256": "65815a3c514371cad0806e14323290c2a11485e7a437e6bb96b2fcf8f333e4ed",
+      "bytes": 44461459,
+      "n_files": 14498
+    },
+    {
+      "name": "packings_biological_variation",
+      "description": "Simulated peroxisome positions for the biological-variation sources.",
+      "used_by": "Fig 2b-f, S3, Table S1",
+      "include": [
+        "packing_outputs/biological_variation/{baseline,shape,variable_count,variable_size}/peroxisome/spheresSST/positions_*.json"
+      ],
+      "exclude": [
+        "**/all_positions_*",
+        "._*",
+        ".DS_Store"
+      ],
+      "expected_n_files": 308,
+      "archive": "packings_biological_variation.tar.gz",
+      "sha256": "6211ff883b8524947baea269c23b880c6fb9c542a1e844155f11fde160894f4a",
+      "bytes": 4442627,
+      "n_files": 308
+    },
+    {
+      "name": "packings_fig4c_illustration",
+      "description": "The single norm_weights random packing (cell 743916) shown in Fig 4c.",
+      "used_by": "Fig 4c",
+      "include": [
+        "packing_outputs/8d_sphere_data/norm_weights/random/peroxisome/spheresSST/positions_peroxisome_rules_shape_random_743916.json"
+      ],
+      "exclude": [
+        "**/all_positions_*",
+        "._*",
+        ".DS_Store"
+      ],
+      "expected_n_files": 1,
+      "archive": "packings_fig4c_illustration.tar.gz",
+      "sha256": "de560fd96cb366e8e2a7bea54c7b53e61caa087634737846a8c7e7d4253d1666",
+      "bytes": 2471,
+      "n_files": 1
+    },
+    {
+      "name": "packing_inputs",
+      "description": "Recipes and generated packing configs of record (replicate_99_v4, tune_gradients_v2 and biological variation), to repack or audit the packings.",
+      "used_by": "Provenance of every packing figure (Figs 2-5, S3, S6-S10)",
+      "include": [
+        "recipes/{peroxisome,endosome}/{replicate_99_v4,tune_gradients_v2}/**",
+        "configs/{peroxisome,endosome}/{replicate_99_v4,tune_gradients_v2}/**",
+        "recipes/peroxisome/biological_variation/{baseline,shape,variable_count,variable_size}/**",
+        "configs/peroxisome/biological_variation/{baseline,shape,variable_count,variable_size}/**"
+      ],
+      "exclude": [
+        "**/all_positions_*",
+        "._*",
+        ".DS_Store",
+        "**/interpolated_floor-0.28/**"
+      ],
+      "expected_n_files": 18594,
+      "archive": "packing_inputs.tar.gz",
+      "sha256": "aaa4d15f5690ef943faa8bf27df2cec6a710f378939bc8658957ccc983c543bc",
+      "bytes": 2115268,
+      "n_files": 18594
+    }
+  ]
+}

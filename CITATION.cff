@@ -1,0 +1,39 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite the article below."
+title: "cellpack-analysis"
+version: "1.0.0"
+type: software
+repository-code: "https://github.com/mesoscope/cellpack-analysis"
+license-url: "https://github.com/mesoscope/cellpack-analysis/blob/main/LICENSE"
+authors:
+  - family-names: Mogre
+    given-names: Saurabh S.
+    affiliation: Allen Institute for Cell Science
+preferred-citation:
+  type: article
+  title: "Geometry-aware modeling with cellPACK for evaluating spatial trends in intracellular organization"
+  journal: "Protein Science"
+  year: 2026
+  authors:
+    - family-names: Mogre
+      given-names: Saurabh S.
+    - family-names: Li
+      given-names: Ruge
+    - family-names: Scibisz
+      given-names: Allison
+    - family-names: Do
+      given-names: Thao P.
+    - family-names: Dixon
+      given-names: Julie C.
+    - family-names: Viana
+      given-names: Matheus P.
+    - family-names: Nazockdast
+      given-names: Ehssan
+    - family-names: Rafelski
+      given-names: Susanne M.
+    - family-names: Theriot
+      given-names: Julie A.
+    - family-names: Riel-Mehan
+      given-names: Megan M.
+    - family-names: Johnson
+      given-names: Graham T.

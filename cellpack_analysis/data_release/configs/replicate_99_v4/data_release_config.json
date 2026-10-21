@@ -1,0 +1,68 @@
+{
+    "s3_bucket": "cellpack-analysis-data",
+    "base_s3_url": "https://cellpack-analysis-data.s3.us-west-2.amazonaws.com/",
+    "dataset": "8d_sphere_data",
+    "condition": "replicate_99_v4",
+    "experiment": "replicate_99_v4_release",
+    "source_experiment": "replicate_99_v4",
+    "rules": [
+        "random",
+        "nucleus_gradient",
+        "membrane_gradient",
+        "apical_gradient",
+        "interpolated"
+    ],
+    "structures": [
+        {
+            "structure_id": "SLC25A17",
+            "structure_name": "peroxisome",
+            "packing_id": "peroxisome",
+            "color": [
+                0.12,
+                1.0,
+                0.12
+            ]
+        },
+        {
+            "structure_id": "RAB5A",
+            "structure_name": "endosome",
+            "packing_id": "endosome",
+            "color": [
+                1.0,
+                0.78,
+                0.20
+            ]
+        }
+    ],
+    "base_channel_colors": {
+        "nucleus": [
+            0.18,
+            0.32,
+            0.32
+        ],
+        "membrane": [
+            0.31,
+            0.19,
+            0.31
+        ]
+    },
+    "use_inverted_meshes": false,
+    "reinvert_meshes": false,
+    "upload_meshes_to_s3": false,
+    "rebuild_all_simularium": true,
+    "export_voxelized_images": true,
+    "update_simularium_files": true,
+    "upload_simularium_to_s3": true,
+    "reupload_simularium_files": false,
+    "create_csv": true,
+    "update_csv_stats": false,
+    "upload_csv_to_s3": true,
+    "create_metadata_csv": true,
+    "upload_metadata_csv": true,
+    "reupload_csv_files": false,
+    "generate_thumbnails": true,
+    "reupload_thumbnails": false,
+    "output_name": "cellpack_simularium_replicate_99_v4",
+    "max_workers": 24,
+    "dry_run": false
+}

@@ -1,0 +1,736 @@
+"""Tests for the refactored histogram-based occupancy functions."""
+
+import pickle
+
+import numpy as np
+import pytest
+from scipy.stats import gaussian_kde
+
+from cellpack_analysis.analysis.workflows.configs import defaults
+from cellpack_analysis.lib.occupancy import (
+    _apply_coverage_mask,
+    _compute_single_cell_occupancy,
+    _get_common_xvals_from_kde,
+    _load_cached_occupancy,
+    _make_task_kde_dict,
+    _occupancy_cache_meta_path,
+    _write_occupancy_cache_meta,
+    get_binned_occupancy_dict_from_distance_dict,
+    get_kde_occupancy_dict,
+    get_kde_occupancy_for_single_cell,
+)
+from cellpack_analysis.lib.stats import normalize_pdf, pdf_ratio
+
+
+class TestComputeSingleCellOccupancy:
+    """Unit tests for the per-cell occupancy helper."""
+
+    def test_returns_expected_keys(self):
+        rng = np.random.default_rng(42)
+        occupied = rng.exponential(2.0, size=500)
+        available = rng.exponential(3.0, size=2000)
+        result = _compute_single_cell_occupancy(occupied, available, bin_width=0.5)
+        expected_keys = {
+            "xvals",
+            "occupancy",
+            "pdf_occupied",
+            "pdf_available",
+            "raw_occupied",
+            "raw_available",
+        }
+        assert set(result.keys()) == expected_keys
+
+    def test_xvals_uniformly_spaced(self):
+        rng = np.random.default_rng(0)
+        available = rng.uniform(0, 10, size=1000)
+        occupied = rng.uniform(0, 5, size=200)
+        result = _compute_single_cell_occupancy(occupied, available, bin_width=0.5)
+        diffs = np.diff(result["xvals"])
+        # Grid is uniform but spacing may differ slightly from bin_width
+        # due to make_r_grid_from_pooled's extend / percentile logic
+        np.testing.assert_allclose(diffs, diffs[0], atol=1e-12)
+
+    def test_pdfs_integrate_to_one(self):
+        rng = np.random.default_rng(7)
+        occupied = rng.normal(3, 1, size=500)
+        available = rng.normal(4, 2, size=2000)
+        occupied = occupied[occupied > 0]
+        available = available[available > 0]
+        result = _compute_single_cell_occupancy(occupied, available, bin_width=0.3)
+        integral_occ = np.trapezoid(result["pdf_occupied"], result["xvals"])
+        integral_avail = np.trapezoid(result["pdf_available"], result["xvals"])
+        np.testing.assert_allclose(integral_occ, 1.0, atol=0.05)
+        np.testing.assert_allclose(integral_avail, 1.0, atol=0.05)
+
+    def test_min_count_masks_sparse_bins(self):
+        rng = np.random.default_rng(1)
+        available = rng.uniform(0, 2, size=50)
+        occupied = rng.uniform(0, 2, size=50)
+        result = _compute_single_cell_occupancy(occupied, available, bin_width=0.2, min_count=10)
+        # Some bins should be NaN where available count < 10
+        assert np.any(np.isnan(result["occupancy"]))
+
+    def test_no_masking_when_min_count_zero(self):
+        rng = np.random.default_rng(2)
+        available = rng.uniform(0, 2, size=100)
+        occupied = rng.uniform(0, 2, size=100)
+        result = _compute_single_cell_occupancy(occupied, available, bin_width=0.5, min_count=0)
+        assert not np.any(np.isnan(result["occupancy"]))
+
+    def test_occupancy_near_one_for_identical_distributions(self):
+        rng = np.random.default_rng(99)
+        data = rng.exponential(2.0, size=5000)
+        result = _compute_single_cell_occupancy(
+            data[:2500], data[2500:], bin_width=0.3, min_count=0
+        )
+        finite = result["occupancy"][np.isfinite(result["occupancy"])]
+        # Ratio should hover around 1.0 when both are from the same distribution
+        np.testing.assert_allclose(np.nanmean(finite), 1.0, atol=0.3)
+
+
+class TestGetBinnedOccupancyDictFromDistanceDict:
+    """Integration tests for the refactored main function."""
+
+    @pytest.fixture()
+    def mock_inputs(self):
+        """Build minimal synthetic inputs matching the expected dict structure."""
+        rng = np.random.default_rng(42)
+        n_cells = 5
+        cell_ids = [f"cell_{i}" for i in range(n_cells)]
+
+        # Build all_distance_dict
+        # {distance_measure: {mode: {cell_id: {seed: distances}}}}
+        all_distance_dict: dict = {
+            "nucleus": {
+                "real": {},
+            }
+        }
+        for cid in cell_ids:
+            all_distance_dict["nucleus"]["real"][cid] = {
+                "seed_0": rng.exponential(2.0, size=200),
+            }
+
+        # Build combined_mesh_information_dict
+        # {structure_id: {cell_id: {"nuc_grid_distances": ...}}}
+        combined_mesh = {"ST001": {}}
+        for cid in cell_ids:
+            # Grid distances in pixel units (will be multiplied by PIXEL_SIZE_IN_UM)
+            combined_mesh["ST001"][cid] = {
+                "nuc_grid_distances": rng.exponential(30.0, size=5000),
+            }
+
+        channel_map = {"real": "ST001"}
+        return all_distance_dict, combined_mesh, channel_map, cell_ids
+
+    def test_output_structure(self, mock_inputs):
+        all_dd, mesh, cmap, _ = mock_inputs
+        result = get_binned_occupancy_dict_from_distance_dict(
+            all_distance_dict=all_dd,
+            combined_mesh_information_dict=mesh,
+            channel_map=cmap,
+            distance_measure="nucleus",
+            bin_width=0.3,
+            x_max=8.0,
+            recalculate=True,
+        )
+        assert "real" in result
+        assert "individual" in result["real"]
+        assert "combined" in result["real"]
+        combined = result["real"]["combined"]
+        for key in [
+            "xvals",
+            "occupancy",
+            "occupancy_pooled",
+            "std_occupancy",
+            "envelope_lo",
+            "envelope_hi",
+            "pdf_occupied",
+            "pdf_available",
+            "all_occupancy",
+        ]:
+            assert key in combined, f"Missing combined key: {key}"
+
+    def test_individual_per_cell_grids(self, mock_inputs):
+        all_dd, mesh, cmap, _ = mock_inputs
+        result = get_binned_occupancy_dict_from_distance_dict(
+            all_distance_dict=all_dd,
+            combined_mesh_information_dict=mesh,
+            channel_map=cmap,
+            distance_measure="nucleus",
+            bin_width=0.3,
+            recalculate=True,
+        )
+        individual = result["real"]["individual"]
+        # Each cell should have its own xvals
+        grids = [individual[cid]["xvals"] for cid in individual]
+        # Grids may differ in length (per-cell basis)
+        assert all(isinstance(g, np.ndarray) for g in grids)
+        for _, data in individual.items():
+            assert len(data["xvals"]) == len(data["occupancy"])
+            assert len(data["xvals"]) == len(data["pdf_occupied"])
+            assert len(data["xvals"]) == len(data["pdf_available"])
+
+    def test_combined_all_occupancy_shape(self, mock_inputs):
+        all_dd, mesh, cmap, _ = mock_inputs
+        result = get_binned_occupancy_dict_from_distance_dict(
+            all_distance_dict=all_dd,
+            combined_mesh_information_dict=mesh,
+            channel_map=cmap,
+            distance_measure="nucleus",
+            bin_width=0.3,
+            x_max=8.0,
+            recalculate=True,
+        )
+        combined = result["real"]["combined"]
+        n_cells_processed = len(result["real"]["individual"])
+        n_bins = len(combined["xvals"])
+        assert combined["all_occupancy"].shape == (n_cells_processed, n_bins)
+
+    def test_pooled_vs_averaged_occupancy_differ(self, mock_inputs):
+        all_dd, mesh, cmap, cell_ids = mock_inputs
+        result = get_binned_occupancy_dict_from_distance_dict(
+            all_distance_dict=all_dd,
+            combined_mesh_information_dict=mesh,
+            channel_map=cmap,
+            distance_measure="nucleus",
+            bin_width=0.3,
+            x_max=8.0,
+            recalculate=True,
+        )
+        combined = result["real"]["combined"]
+        # Pooled and averaged occupancy should generally differ
+        assert not np.allclose(
+            np.nan_to_num(combined["occupancy"]),
+            np.nan_to_num(combined["occupancy_pooled"]),
+        )
+
+    def test_num_cells_limits_output(self, mock_inputs):
+        all_dd, mesh, cmap, cell_ids = mock_inputs
+        result = get_binned_occupancy_dict_from_distance_dict(
+            all_distance_dict=all_dd,
+            combined_mesh_information_dict=mesh,
+            channel_map=cmap,
+            distance_measure="nucleus",
+            bin_width=0.3,
+            num_cells=2,
+            recalculate=True,
+        )
+        assert len(result["real"]["individual"]) == 2
+
+
+class TestGetKdeOccupancyDictUnifiedFormat:
+    """Verify get_kde_occupancy_dict produces the same unified combined-key format as discrete."""
+
+    @pytest.fixture()
+    def mock_kde_inputs(self):
+        """Build minimal synthetic kde_dict and channel_map."""
+        rng = np.random.default_rng(77)
+        n_cells = 4
+        cell_ids = [f"cell_{i}" for i in range(n_cells)]
+        n_points = 50  # small for speed
+
+        kde_dict: dict = {}
+        for cid in cell_ids:
+            occupied_data = rng.exponential(2.0, size=300)
+            available_data = rng.exponential(3.0, size=1000)
+            kde_dict[cid] = {
+                "real": gaussian_kde(occupied_data),
+                "available": gaussian_kde(available_data),
+            }
+
+        channel_map = {"real": "ST001"}
+        return kde_dict, channel_map, n_cells, n_points
+
+    def test_combined_has_all_unified_keys(self, mock_kde_inputs):
+        kde_dict, channel_map, _, n_points = mock_kde_inputs
+        result = get_kde_occupancy_dict(
+            distance_kde_dict=kde_dict,
+            channel_map=channel_map,
+            num_points=n_points,
+            x_min=0,
+            x_max=8.0,
+            recalculate=True,
+        )
+        combined = result["real"]["combined"]
+        # KDE path produces mean-of-per-cell occupancy; pooled KDE and pooled
+        # PDFs are not computed (those live on the binned/discrete path).
+        expected_keys = {
+            "xvals",
+            "occupancy",
+            "std_occupancy",
+            "envelope_lo",
+            "envelope_hi",
+            "all_occupancy",
+        }
+        assert expected_keys == set(combined.keys())
+
+    def test_all_occupancy_shape(self, mock_kde_inputs):
+        kde_dict, channel_map, n_cells, n_points = mock_kde_inputs
+        result = get_kde_occupancy_dict(
+            distance_kde_dict=kde_dict,
+            channel_map=channel_map,
+            num_points=n_points,
+            x_min=0,
+            x_max=8.0,
+            recalculate=True,
+        )
+        combined = result["real"]["combined"]
+        assert combined["all_occupancy"].shape == (n_cells, n_points)
+        assert len(combined["xvals"]) == n_points
+
+    def test_mean_occupancy_matches_all_occupancy_nanmean(self, mock_kde_inputs):
+        kde_dict, channel_map, n_cells, n_points = mock_kde_inputs
+        result = get_kde_occupancy_dict(
+            distance_kde_dict=kde_dict,
+            channel_map=channel_map,
+            num_points=n_points,
+            x_min=0,
+            x_max=8.0,
+            recalculate=True,
+            min_coverage_fraction=0.0,
+        )
+        combined = result["real"]["combined"]
+        # With the coverage mask disabled, combined["occupancy"] is exactly the
+        # nanmean of the per-cell curves stacked in combined["all_occupancy"].
+        expected_mean = np.nanmean(combined["all_occupancy"], axis=0)
+        np.testing.assert_allclose(combined["occupancy"], expected_mean)
+
+    def test_envelope_bounds_combined_mean(self, mock_kde_inputs):
+        kde_dict, channel_map, n_cells, n_points = mock_kde_inputs
+        result = get_kde_occupancy_dict(
+            distance_kde_dict=kde_dict,
+            channel_map=channel_map,
+            num_points=n_points,
+            x_min=0,
+            x_max=8.0,
+            recalculate=True,
+        )
+        combined = result["real"]["combined"]
+        lo = combined["envelope_lo"]
+        hi = combined["envelope_hi"]
+        mu = combined["occupancy"]
+        # At most grid points where mu is finite, the mean should lie within [lo, hi]
+        finite_mask = np.isfinite(mu)
+        assert finite_mask.any(), "Expected at least some finite occupancy values"
+        within = (mu[finite_mask] >= lo[finite_mask] - 1e-9) & (
+            mu[finite_mask] <= hi[finite_mask] + 1e-9
+        )
+        assert np.mean(within) >= 0.9
+
+    def test_individual_per_cell_keys(self, mock_kde_inputs):
+        kde_dict, channel_map, n_cells, n_points = mock_kde_inputs
+        result = get_kde_occupancy_dict(
+            distance_kde_dict=kde_dict,
+            channel_map=channel_map,
+            num_points=n_points,
+            x_min=0,
+            x_max=8.0,
+            recalculate=True,
+        )
+        individual = result["real"]["individual"]
+        assert len(individual) == n_cells
+        for cell_data in individual.values():
+            assert {
+                "xvals",
+                "occupancy",
+                "pdf_occupied",
+                "pdf_available",
+                "occupancy_common",
+                "pdf_occupied_common",
+                "pdf_available_common",
+            } == set(cell_data.keys())
+
+
+class TestNormalizePdfEdgeCases:
+    """Edge-case tests for normalize_pdf."""
+
+    def test_zero_integral_returns_nan(self):
+        xvals = np.linspace(0, 5, 50)
+        density = np.zeros(50)
+        result = normalize_pdf(xvals, density)
+        assert np.all(np.isnan(result)), "All-zero density must return all-NaN"
+
+    def test_positive_density_integrates_to_one(self):
+        xvals = np.linspace(0, 5, 100)
+        density = np.exp(-xvals)
+        result = normalize_pdf(xvals, density)
+        np.testing.assert_allclose(np.trapezoid(result, xvals), 1.0, atol=1e-6)
+
+
+class TestPdfRatioEdgeCases:
+    """Edge-case tests for pdf_ratio."""
+
+    def test_all_zero_denominator_returns_nan(self):
+        xvals = np.linspace(0, 5, 50)
+        numerator = np.exp(-xvals)
+        denominator = np.zeros(50)
+        ratio, _, _ = pdf_ratio(xvals, numerator, denominator)
+        # normalize_pdf returns all-NaN for all-zero denominator; that NaN
+        # must propagate through the ratio rather than being zeroed out.
+        assert np.all(np.isnan(ratio)), "NaN denominator must propagate NaN ratio, not zero"
+
+    def test_identical_densities_ratio_near_one(self):
+        rng = np.random.default_rng(0)
+        xvals = np.linspace(0, 10, 100)
+        density = np.exp(-xvals / 3.0)
+        ratio, _, _ = pdf_ratio(xvals, density, density)
+        finite = ratio[np.isfinite(ratio)]
+        np.testing.assert_allclose(finite, 1.0, atol=1e-6)
+
+
+class TestGetKdeOccupancyForSingleCell:
+    """Unit tests for get_kde_occupancy_for_single_cell fixes."""
+
+    @pytest.fixture()
+    def kde_inputs(self):
+        rng = np.random.default_rng(42)
+        available_data = rng.exponential(3.0, size=1000)
+        occupied_data = rng.exponential(2.0, size=300)
+        kde_dict = {
+            "cell_0": {
+                "real": gaussian_kde(occupied_data),
+                "available": gaussian_kde(available_data),
+            }
+        }
+        return kde_dict, available_data
+
+    def test_bandwidth_does_not_mutate_original_kde(self, kde_inputs):
+        kde_dict, _ = kde_inputs
+        original_factor = float(kde_dict["cell_0"]["real"].factor)
+        x_vals = np.linspace(0, 8, 50)
+        get_kde_occupancy_for_single_cell(
+            cell_id="cell_0",
+            mode="real",
+            distance_kde_dict=kde_dict,
+            common_xvals=x_vals,
+            bandwidth=0.5,
+            num_points=50,
+        )
+        assert float(kde_dict["cell_0"]["real"].factor) == original_factor, (
+            "Original KDE bandwidth must not be mutated by get_kde_occupancy_for_single_cell"
+        )
+
+    def test_occupancy_common_nan_outside_support(self, kde_inputs):
+        kde_dict, available_data = kde_inputs
+        avail_min = float(np.min(available_data))
+        avail_max = float(np.max(available_data))
+        # Extend x_vals well beyond the cell's data range
+        x_vals = np.linspace(avail_min - 5.0, avail_max + 5.0, 200)
+        result = get_kde_occupancy_for_single_cell(
+            cell_id="cell_0",
+            mode="real",
+            distance_kde_dict=kde_dict,
+            common_xvals=x_vals,
+            bandwidth=None,
+            num_points=50,
+        )
+        assert result is not None, "Expected a result dict from get_kde_occupancy_for_single_cell"
+        occ = result[1]["occupancy_common"]
+        out_of_support = (x_vals < avail_min) | (x_vals > avail_max)
+        assert np.all(np.isnan(occ[out_of_support])), (
+            "occupancy_common must be NaN for x_vals outside the available-data support"
+        )
+        in_support = ~out_of_support
+        assert np.any(np.isfinite(occ[in_support])), (
+            "occupancy_common must contain finite values within the available-data support"
+        )
+
+    def test_no_infinities_when_objects_exceed_support(self, kde_inputs):
+        kde_dict, available_data = kde_inputs
+        avail_max = float(np.max(available_data))
+        # "Skip filtering" scenario: inject occupied objects well beyond the
+        # available-space support and confirm the ratio never blows up.
+        rng = np.random.default_rng(3)
+        occupied_beyond = np.concatenate([
+            rng.exponential(2.0, size=300),
+            avail_max + rng.uniform(1.0, 5.0, size=50),
+        ])
+        kde_dict["cell_0"]["real"] = gaussian_kde(occupied_beyond)
+        x_vals = np.linspace(0.0, avail_max + 10.0, 200)
+        result = get_kde_occupancy_for_single_cell(
+            cell_id="cell_0",
+            mode="real",
+            distance_kde_dict=kde_dict,
+            common_xvals=x_vals,
+            bandwidth=None,
+            num_points=50,
+        )
+        assert result is not None
+        occ = result[1]["occupancy_common"]
+        assert not np.any(np.isinf(occ)), "occupancy_common must never contain infinities"
+        assert np.any(np.isfinite(occ)), (
+            "occupancy_common must have finite values within the available-data support"
+        )
+
+
+class TestApplyCoverageMask:
+    """Unit tests for the trailing coverage mask applied to the combined aggregate."""
+
+    def test_masks_high_x_tail_keeps_low_x_start(self):
+        # 4 cells, 6 grid points. Coverage: idx0 = 1 cell (leading, low),
+        # idx1-3 = 4 cells (full), idx4-5 = 1 cell (trailing, low).
+        all_curves = np.full((4, 6), np.nan)
+        all_curves[0, 0] = 1.0
+        all_curves[:, 1:4] = 1.0
+        all_curves[0, 4:6] = 1.0
+        mean = np.nanmean(all_curves, axis=0)
+        env_lo = mean.copy()
+        env_hi = mean.copy()
+        _apply_coverage_mask(all_curves, 0.95, mean, env_lo, env_hi)
+        # Trailing low-coverage points are blanked...
+        assert np.isnan(mean[4]) and np.isnan(mean[5])
+        assert np.isnan(env_lo[4]) and np.isnan(env_hi[5])
+        # ...the full-coverage core is kept...
+        assert np.all(np.isfinite(mean[1:4]))
+        # ...and the leading low-x point is preserved (keeps the range start).
+        assert np.isfinite(mean[0])
+        # The per-cell data is untouched.
+        assert np.isfinite(all_curves[0, 0]) and np.isfinite(all_curves[0, 5])
+
+    def test_disabled_when_fraction_zero(self):
+        all_curves = np.full((3, 5), np.nan)
+        all_curves[0, :] = 1.0  # only 1/3 coverage everywhere
+        mean = np.nanmean(all_curves, axis=0)
+        _apply_coverage_mask(all_curves, 0.0, mean)
+        assert np.all(np.isfinite(mean))  # nothing masked when disabled
+
+
+# ---------------------------------------------------------------------------
+# Tests: the round-1 occupancy grid
+# ---------------------------------------------------------------------------
+
+
+class TestOccupancyGridResolution:
+    """Round-1 grid: 250 points on [0, smallest cell's max available distance]."""
+
+    def test_default_num_points_is_250(self):
+        assert defaults.OCCUPANCY_NUM_POINTS == 250
+        for dm in ("nucleus", "z"):
+            assert defaults.OCCUPANCY_PARAMS[dm]["num_points"] == 250
+
+    def test_default_xlims_cap_the_grid(self):
+        assert defaults.OCCUPANCY_PARAMS["nucleus"]["xlim"] == 6
+        assert defaults.OCCUPANCY_PARAMS["z"]["xlim"] == 8
+        for dm in ("nucleus", "z"):
+            assert defaults.OCCUPANCY_PARAMS[dm]["x_min"] == 0
+
+    def test_shallow_merge_drops_num_points_so_fallback_is_needed(self):
+        """The real configs omit num_points; the shallow merge must not KeyError.
+
+        `AnalysisConfig._setup_occupancy_params` does defaults.copy() then
+        .update(), so a config overriding any key of occupancy_params[dm]
+        replaces the whole inner dict. Reading num_points must therefore use
+        .get() with the module default, which is what the workflow does.
+        """
+        config_params = {
+            "nucleus": {"xlim": 6, "ylim": 3, "bandwidth": 0.2},
+            "z": {"xlim": 8, "ylim": 2, "bandwidth": 0.2},
+        }
+        merged = defaults.OCCUPANCY_PARAMS.copy()
+        merged.update(config_params)
+        for dm in ("nucleus", "z"):
+            assert "num_points" not in merged[dm]
+            assert merged[dm].get("num_points", defaults.OCCUPANCY_NUM_POINTS) == 250
+
+    def test_grid_ends_at_smallest_cell_max(self):
+        rng = np.random.default_rng(11)
+        short, long = rng.uniform(0, 3, size=200), rng.uniform(0, 5, size=200)
+        kde_dict = {
+            "cell_0": {"available": gaussian_kde(short)},
+            "cell_1": {"available": gaussian_kde(long)},
+        }
+        grid = _get_common_xvals_from_kde(
+            distance_kde_dict=kde_dict,
+            cell_id_map={"real": ["cell_0", "cell_1"]},
+            num_points=defaults.OCCUPANCY_NUM_POINTS,
+            pct_min_cells=0,
+            x_min=0,
+            x_max=8,
+        )
+        np.testing.assert_allclose(grid, np.linspace(0, short.max(), 250))
+
+    def test_x_max_caps_the_grid(self):
+        rng = np.random.default_rng(12)
+        kde_dict = {"cell_0": {"available": gaussian_kde(rng.uniform(0, 10, size=200))}}
+        grid = _get_common_xvals_from_kde(
+            distance_kde_dict=kde_dict,
+            cell_id_map={"real": ["cell_0"]},
+            num_points=defaults.OCCUPANCY_NUM_POINTS,
+            pct_min_cells=0,
+            x_min=0,
+            x_max=6,
+        )
+        assert grid[0] == 0.0
+        assert grid[-1] == pytest.approx(6.0)
+        assert grid.size == 250
+
+
+# ---------------------------------------------------------------------------
+# Tests: D1.3 — the occupancy cache is keyed by its grid parameters
+# ---------------------------------------------------------------------------
+
+
+class TestOccupancyCacheStamp:
+    """D1.3: a cache built with different grid parameters must not be reused."""
+
+    @staticmethod
+    def _write_cache(tmp_path, meta):
+        """Write a minimally valid occupancy cache plus its sidecar."""
+        save_path = tmp_path / "nucleus_occupancy.dat"
+        payload = {
+            "real": {
+                "individual": {},
+                "combined": {
+                    "xvals": np.linspace(0, 6, 10),
+                    "occupancy": np.ones(10),
+                    "all_occupancy": np.ones((1, 10)),
+                },
+            }
+        }
+        with open(save_path, "wb") as f:
+            pickle.dump(payload, f)
+        if meta is not None:
+            _write_occupancy_cache_meta(save_path, meta)
+        return save_path
+
+    @staticmethod
+    def _meta(num_points=1000, x_max=6):
+        return {
+            "distance_measure": "nucleus",
+            "num_points": num_points,
+            "x_min": 0,
+            "x_max": x_max,
+            "bandwidth": 0.2,
+            "min_coverage_fraction": 0.95,
+        }
+
+    def test_matching_meta_is_accepted(self, tmp_path):
+        save_path = self._write_cache(tmp_path, self._meta())
+        loaded = _load_cached_occupancy(save_path, {"real": "S"}, expected_meta=self._meta())
+        assert loaded is not None
+
+    def test_num_points_mismatch_is_rejected(self, tmp_path):
+        """The 250 -> 1000 grid change must invalidate the old cache, not be ignored."""
+        save_path = self._write_cache(tmp_path, self._meta(num_points=250))
+        loaded = _load_cached_occupancy(
+            save_path, {"real": "S"}, expected_meta=self._meta(num_points=1000)
+        )
+        assert loaded is None
+
+    def test_x_max_mismatch_is_rejected(self, tmp_path):
+        save_path = self._write_cache(tmp_path, self._meta(x_max=5.17))
+        loaded = _load_cached_occupancy(save_path, {"real": "S"}, expected_meta=self._meta(x_max=6))
+        assert loaded is None
+
+    def test_floor_mismatch_is_rejected(self, tmp_path):
+        save_path = self._write_cache(
+            tmp_path, {**self._meta(), "available_minimum_distance_um": -0.5}
+        )
+        expected = {**self._meta(), "available_minimum_distance_um": -1.0}
+        assert _load_cached_occupancy(save_path, {"real": "S"}, expected_meta=expected) is None
+
+    def test_missing_sidecar_is_rejected(self, tmp_path):
+        """A legacy cache with unknown provenance is treated as invalid."""
+        save_path = self._write_cache(tmp_path, None)
+        assert not _occupancy_cache_meta_path(save_path).exists()
+        loaded = _load_cached_occupancy(save_path, {"real": "S"}, expected_meta=self._meta())
+        assert loaded is None
+
+    def test_missing_sidecar_still_loads_when_no_meta_requested(self, tmp_path):
+        """Callers that pass no expected_meta keep the old, mode-set-only behaviour."""
+        save_path = self._write_cache(tmp_path, None)
+        assert _load_cached_occupancy(save_path, {"real": "S"}) is not None
+
+    def test_mode_set_check_still_applies(self, tmp_path):
+        save_path = self._write_cache(tmp_path, self._meta())
+        loaded = _load_cached_occupancy(
+            save_path, {"real": "S", "extra": "S"}, expected_meta=self._meta()
+        )
+        assert loaded is None
+
+    def test_unserializable_stamp_does_not_raise_or_poison_the_cache(self, tmp_path):
+        """F5: a bad stamp value must not propagate after the pickle is written.
+
+        The sidecar is written *after* the pickle (deliberately -- the reverse
+        order could pair a stale pickle with a fresh-looking stamp), so a raise
+        here would abort the caller with the cache already on disk. It must
+        degrade to "no sidecar", which the loader then rejects.
+        """
+        save_path = tmp_path / "nucleus_occupancy.dat"
+        with open(save_path, "wb") as f:
+            pickle.dump({"real": {"individual": {}, "combined": {}}}, f)
+        bad_meta = {"distance_measure": "nucleus", "bandwidth": {1, 2, 3}}  # set: not JSON
+        _write_occupancy_cache_meta(save_path, bad_meta)  # must not raise
+        # No half-written sidecar left behind, so the cache fails safe on reload.
+        assert not _occupancy_cache_meta_path(save_path).exists()
+        assert _load_cached_occupancy(save_path, {"real": "S"}, expected_meta=self._meta()) is None
+
+    def test_corrupt_sidecar_is_rejected(self, tmp_path):
+        """Belt and braces: unparseable JSON must recompute, not crash."""
+        save_path = self._write_cache(tmp_path, self._meta())
+        _occupancy_cache_meta_path(save_path).write_text("{not json")
+        assert _load_cached_occupancy(save_path, {"real": "S"}, expected_meta=self._meta()) is None
+
+    def test_sidecar_path_is_beside_the_cache(self, tmp_path):
+        save_path = tmp_path / "nucleus_occupancy.dat"
+        assert _occupancy_cache_meta_path(save_path) == tmp_path / "nucleus_occupancy.meta.json"
+
+
+class TestMakeTaskKdeDict:
+    """Payload slicing for the occupancy process backend.
+
+    ``get_kde_occupancy_for_single_cell`` touches only
+    ``distance_kde_dict[cell_id][mode]`` and ``[cell_id]["available"]``. The thread
+    backend shares the whole dict in memory for free, but a process backend pickles
+    whatever it is handed *once per cell*, so passing the full dict would ship every
+    cell's KDEs to every worker -- which is why a naive ``ProcessPoolExecutor`` swap
+    is slower than threads rather than faster.
+    """
+
+    @staticmethod
+    def _kde_dict():
+        rng = np.random.default_rng(0)
+        return {
+            f"c{i}": {
+                "mode_a": gaussian_kde(rng.normal(0, 1, 50)),
+                "mode_b": gaussian_kde(rng.normal(0, 1, 50)),
+                "available": gaussian_kde(rng.normal(0, 1, 80)),
+            }
+            for i in range(4)
+        }
+
+    def test_thread_backend_shares_the_dict_unchanged(self):
+        """Threads must get the identical object -- no copying, no slicing cost."""
+        d = self._kde_dict()
+        assert _make_task_kde_dict("c1", "mode_a", d, use_processes=False) is d
+
+    def test_process_backend_ships_only_the_target_cell_and_mode(self):
+        d = self._kde_dict()
+        sliced = _make_task_kde_dict("c1", "mode_a", d, use_processes=True)
+        assert set(sliced) == {"c1"}
+        assert set(sliced["c1"]) == {"mode_a", "available"}
+        assert sliced["c1"]["mode_a"] is d["c1"]["mode_a"]
+        assert sliced["c1"]["available"] is d["c1"]["available"]
+
+    def test_missing_mode_survives_as_missing(self):
+        """A missing mode must still read as missing so the early-return still fires."""
+        d = self._kde_dict()
+        sliced = _make_task_kde_dict("c1", "absent_mode", d, use_processes=True)
+        assert "absent_mode" not in sliced.get("c1", {})
+        assert get_kde_occupancy_for_single_cell("c1", "absent_mode", sliced) is None
+
+    def test_missing_cell_yields_empty_dict(self):
+        d = self._kde_dict()
+        assert _make_task_kde_dict("nope", "mode_a", d, use_processes=True) == {}
+
+    def test_sliced_payload_reproduces_the_full_dict_result(self):
+        """Slicing must not change the computed occupancy at all."""
+        d = self._kde_dict()
+        xvals = np.linspace(-2, 2, 40)
+        full = get_kde_occupancy_for_single_cell("c1", "mode_a", d, common_xvals=xvals)
+        sliced_input = _make_task_kde_dict("c1", "mode_a", d, use_processes=True)
+        sliced = get_kde_occupancy_for_single_cell("c1", "mode_a", sliced_input, common_xvals=xvals)
+        assert full is not None and sliced is not None
+        np.testing.assert_allclose(
+            full[1]["occupancy_common"], sliced[1]["occupancy_common"], equal_nan=True
+        )

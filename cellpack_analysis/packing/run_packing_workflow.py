@@ -1,0 +1,109 @@
+"""Workflow to generate simulated packed structures using cellPACK."""
+
+import argparse
+import logging
+import sys
+import time
+from pathlib import Path
+
+import numpy as np
+
+from cellpack_analysis.lib.file_io import setup_workflow_logging, write_run_provenance
+from cellpack_analysis.lib.io import format_time
+from cellpack_analysis.packing.generate_cellpack_input_files import (
+    generate_configs,
+    generate_recipes,
+)
+from cellpack_analysis.packing.pack_recipes import pack_recipes
+from cellpack_analysis.packing.workflow_config import WorkflowConfig
+
+# set random seed
+np.random.seed(42)
+
+logger = logging.getLogger(__name__)
+
+
+def _run_packing_workflow(workflow_config_path: Path, dry_run: bool = False) -> int:
+    """
+    Run the packing workflow.
+
+    Parameters
+    ----------
+    workflow_config_path
+        Path to the workflow configuration file
+    dry_run
+        Generate configs and recipes only; overrides the config's ``dry_run`` when True
+    """
+    workflow_config = WorkflowConfig(workflow_config_path=workflow_config_path)
+    if dry_run:
+        workflow_config.dry_run = True
+
+    # Set up integrated debug logging
+    logs_dir = workflow_config.output_path / "logs"
+    workflow_log_file = setup_workflow_logging(
+        logs_dir / f"{workflow_config.packing_id}_{workflow_config.condition}.log"
+    )
+    logger.info(f"Logging all debug messages to {workflow_log_file}")
+    write_run_provenance(logs_dir, workflow_config_path, {"dry_run": bool(workflow_config.dry_run)})
+
+    # ## update cellpack config file
+    if workflow_config.generate_configs:
+        logger.info("Updating cellPACK config file")
+        generate_configs(workflow_config=workflow_config)
+
+    # ## Generate cellPACK input files if needed
+    if workflow_config.generate_recipes:
+        logger.info("Generating cellPACK input files")
+        generate_recipes(workflow_config=workflow_config)
+
+    # ## pack recipes (dry_run skips each packing inside pack_recipes)
+    logger.info("Submitting recipes")
+    return pack_recipes(workflow_config=workflow_config)
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--workflow_config_path",
+        "-c",
+        type=str,
+        required=True,
+        help="Path to the packing configuration file",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Generate configs and recipes without packing",
+    )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Enable debug logging",
+    )
+    return parser
+
+
+if __name__ == "__main__":
+    start = time.time()
+
+    args = _build_parser().parse_args()
+
+    if args.verbose:
+        # Set console handlers to DEBUG level
+        root_logger = logging.getLogger()
+        for handler in root_logger.handlers:
+            if isinstance(handler, logging.StreamHandler) and not isinstance(
+                handler, logging.FileHandler
+            ):
+                handler.setLevel(logging.DEBUG)
+
+    total_failed = _run_packing_workflow(
+        workflow_config_path=Path(args.workflow_config_path), dry_run=args.dry_run
+    )
+
+    logger.info(f"Total time: {format_time(time.time() - start)}")
+    if total_failed:
+        logger.info(f"Total failed packings: {total_failed}")
+        sys.exit(1)
+    sys.exit(0)

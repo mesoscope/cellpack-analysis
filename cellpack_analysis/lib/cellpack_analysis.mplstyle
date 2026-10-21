@@ -1,0 +1,13 @@
+## cellpack_analysis matplotlib style sheet
+## Ensures consistent Arial font and PDF/PS font embedding across all figures.
+
+# ── Font family ─────────────────────────────────────────────────────────────
+# Prefer Arial; fall back to common sans-serif alternatives.
+font.family:      sans-serif
+font.sans-serif:  Arial, DejaVu Sans, Liberation Sans, Bitstream Vera Sans, sans-serif
+
+# ── PDF / PostScript font embedding ─────────────────────────────────────────
+# Type 42 embeds TrueType fonts, which preserves text editability in
+# Illustrator and other vector editors.
+pdf.fonttype: 42
+ps.fonttype:  42

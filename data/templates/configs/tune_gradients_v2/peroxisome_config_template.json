@@ -1,0 +1,14 @@
+{
+    "name": "tune_gradients_v2",
+    "out": "/allen/aics/lumenoid/cellpack/cellpack-analysis/data/packing_outputs/8d_sphere_data/tune_gradients_v2/peroxisome",
+    "save_analyze_result": true,
+    "show_progress_bar": true,
+    "save_plot_figures": false,
+    "load_from_grid_file": true,
+    "parallel": false,
+    "number_of_processes": 1,
+    "spacing": 2,
+    "number_of_packings": 1,
+    "open_results_in_browser": false,
+    "upload_results": false
+}

@@ -1,0 +1,12 @@
+{
+    "name": "biological_variation",
+    "out": "/allen/aics/animated-cell/Saurabh/dev/cellpack-analysis/data/packing_outputs/biological_variation/variable_size/",
+    "save_analyze_result": true,
+    "show_progress_bar": true,
+    "save_plot_figures": false,
+    "load_from_grid_file": true,
+    "spacing": 2,
+    "open_results_in_browser": false,
+    "upload_results": false,
+    "number_of_packings": 305
+}

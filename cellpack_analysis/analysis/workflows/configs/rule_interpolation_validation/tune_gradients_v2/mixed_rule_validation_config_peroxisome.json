@@ -1,0 +1,97 @@
+{
+    "name": "rule_interpolation_tune_gradients_v2_validation",
+    "structure_id": "SLC25A17",
+    "packing_id": "peroxisome",
+    "structure_name": "peroxisome",
+    "packing_output_folder": "packing_outputs/8d_sphere_data/tune_gradients_v2/",
+    "channel_map": {
+        "SLC25A17": "SLC25A17",
+        "random": "SLC25A17",
+        "nucleus_gradient_0pt01": "SLC25A17",
+        "nucleus_gradient_0pt03": "SLC25A17",
+        "nucleus_gradient_0pt1": "SLC25A17",
+        "nucleus_gradient_0pt3": "SLC25A17",
+        "nucleus_gradient_1": "SLC25A17",
+        "nucleus_gradient_10": "SLC25A17",
+        "apical_gradient_0pt03": "SLC25A17",
+        "apical_gradient_0pt1": "SLC25A17",
+        "apical_gradient_0pt3": "SLC25A17",
+        "apical_gradient_0pt7": "SLC25A17",
+        "apical_gradient_1": "SLC25A17",
+        "apical_gradient_10": "SLC25A17",
+        "membrane_gradient_0pt01": "SLC25A17",
+        "membrane_gradient_0pt03": "SLC25A17",
+        "membrane_gradient_0pt1": "SLC25A17",
+        "membrane_gradient_0pt3": "SLC25A17",
+        "membrane_gradient_1": "SLC25A17",
+        "membrane_gradient_10": "SLC25A17",
+        "interpolated": "SLC25A17"
+    },
+    "cv_channel_map": {
+        "SLC25A17": "SLC25A17",
+        "random": "SLC25A17",
+        "nucleus_gradient_0pt01": "SLC25A17",
+        "nucleus_gradient_0pt03": "SLC25A17",
+        "nucleus_gradient_0pt1": "SLC25A17",
+        "nucleus_gradient_0pt3": "SLC25A17",
+        "nucleus_gradient_1": "SLC25A17",
+        "nucleus_gradient_10": "SLC25A17",
+        "apical_gradient_0pt03": "SLC25A17",
+        "apical_gradient_0pt1": "SLC25A17",
+        "apical_gradient_0pt3": "SLC25A17",
+        "apical_gradient_0pt7": "SLC25A17",
+        "apical_gradient_1": "SLC25A17",
+        "apical_gradient_10": "SLC25A17",
+        "membrane_gradient_0pt01": "SLC25A17",
+        "membrane_gradient_0pt03": "SLC25A17",
+        "membrane_gradient_0pt1": "SLC25A17",
+        "membrane_gradient_0pt3": "SLC25A17",
+        "membrane_gradient_1": "SLC25A17",
+        "membrane_gradient_10": "SLC25A17"
+    },
+    "rule_interpolation_cv_params": {
+        "n_folds": 5,
+        "n_repeats": 10,
+        "random_state": 42,
+        "grouping": "combined",
+        "generate_packing_configs": false
+    },
+    "distribution_method": "kde",
+    "distance_measures": [
+        "nucleus",
+        "z"
+    ],
+    "occupancy_distance_measures": [
+        "nucleus",
+        "z"
+    ],
+    "occupancy_params": {
+        "nucleus": {
+            "xlim": 6,
+            "ylim": 3.2,
+            "bandwidth": 0.2
+        },
+        "z": {
+            "xlim": 8,
+            "ylim": 2,
+            "bandwidth": 0.2
+        }
+    },
+    "analysis_steps": [
+        "load_common_data",
+        "calculate_distances",
+        "run_occupancy_analysis"
+    ],
+    "recalculate": {
+        "load_common_data": false,
+        "calculate_distances": false,
+        "run_occupancy_analysis": true,
+        "run_rule_interpolation_cv": true
+    },
+    "minimum_distance_um": -0.108,
+    "available_minimum_distance_um": -1.0,
+    "skip_mixed_rule_validation": true,
+    "num_workers": 16,
+    "distance_backend": "process",
+    "occupancy_backend": "process"
+}

@@ -1,0 +1,47 @@
+{
+    "name": "distance_analysis",
+    "structure_id": "SLC25A17",
+    "packing_id": "peroxisome",
+    "structure_name": "peroxisome",
+    "packing_output_folder": "packing_outputs/8d_sphere_data/replicate_99_v4/",
+    "output_path": "replicate_99_v4/peroxisome/",
+    "channel_map": {
+        "SLC25A17": "SLC25A17",
+        "random": "SLC25A17",
+        "nucleus_gradient": "SLC25A17",
+        "membrane_gradient": "SLC25A17",
+        "apical_gradient": "SLC25A17"
+    },
+    "baseline_mode": "SLC25A17",
+    "num_workers": 16,
+    "distance_backend": "process",
+    "emd_pool_seeds": true,
+    "emd_same_cell": true,
+    "envelope_test_params": {
+        "envelope_type": "pointwise",
+        "statistic": "intdev",
+        "bin_width": null
+    },
+    "distance_measures": [
+        "nucleus",
+        "z"
+    ],
+    "recalculate": {
+        "calculate_distances": false,
+        "plot_distance_distributions": true,
+        "run_pairwise_envelope_test": true,
+        "run_emd_analysis": true,
+        "run_ks_analysis": true
+    },
+    "analysis_steps": [
+        "load_common_data",
+        "calculate_distances",
+        "plot_distance_distributions",
+        "run_emd_analysis",
+        "run_ks_analysis",
+        "run_per_cell_envelope_test"
+    ],
+    "minimum_distance_um": -0.108,
+    "available_minimum_distance_um": -1.0,
+    "ks_bootstrap_seed": 0
+}

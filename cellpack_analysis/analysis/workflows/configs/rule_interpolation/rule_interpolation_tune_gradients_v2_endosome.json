@@ -1,0 +1,112 @@
+{
+    "name": "rule_interpolation_tune_gradients_v2",
+    "output_path": "rule_interpolation_tune_gradients_v2/endosome",
+    "structure_id": "RAB5A",
+    "simulated_structure_id": "RAB5A",
+    "packing_id": "endosome",
+    "structure_name": "endosome",
+    "packing_output_folder": "packing_outputs/8d_sphere_data/tune_gradients_v2/",
+    "num_workers": 16,
+    "distance_backend": "process",
+    "occupancy_backend": "process",
+    "channel_map": {
+        "RAB5A": "RAB5A",
+        "random": "RAB5A",
+        "nucleus_gradient_0pt01": "RAB5A",
+        "nucleus_gradient_0pt03": "RAB5A",
+        "nucleus_gradient_0pt1": "RAB5A",
+        "nucleus_gradient_0pt3": "RAB5A",
+        "nucleus_gradient_1": "RAB5A",
+        "nucleus_gradient_10": "RAB5A",
+        "apical_gradient_0pt03": "RAB5A",
+        "apical_gradient_0pt1": "RAB5A",
+        "apical_gradient_0pt3": "RAB5A",
+        "apical_gradient_0pt7": "RAB5A",
+        "apical_gradient_1": "RAB5A",
+        "apical_gradient_10": "RAB5A",
+        "membrane_gradient_0pt01": "RAB5A",
+        "membrane_gradient_0pt03": "RAB5A",
+        "membrane_gradient_0pt1": "RAB5A",
+        "membrane_gradient_0pt3": "RAB5A",
+        "membrane_gradient_1": "RAB5A",
+        "membrane_gradient_10": "RAB5A"
+    },
+    "distribution_method": "kde",
+    "occupancy_distance_measures": [
+        "nucleus",
+        "z"
+    ],
+    "occupancy_params": {
+        "nucleus": {
+            "xlim": 6,
+            "ylim": 3.2,
+            "bandwidth": 0.2
+        },
+        "z": {
+            "xlim": 8,
+            "ylim": 2,
+            "bandwidth": 0.2
+        }
+    },
+    "minimum_distance_um": -0.108,
+    "available_minimum_distance_um": -1.0,
+    "rule_interpolation_cv_params": {
+        "n_folds": 5,
+        "n_repeats": 10,
+        "random_state": 42,
+        "grouping": "combined"
+    },
+    "base_packing_config_path": "cellpack_analysis/packing/configs/tune_gradients_v2/endosome_tune_gradients_v2.json",
+    "mode_to_gradient_name": {
+        "random": "uniform",
+        "nucleus_gradient_0pt01": "nucleus_gradient_0pt01",
+        "nucleus_gradient_0pt03": "nucleus_gradient_0pt03",
+        "nucleus_gradient_0pt1": "nucleus_gradient_0pt1",
+        "nucleus_gradient_0pt3": "nucleus_gradient_0pt3",
+        "nucleus_gradient_1": "nucleus_gradient_1",
+        "nucleus_gradient_10": "nucleus_gradient_10",
+        "apical_gradient_0pt03": "apical_gradient_0pt03",
+        "apical_gradient_0pt1": "apical_gradient_0pt1",
+        "apical_gradient_0pt3": "apical_gradient_0pt3",
+        "apical_gradient_0pt7": "apical_gradient_0pt7",
+        "apical_gradient_1": "apical_gradient_1",
+        "apical_gradient_10": "apical_gradient_10",
+        "membrane_gradient_0pt01": "membrane_gradient_0pt01",
+        "membrane_gradient_0pt03": "membrane_gradient_0pt03",
+        "membrane_gradient_0pt1": "membrane_gradient_0pt1",
+        "membrane_gradient_0pt3": "membrane_gradient_0pt3",
+        "membrane_gradient_1": "membrane_gradient_1",
+        "membrane_gradient_10": "membrane_gradient_10"
+    },
+    "packing_config_scope": "joint",
+    "slurm_kwargs": {
+        "p": "aics_gpu",
+        "n": "cellPACK_endosome"
+    },
+    "validation_distance_measures": [
+        "nucleus",
+        "z"
+    ],
+    "validation_analysis_steps": [
+        "load_common_data",
+        "calculate_distances",
+        "run_occupancy_analysis"
+    ],
+    "skip_mixed_rule_validation": true,
+    "validation_config_out_path": "rule_interpolation_validation/tune_gradients_v2",
+    "recalculate": {
+        "load_common_data": false,
+        "calculate_distances": false,
+        "run_occupancy_analysis": true,
+        "run_rule_interpolation_cv": true
+    },
+    "analysis_steps": [
+        "run_occupancy_analysis",
+        "run_rule_interpolation_cv",
+        "plot_lambda_ladder_figures"
+    ],
+    "distance_measures": [
+        "nucleus",
+        "z"
+    ]
+}
