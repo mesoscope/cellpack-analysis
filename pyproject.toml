@@ -5,7 +5,7 @@ authors = [
     {name = "Saurabh Mogre", email = "saurabh.mogre@alleninstitute.org"},
 ]
 license = {text = "Allen Institute Software License"}
-version = "1.0.0"
+version = "1.0.1"
 readme = "README.md"
 requires-python = "~=3.11.0"
 dependencies = [
