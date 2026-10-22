@@ -1,7 +1,7 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite the article below."
 title: "cellpack-analysis"
-version: "1.0.1"
+version: "1.0.2"
 type: software
 repository-code: "https://github.com/mesoscope/cellpack-analysis"
 license-url: "https://github.com/mesoscope/cellpack-analysis/blob/main/LICENSE"

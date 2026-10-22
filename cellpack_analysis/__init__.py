@@ -2,7 +2,7 @@
 
 __author__ = "Saurabh Mogre"
 __email__ = "saurabh.mogre@alleninstitute.org"
-__version__ = "1.0.1"
+__version__ = "1.0.2"
 
 import logging
 import logging.config

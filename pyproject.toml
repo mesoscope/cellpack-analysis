@@ -5,7 +5,7 @@ authors = [
     {name = "Saurabh Mogre", email = "saurabh.mogre@alleninstitute.org"},
 ]
 license = {text = "Allen Institute Software License"}
-version = "1.0.1"
+version = "1.0.2"
 readme = "README.md"
 requires-python = "~=3.11.0"
 dependencies = [
@@ -31,11 +31,6 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = [
-    "check-manifest",
-    "pre-commit",
-    "isort",
-]
 lint = [
     "black",
     "isort",
@@ -45,8 +40,6 @@ lint = [
 test = [
     "pytest",
     "pytest-cov",
-    "pytest-raises",
-    "coverage",
 ]
 
 [build-system]
@@ -54,7 +47,7 @@ requires = ["uv_build>=0.10.11,<0.11.0"]
 build-backend = "uv_build"
 
 [tool.uv]
-default-groups = ["dev", "lint", "test"]
+default-groups = ["lint", "test"]
 cache-dir = ".cache/uv"
 package = true
 
@@ -65,7 +58,6 @@ source-include = [
     "docs",
     "tests",
     ".gitignore",
-    "pre-commit-config.yaml",
     ".python-version",
     "LICENSE",
     "logging.conf",
@@ -179,18 +171,3 @@ exclude = [
     ".*/docs/.*",
     ".*/notebooks/.*",
 ]
-
-[[tool.mypy.overrides]]
-module = [
-    "autopack.*",
-    "cellpack.*",
-    "pacmap.*",
-    "pandas.*",
-    "quilt3.*",
-    "scipy.*",
-    "seaborn.*",
-    "tqdm.*",
-    "umap.*",
-    "vtk.*",
-]
-ignore_missing_imports = true
